@@ -1,0 +1,107 @@
+.income-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.income-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.income-bar-icon {
+  font-size: 15px;
+}
+.income-bar-month {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 14px;
+}
+.income-bar-dot {
+  color: var(--ink-soft);
+}
+.income-bar-count,
+.income-bar-total {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.income-bar-total {
+  font-weight: 700;
+  color: var(--accent);
+}
+.income-bar-chevron {
+  margin-left: auto;
+  color: var(--ink-soft);
+  transition: transform 0.15s ease;
+}
+.income-bar.open .income-bar-chevron {
+  transform: rotate(180deg);
+}
+.income-bar-detail {
+  max-height: 0;
+  overflow: hidden;
+  background: var(--card);
+  transition: max-height 0.2s ease;
+}
+.income-bar.open .income-bar-detail {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.income-bar-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.income-bar-entry span:first-child {
+  color: var(--ink-soft);
+}
+.income-bar-entry span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--green);
+  white-space: nowrap;
+}
+.income-bar-entry.is-versement span:first-child,
+.income-bar-entry.is-versement span:last-child {
+  color: var(--accent);
+}
+.income-bar-entry.is-rollover {
+  background: var(--accent-soft);
+}
+.income-bar-entry.is-rollover span:first-child {
+  font-weight: 600;
+}
+.income-bar-entry.is-rollover.is-negative span:last-child {
+  color: var(--red);
+}
+.income-bar-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.income-bar-remove:hover {
+  color: var(--red);
+}
+.income-bar-empty {
+  padding: 14px 16px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: center;
+}

@@ -1,0 +1,126 @@
+<button class="seg" (click)="export()" title="Télécharger une sauvegarde .json">
+  💾 Sauvegarder
+</button>
+<button
+  class="seg"
+  (click)="triggerImport()"
+  [disabled]="importing()"
+  title="Restaurer une sauvegarde .json (remplace toutes les données)"
+>
+  {{ importing() ? 'Restauration…' : '📂 Restaurer' }}
+</button>
+<input
+  #fileInput
+  type="file"
+  accept=".json,application/json"
+  hidden
+  (change)="onFileSelected($event)"
+/>
+<button class="seg" (click)="openModal()" title="Réinitialiser tout ou une partie des données">
+  🗑 Gestion des données
+</button>
+
+@if (open()) {
+  <div class="reset-overlay open" (click)="$event.target === $event.currentTarget && close()">
+    <div class="reset-modal">
+      @if (step() === 'choice') {
+        <div class="reset-modal-header">
+          <h2>🗑 Gestion des données</h2>
+          <button class="reset-close" (click)="close()" aria-label="Fermer">✕</button>
+        </div>
+        <p class="reset-sub">
+          Mois affiché : <strong>{{ monthLabel }}</strong>. Coche ce que tu veux
+          réinitialiser.
+        </p>
+
+        <div class="reset-group">
+          <label class="reset-check">
+            <input
+              type="checkbox"
+              [checked]="rcExpenses()"
+              [disabled]="rcFull()"
+              (change)="toggleExpenses($any($event.target).checked)"
+            />
+            <span>Dépenses du mois</span>
+          </label>
+          <label class="reset-check">
+            <input
+              type="checkbox"
+              [checked]="rcIncomes()"
+              [disabled]="rcFull()"
+              (change)="toggleIncomes($any($event.target).checked)"
+            />
+            <span>Revenus ponctuels du mois</span>
+            <small>Les revenus récurrents ne sont jamais supprimés ici</small>
+          </label>
+        </div>
+
+        <div class="reset-divider"></div>
+
+        <div class="reset-group">
+          <label class="reset-check">
+            <input
+              type="checkbox"
+              [checked]="rcAll()"
+              [disabled]="rcFull()"
+              (change)="toggleAll($any($event.target).checked)"
+            />
+            <span>Tout le mois</span>
+            <small>Coche les deux options ci-dessus en une fois</small>
+          </label>
+        </div>
+
+        <div class="reset-divider"></div>
+
+        <div class="reset-group">
+          <label class="reset-check reset-check-danger">
+            <input
+              type="checkbox"
+              [checked]="rcFull()"
+              (change)="toggleFull($any($event.target).checked)"
+            />
+            <span>⚠ Réinitialisation complète</span>
+            <small>
+              Efface absolument tout : toutes les dépenses, tous les revenus,
+              toutes les provisions, tous les budgets, tous les mois
+            </small>
+          </label>
+        </div>
+
+        <div class="reset-actions">
+          <button class="seg" (click)="close()">Annuler</button>
+          <button class="seg reset-danger-btn" (click)="goConfirm()">Continuer</button>
+        </div>
+      } @else {
+        <div class="reset-modal-header">
+          <h2>Confirmer la suppression</h2>
+        </div>
+        <p class="reset-sub">Vous allez supprimer :</p>
+        <ul class="reset-summary">
+          @if (rcFull()) {
+            <li><span>Dépenses (tous les mois, tous profils)</span><strong>{{ store.expenses().length }}</strong></li>
+            <li><span>Revenus (tous, y compris récurrents)</span><strong>{{ store.incomes().length }}</strong></li>
+            <li><span>Provisions</span><strong>{{ store.provisions().length }}</strong></li>
+          } @else {
+            @if (rcExpenses() || rcAll()) {
+              <li><span>Dépenses de {{ monthLabel }}</span><strong>{{ stats.nExp }}</strong></li>
+            }
+            @if (rcIncomes() || rcAll()) {
+              <li><span>Revenus ponctuels de {{ monthLabel }}</span><strong>{{ stats.nInc }}</strong></li>
+            }
+          }
+        </ul>
+        <p class="reset-sub">
+          Une sauvegarde .json complète sera téléchargée automatiquement avant
+          la suppression.
+        </p>
+        <div class="reset-actions">
+          <button class="seg" (click)="goBack()">Retour</button>
+          <button class="seg reset-danger-btn" [disabled]="saving()" (click)="confirmReset()">
+            {{ saving() ? 'Suppression…' : 'Sauvegarder et supprimer' }}
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+}

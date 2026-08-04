@@ -1,0 +1,41 @@
+<div class="card cc-card">
+  <div class="cc-head">
+    <div class="card-title">{{ title }}</div>
+    <div class="cc-total">
+      <span>Chargé ce mois</span>
+      <span>{{ fmt(breakdown().total) }}</span>
+    </div>
+  </div>
+
+  @if (breakdown().entries.length === 0) {
+    <div class="cc-empty">Aucune dépense par carte pour cette période.</div>
+  } @else {
+    <div class="cc-breakdown">
+      @for (entry of breakdown().entries; track entry.category) {
+        <div class="cc-row">
+          <span class="cat-dot" [style.background]="colorFor(entry.category)"></span>
+          <span class="cc-cat">{{ entry.category }}</span>
+          <span class="cc-amt">{{ fmt(entry.amount) }}</span>
+          <span class="cc-pct">{{ entry.pct.toFixed(0) }}%</span>
+        </div>
+      }
+    </div>
+    <p class="cc-note">Dépenses passées par la carte, classées par catégorie.</p>
+  }
+
+  <div class="cc-reimb">
+    <div class="cc-reimb-title">Remboursements effectués</div>
+    @if (reimbursements().length === 0) {
+      <div class="cc-empty">Aucun remboursement effectué pour cette période.</div>
+    } @else {
+      <div class="cc-reimb-list">
+        @for (e of reimbursements(); track e.id) {
+          <div class="cc-reimb-row">
+            <span class="cc-reimb-date">{{ fmtDate(e.date) }}</span>
+            <span class="cc-reimb-amt">{{ fmt(e.amount) }}</span>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

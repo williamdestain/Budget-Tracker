@@ -1,0 +1,50 @@
+<div class="card chart-card">
+  <div class="card-title">Répartition des dépenses</div>
+
+  <div class="chart-area">
+    @if (data().total === 0) {
+      <div class="donut-empty">Aucune dépense sur cette période</div>
+    } @else {
+      <div class="donut-wrap" [class.dim]="hovered() !== null">
+        <svg width="220" height="220" viewBox="0 0 220 220">
+          @for (seg of data().segments; track seg.category) {
+            <circle
+              class="seg"
+              [class.hovered]="hovered() === seg.category"
+              [attr.cx]="cx"
+              [attr.cy]="cy"
+              [attr.r]="r"
+              [attr.stroke]="seg.color"
+              [attr.stroke-dasharray]="seg.dash + ' ' + seg.gap"
+              [attr.stroke-dashoffset]="-seg.offset"
+              [attr.transform]="'rotate(-90 ' + cx + ' ' + cy + ')'"
+              (mouseenter)="setHover(seg.category)"
+              (mouseleave)="setHover(null)"
+            />
+          }
+        </svg>
+        <div class="donut-center">
+          <span class="lbl">{{ centerTitle }}</span>
+          <span class="val">{{ centerValue }}</span>
+          <span class="sub">{{ centerSub }}</span>
+        </div>
+      </div>
+
+      <div class="legend">
+        @for (seg of data().segments; track seg.category) {
+          <div
+            class="legend-item"
+            [class.dim]="hovered() !== null && hovered() !== seg.category"
+            (mouseenter)="setHover(seg.category)"
+            (mouseleave)="setHover(null)"
+          >
+            <span class="legend-dot" [style.background]="seg.color"></span>
+            <span class="legend-name">{{ seg.category }}</span>
+            <span class="legend-amt">{{ fmt(seg.amount) }}</span>
+            <span class="legend-pct">{{ seg.pct.toFixed(0) }}%</span>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

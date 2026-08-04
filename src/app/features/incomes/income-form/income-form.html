@@ -1,0 +1,77 @@
+<form class="income-form card" (ngSubmit)="submit()">
+  <h3>Ajouter un revenu</h3>
+
+  <div class="row">
+    <div class="field">
+      <label for="income-amount">Montant</label>
+      <input
+        id="income-amount"
+        type="number"
+        min="0"
+        step="0.01"
+        name="amount"
+        [(ngModel)]="amount"
+        required
+      />
+    </div>
+
+    <div class="field">
+      <label for="income-type">Type</label>
+      <select id="income-type" name="type" [(ngModel)]="type">
+        @for (t of typeOptions; track t) {
+          <option [value]="t">{{ typeLabels[t] }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="income-date">Date</label>
+      <input
+        id="income-date"
+        type="date"
+        name="date"
+        [(ngModel)]="date"
+        required
+      />
+    </div>
+
+    <div class="field">
+      <label for="income-owner">Profil</label>
+      <select id="income-owner" name="owner" [(ngModel)]="owner">
+        <option value="moi">Moi</option>
+        <option value="madame">Madame</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="field field-note">
+      <label for="income-note">Note (optionnel)</label>
+      <input id="income-note" type="text" name="note" [(ngModel)]="note" />
+    </div>
+
+    <label class="check-label">
+      <input type="checkbox" name="recurring" [(ngModel)]="recurring" />
+      <span>Revenu récurrent</span>
+    </label>
+
+    @if (recurring) {
+      <div class="field">
+        <label for="income-interval">Fréquence</label>
+        <select
+          id="income-interval"
+          name="recurringInterval"
+          [(ngModel)]="recurringInterval"
+        >
+          @for (opt of intervalOptions; track opt[0]) {
+            <option [value]="opt[0]">{{ opt[1] }}</option>
+          }
+        </select>
+      </div>
+    }
+  </div>
+
+  <button type="submit" class="btn-primary" [disabled]="saving()">
+    {{ saving() ? 'Ajout…' : 'Ajouter' }}
+  </button>
+</form>

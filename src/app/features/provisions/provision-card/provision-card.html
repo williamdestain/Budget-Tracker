@@ -1,0 +1,112 @@
+<div
+  class="prov-item"
+  [class.deficit]="stats().pot < 0"
+  [class.alert-overdue]="stats().dueAlert?.type === 'overdue'"
+  [class.alert-soon]="stats().dueAlert?.type === 'soon'"
+>
+  @if (stats().dueAlert) {
+    <div class="prov-alert-banner" [class]="stats().dueAlert!.type">
+      {{ stats().dueAlert!.message }}
+    </div>
+  }
+
+  <div class="prov-top">
+    <div>
+      <div class="prov-name">
+        <span class="cat-dot" [style.background]="colorDot()"></span>
+        {{ provision().name }}
+      </div>
+      <div class="prov-meta">
+        {{ stats().reserveLabel }} · {{ stats().metaLine }}{{ stats().rollingLabel }} ·
+        catégorie <strong>{{ provision().category }}</strong>
+      </div>
+    </div>
+    <div class="prov-actions">
+      <button title="Marquer comme payé" class="pay-prov" (click)="togglePay()">💳</button>
+      <button title="Ajouter un montant" class="add-prov-adjust" (click)="toggleAdjust()">+$</button>
+      <button title="Supprimer" class="del-prov" (click)="remove()">✕</button>
+    </div>
+  </div>
+
+  @if (payOpen()) {
+    <form class="prov-pay-form" (ngSubmit)="submitPay()">
+      <div class="field">
+        <label>Montant</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="payAmount" [(ngModel)]="payAmount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="payDate" [(ngModel)]="payDate" required />
+      </div>
+      <div class="field field-check">
+        <label class="check-label">
+          <input type="checkbox" name="payCc" [(ngModel)]="payCc" />
+          <span class="check-text"><span class="check-icon">💳</span> Carte de crédit</span>
+        </label>
+      </div>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary btn-pay" [disabled]="saving()">Marquer payé</button>
+      </div>
+    </form>
+  }
+
+  @if (adjustOpen()) {
+    <form class="prov-adjust-form" (ngSubmit)="submitAdjust()">
+      <div class="field">
+        <label>Montant</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="adjustAmount" [(ngModel)]="adjustAmount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="adjustDate" [(ngModel)]="adjustDate" required />
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <input type="text" name="adjustNote" [(ngModel)]="adjustNote" placeholder="Ex. extra ce mois-ci" />
+      </div>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary" [disabled]="saving()">Ajouter</button>
+      </div>
+    </form>
+  }
+
+  <div class="prov-bar-wrap">
+    <div class="prov-bar" [class]="stats().barClass" [style.width.%]="barWidth()"></div>
+  </div>
+
+  <div class="prov-foot">
+    <span>Cagnotte : <strong>{{ fmt(stats().pot) }}</strong> / {{ fmt(stats().targetForNext) }}</span>
+    <span class="prov-status" [class]="stats().statusClass">{{ stats().statusText }}</span>
+  </div>
+  <div class="prov-foot" style="margin-top: 4px">
+    <span>{{ stats().nextFieldLabel }} : <strong>{{ stats().nextLabel }}</strong></span>
+    <span>
+      {{ stats().startFieldLabel }} : {{ stats().startLabel }}
+      {{ provision().autoRecalibrate === false ? '· recalage manuel' : '' }}
+    </span>
+  </div>
+
+  @if (stats().adjustmentTotal > 0) {
+    <div class="prov-adjust-summary">
+      <span>Ajouts au fonds : <strong>{{ fmt(stats().adjustmentTotal) }}</strong></span>
+      <span>Ce mois : <strong>{{ fmt(stats().adjustmentMonthTotal) }}</strong></span>
+    </div>
+  }
+
+  @if (stats().adjustmentsUpTo.length) {
+    <div class="prov-adjust-history">
+      @for (a of stats().adjustmentsUpTo.slice(0, 3); track a.id) {
+        <div class="prov-adjust-row">
+          <strong>{{ fmt(a.amount) }}</strong>
+          <span>{{ a.note || 'Ajout au fonds' }}</span>
+          <span>{{ fmtDate(a.date) }}</span>
+          <button class="del-prov-adjust" title="Supprimer cet ajout" (click)="removeAdjustment(a.id)">✕</button>
+        </div>
+      }
+    </div>
+  }
+</div>

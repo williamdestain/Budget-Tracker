@@ -1,0 +1,87 @@
+<div class="card expense-list-card">
+  <div class="list-head">
+    <h3>Dépenses</h3>
+    <span class="list-count">
+      @if (realCount) {
+        {{ realCount }} {{ realCount > 1 ? 'dépenses' : 'dépense' }}
+      }
+    </span>
+  </div>
+
+  @if (mergedList().length === 0) {
+    <div class="empty">
+      <div class="big">🧾</div>
+      {{ emptyMessage }}<br />
+      Ajoutez-en une avec le formulaire ci-dessus.
+    </div>
+  } @else {
+    @for (e of mergedList(); track e.id) {
+      @if (e.provision) {
+        <!-- Réserve synthétique de provision (ou ajout au fonds) -->
+        <div class="expense prov-reserve">
+          <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
+          @if (showBadge) {
+            <span class="owner-badge" [class]="e.owner">{{ ownerShort(e.owner) }}</span>
+          }
+          <span class="cat-name">
+            {{ e.category }} — {{ reserveLabel(e) }}
+            <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
+            @if (e.provisionAdjustment && e.note) {
+              <span class="transfer-note">{{ e.note }}</span>
+            }
+          </span>
+          <span class="prov-reserve-tag">{{ reserveTag(e) }}</span>
+          <span class="cat-amt">{{ fmt(e.amount) }}</span>
+        </div>
+      } @else if (e.category === 'Versement' && store.activeOwner() === 'global') {
+        <!-- Versement en vue Globale : transfert interne, annulé -->
+        <div class="expense versement-row">
+          <span class="cat-dot" [style.background]="colorFor('Versement')"></span>
+          <span class="transfer-arrow">
+            {{ ownerShort(e.owner) }} → {{ ownerShort(otherOwner(e.owner)) }}
+          </span>
+          <span class="cat-name">
+            Versement
+            <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
+            <span class="transfer-note">Transfert interne — non comptabilisé dans le total</span>
+          </span>
+          <span class="cat-amt transfer-amt">
+            −{{ fmt(e.amount) }} <span class="transfer-plus">+{{ fmt(e.amount) }}</span>
+          </span>
+          <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+        </div>
+      } @else if (e.category === 'Versement') {
+        <!-- Versement en vue individuelle : l'expéditeur paie -->
+        <div class="expense versement-row">
+          <span class="cat-dot" [style.background]="colorFor('Versement')"></span>
+          @if (showBadge) {
+            <span class="owner-badge" [class]="e.owner">{{ ownerShort(e.owner) }}</span>
+          }
+          <span class="cat-name">
+            Versement → {{ e.owner === 'moi' ? 'Madame' : 'Moi' }}
+            <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
+          </span>
+          <span class="cat-amt">{{ fmt(e.amount) }}</span>
+          <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+        </div>
+      } @else {
+        <!-- Dépense normale -->
+        <div class="expense">
+          <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
+          @if (showBadge) {
+            <span class="owner-badge" [class]="e.owner">{{ ownerShort(e.owner) }}</span>
+          }
+          <span class="cat-name">
+            {{ e.category }}
+            <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
+          </span>
+          @if (e.cc) {
+            <span class="cc-tag">💳</span>
+          }
+          <span class="cat-amt">{{ fmt(e.amount) }}</span>
+          <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+        </div>
+      }
+    }
+  }
+</div>

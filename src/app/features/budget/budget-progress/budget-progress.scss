@@ -1,0 +1,69 @@
+.budget-card {
+  margin-bottom: 18px;
+}
+.progress-wrap {
+  margin-top: 16px;
+}
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.progress-meta .spent {
+  font-size: 22px;
+  font-weight: 700;
+}
+.progress-meta .of {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.solde-net {
+  font-size: 12px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.progress-track {
+  height: 14px;
+  background: #eef2f7;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), #4ade80);
+  border-radius: 999px;
+  transition:
+    width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.3s ease;
+}
+.progress-fill.warn {
+  background: linear-gradient(90deg, var(--amber), #fbbf24);
+}
+.progress-fill.over {
+  background: linear-gradient(90deg, var(--red), #f87171);
+}
+.progress-status {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pill.ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.pill.warn {
+  background: #fef3c7;
+  color: var(--amber);
+}
+.pill.over {
+  background: var(--red-soft);
+  color: var(--red);
+}

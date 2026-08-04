@@ -1,0 +1,19 @@
+<div class="card budget-card">
+  <div class="card-title">{{ title }}</div>
+
+  <div class="progress-wrap">
+    <div class="progress-meta">
+      <span class="spent">{{ fmt(store.budgetSummary().spent) }}</span>
+      <span class="of">{{ ofText() }}</span>
+    </div>
+    <div class="solde-net" [style.color]="soldeNetColor">
+      Solde net : {{ fmt(store.budgetSummary().soldeNet) }}
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" [class]="bar().cls" [style.width.%]="bar().widthPct"></div>
+    </div>
+    <div class="progress-status">
+      <span class="pill" [class]="bar().statusCls">{{ bar().statusText }}</span>
+    </div>
+  </div>
+</div>

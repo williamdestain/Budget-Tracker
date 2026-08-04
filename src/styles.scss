@@ -1,0 +1,201 @@
+/* ===================== Design global ===================== */
+/* Tokens repris tel quel de l'ancienne application (fichier unique HTML)
+   pour une continuité visuelle exacte — ce n'est pas une refonte. */
+:root {
+  --bg: #eef2f7;
+  --card: #ffffff;
+  --ink: #1f2937;
+  --ink-soft: #6b7280;
+  --line: #e5e9f0;
+  --accent: #4f7cff;
+  --accent-soft: #eaf0ff;
+  --green: #16a34a;
+  --green-soft: #dcfce7;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
+  --amber: #d97706;
+  --pink: #d6457d;
+  --pink-soft: #fde4ef;
+  --teal: #0f9d8f;
+  --radius: 16px;
+  --shadow: 0 6px 24px rgba(20, 30, 60, 0.07);
+  --shadow-sm: 0 2px 8px rgba(20, 30, 60, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+button {
+  font-family: inherit;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.seg {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.seg:hover {
+  border-color: #c2cad8;
+  color: var(--ink);
+  background: #f8fafc;
+}
+.seg:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.seg.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input[type='text'],
+input[type='number'],
+input[type='date'],
+input[type='email'],
+input[type='password'],
+select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.field-actions {
+  display: flex;
+}
+
+.input-money {
+  position: relative;
+}
+.input-money::before {
+  content: '$';
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-soft);
+  font-weight: 600;
+  z-index: 1;
+}
+.input-money input {
+  padding-left: 26px;
+}
+
+.field-check {
+  display: flex;
+  align-items: flex-end;
+}
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  height: 42px;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.check-label:hover {
+  border-color: #c2cad8;
+}
+.check-label input {
+  width: auto;
+  cursor: pointer;
+  margin: 0;
+}
+.check-label:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.check-icon {
+  font-size: 15px;
+}
+
+.cat-dot {
+  display: inline-block;
+  border-radius: 4px;
+  flex-shrink: 0;
+}

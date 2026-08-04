@@ -1,0 +1,49 @@
+<form class="expense-form card" (ngSubmit)="submit()">
+  <h3>Ajouter une dépense</h3>
+
+  <div class="row">
+    <div class="field">
+      <label for="exp-amount">Montant</label>
+      <input
+        id="exp-amount"
+        type="number"
+        min="0"
+        step="0.01"
+        name="amount"
+        [(ngModel)]="amount"
+        required
+      />
+    </div>
+
+    <div class="field field-category">
+      <label for="exp-category">Catégorie</label>
+      <select id="exp-category" name="category" [(ngModel)]="category">
+        @for (c of categories; track c) {
+          <option [value]="c">{{ c }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="exp-date">Date</label>
+      <input id="exp-date" type="date" name="date" [(ngModel)]="date" required />
+    </div>
+
+    <div class="field">
+      <label for="exp-owner">Profil</label>
+      <select id="exp-owner" name="owner" [(ngModel)]="owner">
+        <option value="moi">Moi</option>
+        <option value="madame">Madame</option>
+      </select>
+    </div>
+
+    <label class="check-label">
+      <input type="checkbox" name="cc" [(ngModel)]="cc" />
+      <span>💳 Carte de crédit</span>
+    </label>
+  </div>
+
+  <button type="submit" class="btn-primary" [disabled]="saving()">
+    {{ saving() ? 'Ajout…' : 'Ajouter' }}
+  </button>
+</form>

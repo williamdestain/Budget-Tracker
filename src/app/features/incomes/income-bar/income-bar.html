@@ -1,0 +1,42 @@
+<div class="income-bar" [class.open]="open()">
+  <div class="income-bar-row" (click)="toggle()">
+    <span class="income-bar-icon">📅</span>
+    <span class="income-bar-month">{{ monthLabel }}</span>
+    <span class="income-bar-dot">•</span>
+    <span class="income-bar-count">
+      {{ store.incomeBar().entries.length }}
+      {{ store.incomeBar().entries.length > 1 ? 'entrées' : 'entrée' }}
+    </span>
+    <span class="income-bar-dot">•</span>
+    <span class="income-bar-total">{{ fmt(store.incomeBar().total) }}</span>
+    <span class="income-bar-chevron">▾</span>
+  </div>
+
+  <div class="income-bar-detail">
+    @if (store.incomeBar().entries.length === 0) {
+      <div class="income-bar-empty">Aucun revenu ce mois.</div>
+    }
+    @for (e of store.incomeBar().entries; track e.key) {
+      <div
+        class="income-bar-entry"
+        [class.is-versement]="e.isVersement"
+        [class.is-rollover]="e.isRollover"
+        [class.is-negative]="e.isRollover && e.amount < 0"
+      >
+        <span>{{ e.label }}</span>
+        <span>
+          {{ fmt(e.amount) }}
+          @if (e.isRollover) {
+            <button
+              class="income-bar-remove"
+              title="Retirer ce report"
+              (click)="removeRollover(); $event.stopPropagation()"
+            >
+              ✕
+            </button>
+          }
+        </span>
+      </div>
+    }
+  </div>
+</div>

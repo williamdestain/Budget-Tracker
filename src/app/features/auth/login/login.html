@@ -1,0 +1,37 @@
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="logo">💰</div>
+    <h1>Traqueur de Budget</h1>
+    <p class="subtitle">Connexion — Moi &amp; Madame</p>
+
+    <form (ngSubmit)="submit()">
+      <label for="email">Courriel</label>
+      <input
+        id="email"
+        type="email"
+        name="email"
+        [(ngModel)]="email"
+        required
+        autocomplete="username"
+      />
+
+      <label for="password">Mot de passe</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        required
+        autocomplete="current-password"
+      />
+
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+
+      <button type="submit" class="btn-primary" [disabled]="loading()">
+        {{ loading() ? 'Connexion…' : 'Se connecter' }}
+      </button>
+    </form>
+  </div>
+</div>

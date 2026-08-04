@@ -1,0 +1,18 @@
+<div class="card prov-card">
+  <h3>Provisions</h3>
+
+  @if (store.visibleProvisions().length === 0) {
+    <div class="prov-empty">
+      <div class="big">🎯</div>
+      Aucune provision pour l'instant.<br />
+      Créez-en une pour lisser une dépense irrégulière (électricité ~60 j, taxes,
+      assurance…).
+    </div>
+  } @else {
+    <div class="prov-list">
+      @for (p of store.visibleProvisions(); track p.id) {
+        <app-provision-card [provision]="p" />
+      }
+    </div>
+  }
+</div>

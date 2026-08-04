@@ -1,0 +1,63 @@
+<div class="wrap">
+  <header>
+    <div class="title-row">
+      <h1><span class="logo">💰</span> Traqueur de Budget</h1>
+      <button class="btn-primary" (click)="logout()">Se déconnecter</button>
+    </div>
+
+    <div class="tabs">
+      <button
+        class="tab"
+        [class.active]="store.activeOwner() === 'moi'"
+        (click)="setOwner('moi')"
+      >
+        Moi
+      </button>
+      <button
+        class="tab"
+        [class.active]="store.activeOwner() === 'madame'"
+        (click)="setOwner('madame')"
+      >
+        Madame
+      </button>
+      <button
+        class="tab"
+        [class.active]="store.activeOwner() === 'global'"
+        (click)="setOwner('global')"
+      >
+        Global
+      </button>
+    </div>
+
+    <div class="month-nav">
+      <button class="icon-btn" (click)="prevMonth()" title="Mois précédent">‹</button>
+      <span class="month-label">{{ monthLabel }}</span>
+      <button class="icon-btn" (click)="nextMonth()" title="Mois suivant">›</button>
+    </div>
+
+    <div class="header-actions">
+      <button
+        class="seg close-month-btn"
+        (click)="closeMonth()"
+        title="Reporter le solde net de ce mois vers le mois suivant"
+      >
+        🔒 Clôturer le mois
+      </button>
+      <app-data-management />
+    </div>
+  </header>
+
+  @if (store.loading()) {
+    <p class="placeholder">Chargement des données…</p>
+  } @else {
+    <app-income-bar />
+    <app-budget-progress />
+    <app-spending-chart />
+    <app-income-form />
+    <app-expense-form />
+    <app-expense-list />
+    <app-provision-form />
+    <app-provision-list />
+    <app-credit-card />
+  }
+</div>

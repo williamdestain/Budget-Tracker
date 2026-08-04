@@ -1,0 +1,121 @@
+.chart-card {
+  margin-bottom: 18px;
+}
+.chart-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 14px;
+}
+.donut-wrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+}
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+  padding: 0 12px;
+}
+.donut-center .lbl {
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.donut-center .val {
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.donut-center .sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.donut-wrap circle.seg {
+  fill: none;
+  stroke-width: 30;
+  transition:
+    stroke-width 0.15s ease,
+    opacity 0.15s ease;
+  cursor: pointer;
+}
+.donut-wrap circle.seg:hover,
+.donut-wrap circle.seg.hovered {
+  stroke-width: 36;
+}
+.donut-wrap.dim circle.seg:not(.hovered) {
+  opacity: 0.35;
+}
+.donut-empty {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 30px solid #eef2f7;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.legend {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.legend-item:hover {
+  background: #f5f7fb;
+}
+.legend-item.dim {
+  opacity: 0.4;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.legend-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.legend-amt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.legend-pct {
+  color: var(--ink-soft);
+  font-size: 11px;
+  min-width: 34px;
+  text-align: right;
+}
+
+@media (max-width: 480px) {
+  .legend {
+    grid-template-columns: 1fr;
+  }
+}
