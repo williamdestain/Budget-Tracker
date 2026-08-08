@@ -1,0 +1,117 @@
+.splitter-card {
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+}
+.splitter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.splitter-hint {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 8px 0 0;
+}
+.splitter-top {
+  display: flex;
+  gap: 12px;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+.splitter-top .field {
+  flex: 1 1 160px;
+}
+.splitter-method {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.method-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.method-opt input {
+  accent-color: var(--accent);
+}
+
+.splitter-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.splitter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.splitter-row.excluded {
+  opacity: 0.45;
+}
+.splitter-row input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.splitter-row .cat-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+.splitter-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+.splitter-missing {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+.splitter-alloc {
+  font-weight: 700;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.input-money.small input {
+  width: 90px;
+  padding: 6px 8px 6px 22px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.splitter-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f7f9fc;
+  font-size: 13px;
+  font-weight: 600;
+}
+.splitter-total.mismatch {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.splitter-remaining {
+  font-size: 12px;
+}
+
+.splitter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}

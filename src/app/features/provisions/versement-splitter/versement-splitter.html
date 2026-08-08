@@ -1,0 +1,107 @@
+<div class="card splitter-card">
+  <div class="splitter-head">
+    <div class="card-title">🤝 Répartir un versement</div>
+    @if (!isGlobal) {
+      <button class="seg" (click)="toggle()">
+        {{ open() ? '− Fermer' : '+ Répartir' }}
+      </button>
+    }
+  </div>
+
+  @if (isGlobal) {
+    <p class="splitter-hint">
+      Passe sur Moi ou Madame pour répartir un versement reçu entre tes
+      provisions.
+    </p>
+  } @else if (!open()) {
+    <p class="splitter-hint">
+      Reçu de l'argent de {{ senderLabel }} pour aider à payer des
+      provisions ? Répartis-le en un clic entre celles qui en ont besoin.
+    </p>
+  }
+
+  @if (open()) {
+    @if (candidates().length === 0) {
+      <p class="splitter-hint">
+        Aucune provision n'a besoin d'argent en ce moment pour {{ store.activeOwner() === 'moi' ? 'Moi' : 'Madame' }}.
+      </p>
+    } @else {
+      <div class="splitter-top">
+        <div class="field">
+          <label>Montant reçu de {{ senderLabel }}</label>
+          <div class="input-money">
+            <input type="number" min="0" step="0.01" [(ngModel)]="totalAmount" placeholder="300" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input type="date" [(ngModel)]="date" />
+        </div>
+      </div>
+
+      <div class="splitter-method">
+        <label class="method-opt">
+          <input type="radio" name="splitMethod" value="equal" [(ngModel)]="splitMethod" />
+          Égal
+        </label>
+        <label class="method-opt">
+          <input type="radio" name="splitMethod" value="proportional" [(ngModel)]="splitMethod" />
+          Proportionnel au manque
+        </label>
+        <label class="method-opt">
+          <input type="radio" name="splitMethod" value="manual" [(ngModel)]="splitMethod" />
+          Manuel
+        </label>
+      </div>
+
+      <div class="splitter-rows">
+        @for (row of candidates(); track row.provision.id) {
+          <div class="splitter-row" [class.excluded]="!isSelected(row.provision.id)">
+            <input
+              type="checkbox"
+              [checked]="isSelected(row.provision.id)"
+              (change)="toggleSelected(row.provision.id, $any($event.target).checked)"
+            />
+            <span class="cat-dot" [style.background]="colorFor(row.provision.category)"></span>
+            <span class="splitter-name">
+              {{ row.provision.name }}
+              <span class="splitter-missing">manque {{ fmt(row.missing) }}</span>
+            </span>
+            @if (splitMethod === 'manual') {
+              <div class="input-money small">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  [disabled]="!isSelected(row.provision.id)"
+                  [ngModel]="manualAmounts[row.provision.id] ?? 0"
+                  (ngModelChange)="manualAmounts[row.provision.id] = $event"
+                />
+              </div>
+            } @else {
+              <span class="splitter-alloc">
+                {{ isSelected(row.provision.id) ? fmt(allocationFor(row.provision.id, row.missing)) : '—' }}
+              </span>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="splitter-total" [class.mismatch]="!canSubmit && totalAmount">
+        <span>Total réparti : {{ fmt(allocatedSum) }} / {{ fmt(totalAmount || 0) }}</span>
+        @if (remaining !== 0 && totalAmount) {
+          <span class="splitter-remaining">
+            {{ remaining > 0 ? 'Reste à assigner : ' + fmt(remaining) : 'Dépassement : ' + fmt(-remaining) }}
+          </span>
+        }
+      </div>
+
+      <div class="splitter-actions">
+        <button class="seg" (click)="toggle()">Annuler</button>
+        <button class="btn-primary" [disabled]="!canSubmit || saving()" (click)="submit()">
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer et répartir' }}
+        </button>
+      </div>
+    }
+  }
+</div>

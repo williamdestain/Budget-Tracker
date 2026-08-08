@@ -13,6 +13,7 @@ import { ExpenseList } from '../expenses/expense-list/expense-list';
 import { ProvisionForm } from '../provisions/provision-form/provision-form';
 import { ProvisionList } from '../provisions/provision-list/provision-list';
 import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
+import { VersementSplitter } from '../provisions/versement-splitter/versement-splitter';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
 import { BudgetProgress } from '../budget/budget-progress/budget-progress';
 import { SpendingChart } from '../budget/spending-chart/spending-chart';
@@ -33,6 +34,7 @@ import { DataManagement } from '../data-management/data-management/data-manageme
     ProvisionForm,
     ProvisionList,
     UpcomingProvisions,
+    VersementSplitter,
     CreditCard,
     BudgetProgress,
     SpendingChart,

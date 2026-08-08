@@ -740,6 +740,42 @@ export class BudgetStore {
   // Marque une provision comme payée : crée la dépense réelle correspondante.
   // Réutilise addExpense() tel quel (création + recalage automatique via
   // syncProvisionsFromExpense) — rien n'est dupliqué ici.
+  // Enregistre un versement reçu ET le répartit en un seul geste entre
+  // plusieurs provisions (ajouts au fonds), pour aider à payer des
+  // provisions à plusieurs. Réutilise addExpense() et
+  // addProvisionAdjustment() tels quels — rien n'est dupliqué.
+  async splitVersementIntoProvisions(
+    totalAmount: number,
+    date: string,
+    allocations: { provisionId: string; amount: number }[],
+  ): Promise<void> {
+    const receiver = this.activeOwner();
+    if (receiver === 'global') {
+      throw new Error('Choisis le profil Moi ou Madame avant de répartir un versement.');
+    }
+    const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
+    const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
+
+    await this.addExpense({
+      amount: totalAmount,
+      category: 'Versement',
+      date,
+      owner: sender,
+      cc: false,
+    });
+
+    for (const a of allocations) {
+      if (a.amount > 0) {
+        await this.addProvisionAdjustment(
+          a.provisionId,
+          a.amount,
+          date,
+          `Versement de ${senderLabel}`,
+        );
+      }
+    }
+  }
+
   async payProvision(
     provisionId: string,
     amount: number,

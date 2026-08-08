@@ -49,6 +49,7 @@ Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1
 - [x] Tableau "À payer bientôt"
 - [x] Dépenses récurrentes (option B : suggestion à confirmer)
 - [x] Alertes intelligentes
+- [x] Répartition d'un versement entre plusieurs provisions
 - [x] Clôture du mois / report de solde
 - [x] Gestion des données (réinitialisation, export)
 
