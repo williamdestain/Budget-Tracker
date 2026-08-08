@@ -1,0 +1,19 @@
+@if (store.upcomingProvisions().length > 0) {
+  <div class="card upcoming-card">
+    <div class="card-title">📅 À payer bientôt</div>
+    <p class="upcoming-hint">
+      Provisions dues ce mois-ci, en déficit, ou dont l'échéance approche
+      (30 jours).
+    </p>
+    <div class="upcoming-list">
+      @for (row of store.upcomingProvisions(); track row.provision.id) {
+        <div class="upcoming-item">
+          <span class="upcoming-due" [class.late]="row.daysUntil < 0">
+            {{ dueLabel(row.daysUntil, row.dueThisMonth) }}
+          </span>
+          <app-provision-card [provision]="row.provision" />
+        </div>
+      }
+    </div>
+  </div>
+}

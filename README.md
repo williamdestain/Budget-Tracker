@@ -40,10 +40,15 @@ Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1
 - [x] Schéma de données Supabase (dépenses, revenus, provisions, budgets, reports)
 - [x] Déploiement automatique GitHub Pages
 - [x] Revenus + barre "Entrées du mois" (versements, reports)
-- [x] Dépenses (liste, ajout, suppression)
+- [x] Dépenses (liste, ajout, édition, suppression)
 - [x] Provisions (cagnotte, ajustements, marquer comme payé)
 - [x] Carte de crédit + remboursements
 - [x] Budget mensuel + graphique
+- [x] Budget par catégorie
+- [x] Prévision de fin de mois
+- [x] Tableau "À payer bientôt"
+- [x] Dépenses récurrentes (option B : suggestion à confirmer)
+- [x] Alertes intelligentes
 - [x] Clôture du mois / report de solde
 - [x] Gestion des données (réinitialisation, export)
 

@@ -1,0 +1,72 @@
+<div class="card recurring-manage-card">
+  <div class="recurring-manage-head">
+    <div class="card-title">🔁 Dépenses récurrentes</div>
+    <button class="seg" (click)="toggle()">
+      {{ open() ? '− Fermer' : '+ Nouvelle' }}
+    </button>
+  </div>
+  <p class="recurring-manage-hint">
+    Loyer, garderie, internet, assurances... Chaque mois, une confirmation
+    en un clic te sera proposée — rien n'est jamais ajouté automatiquement.
+  </p>
+
+  @if (open()) {
+    <form class="recurring-form" (ngSubmit)="submit()">
+      <div class="field">
+        <label>Nom</label>
+        <input type="text" name="name" [(ngModel)]="name" placeholder="Ex. Loyer" required />
+      </div>
+      <div class="field field-category">
+        <label>Catégorie</label>
+        <select name="category" [(ngModel)]="category">
+          @for (c of categories; track c) {
+            <option [value]="c">{{ c }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label>Montant</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="amount" [(ngModel)]="amount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label>Jour du mois</label>
+        <input type="number" min="1" max="31" name="dayOfMonth" [(ngModel)]="dayOfMonth" required />
+      </div>
+      <div class="field">
+        <label>Profil</label>
+        <select name="owner" [(ngModel)]="owner">
+          <option value="moi">Moi</option>
+          <option value="madame">Madame</option>
+        </select>
+      </div>
+      <label class="check-label">
+        <input type="checkbox" name="cc" [(ngModel)]="cc" />
+        <span>💳</span>
+      </label>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary" [disabled]="saving()">Créer</button>
+      </div>
+    </form>
+  }
+
+  @if (store.visibleRecurringExpenses().length > 0) {
+    <div class="recurring-list">
+      @for (r of store.visibleRecurringExpenses(); track r.id) {
+        <div class="recurring-row" [class.inactive]="!r.active">
+          <span class="cat-dot" [style.background]="colorFor(r.category)"></span>
+          <span class="recurring-name">
+            {{ r.name }}
+            <span class="recurring-meta">{{ r.category }} · jour {{ r.dayOfMonth }}</span>
+          </span>
+          <span class="recurring-amt">{{ fmt(r.amount) }}</span>
+          <button class="seg tiny" [title]="r.active ? 'Désactiver' : 'Activer'" (click)="toggleActive(r.id, r.active)">
+            {{ r.active ? '⏸' : '▶️' }}
+          </button>
+          <button class="del" title="Supprimer" (click)="remove(r.id)">✕</button>
+        </div>
+      }
+    </div>
+  }
+</div>

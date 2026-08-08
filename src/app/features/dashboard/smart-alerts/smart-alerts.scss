@@ -1,0 +1,37 @@
+.alerts-card {
+  margin-bottom: 18px;
+}
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.alert-row.critical {
+  background: var(--red-soft);
+  color: #991b1b;
+}
+.alert-row.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+.alert-row.info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.alert-icon {
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.alert-msg {
+  flex: 1;
+}

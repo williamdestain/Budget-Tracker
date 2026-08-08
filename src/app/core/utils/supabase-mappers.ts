@@ -2,9 +2,11 @@ import {
   Expense,
   Income,
   MonthlyAmountMap,
+  CategoryBudgetMap,
   Owner,
   Provision,
   ProvisionAdjustment,
+  RecurringExpense,
 } from '../models/budget.models';
 
 export function rowToExpense(row: any): Expense {
@@ -15,6 +17,7 @@ export function rowToExpense(row: any): Expense {
     date: row.date,
     owner: row.owner,
     cc: row.cc,
+    recurringSourceId: row.recurring_source_id ?? null,
   };
 }
 
@@ -25,6 +28,34 @@ export function expenseToRow(e: Omit<Expense, 'id'> | Expense): any {
     date: e.date,
     owner: e.owner,
     cc: e.cc,
+    recurring_source_id: e.recurringSourceId ?? null,
+  };
+}
+
+export function rowToRecurringExpense(row: any): RecurringExpense {
+  return {
+    id: row.id,
+    name: row.name,
+    amount: Number(row.amount),
+    category: row.category,
+    owner: row.owner,
+    dayOfMonth: row.day_of_month,
+    cc: row.cc,
+    active: row.active,
+  };
+}
+
+export function recurringExpenseToRow(
+  r: Omit<RecurringExpense, 'id'> | RecurringExpense,
+): any {
+  return {
+    name: r.name,
+    amount: r.amount,
+    category: r.category,
+    owner: r.owner,
+    day_of_month: r.dayOfMonth,
+    cc: r.cc,
+    active: r.active,
   };
 }
 
@@ -61,6 +92,17 @@ export function rowsToMonthlyMap(rows: any[]): MonthlyAmountMap {
   rows.forEach((row) => {
     const owner = row.owner as Owner;
     map[owner][row.ym] = Number(row.amount);
+  });
+  return map;
+}
+
+// { owner, ym, category, amount }[] -> { owner: { ym: { category: amount } } }
+export function rowsToCategoryBudgetMap(rows: any[]): CategoryBudgetMap {
+  const map: CategoryBudgetMap = { moi: {}, madame: {} };
+  rows.forEach((row) => {
+    const owner = row.owner as Owner;
+    if (!map[owner][row.ym]) map[owner][row.ym] = {};
+    map[owner][row.ym][row.category] = Number(row.amount);
   });
   return map;
 }

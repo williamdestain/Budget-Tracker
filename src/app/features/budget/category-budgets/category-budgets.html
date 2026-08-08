@@ -1,0 +1,98 @@
+<div class="card cat-budget-card">
+  <div class="cat-budget-head">
+    <div class="card-title">Budgets par catégorie</div>
+    @if (!isGlobal) {
+      <button class="seg" (click)="toggleAdd()">
+        {{ addOpen() ? '− Fermer' : '+ Ajouter' }}
+      </button>
+    }
+  </div>
+
+  @if (isGlobal) {
+    <p class="cat-budget-hint">
+      Vue Global : somme de Moi + Madame. Passe sur un profil pour modifier
+      les budgets par catégorie.
+    </p>
+  }
+
+  @if (addOpen() && !isGlobal) {
+    <form class="cat-budget-add-form" (ngSubmit)="submitAdd()">
+      <div class="field field-category">
+        <label>Catégorie</label>
+        <select name="newCategory" [(ngModel)]="newCategory">
+          @for (c of availableCategories(); track c) {
+            <option [value]="c">{{ c }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label>Budget mensuel</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="newAmount" [(ngModel)]="newAmount" placeholder="800" required />
+        </div>
+      </div>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary">Ajouter</button>
+      </div>
+    </form>
+  }
+
+  @if (store.categoryBudgetRows().length === 0) {
+    <div class="cat-budget-empty">
+      <div class="big">📊</div>
+      Aucun budget par catégorie pour l'instant.<br />
+      Ajoute-en un pour mieux voir où l'argent part.
+    </div>
+  } @else {
+    <div class="cat-budget-list">
+      @for (row of store.categoryBudgetRows(); track row.category) {
+        <div class="cat-budget-row">
+          <span class="cat-dot" [style.background]="colorFor(row.category)"></span>
+          <div class="cat-budget-main">
+            <div class="cat-budget-top">
+              <span class="cat-budget-name">{{ row.category }}</span>
+              @if (editingCategory() === row.category) {
+                <span class="cat-budget-edit">
+                  <div class="input-money small">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      [(ngModel)]="editAmount"
+                      (keyup.enter)="saveEdit(row.category)"
+                    />
+                  </div>
+                  <button class="seg tiny" (click)="saveEdit(row.category)">✓</button>
+                  <button class="seg tiny" (click)="cancelEdit()">✕</button>
+                </span>
+              } @else {
+                <span class="cat-budget-amounts">
+                  {{ fmt(row.spent) }} / {{ fmt(row.budget) }}
+                  @if (!isGlobal) {
+                    <button class="cat-budget-edit-btn" title="Modifier le budget" (click)="startEdit(row.category, row.budget)">✏️</button>
+                    @if (row.budget > 0) {
+                      <button class="cat-budget-edit-btn" title="Retirer ce budget" (click)="removeBudget(row.category)">✕</button>
+                    }
+                  }
+                </span>
+              }
+            </div>
+            <div class="cat-budget-track">
+              <div class="cat-budget-fill" [class]="barClass(row.pct)" [style.width.%]="row.budget > 0 ? (row.pct > 100 ? 100 : row.pct) : 0"></div>
+            </div>
+            <div class="cat-budget-foot">
+              @if (row.budget > 0) {
+                <span [class.over]="row.remaining < 0">
+                  {{ row.remaining >= 0 ? 'Restant : ' + fmt(row.remaining) : 'Dépassement : ' + fmt(-row.remaining) }}
+                </span>
+                <span>{{ row.pct.toFixed(0) }}%</span>
+              } @else {
+                <span class="no-budget">Aucun budget défini pour cette catégorie</span>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

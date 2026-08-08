@@ -19,6 +19,21 @@ export interface Expense {
   date: string; // "YYYY-MM-DD"
   owner: Owner;
   cc: boolean; // chargé à la carte de crédit
+  recurringSourceId?: string | null; // dépense récurrente confirmée à l'origine de cette ligne
+}
+
+// Modèle de dépense récurrente ("Dépenses attendues ce mois-ci").
+// Option B du document de roadmap : suggestion à confirmer, jamais générée
+// automatiquement (pour éviter les doublons avec une saisie manuelle).
+export interface RecurringExpense {
+  id: string;
+  name: string;
+  amount: number;
+  category: string;
+  owner: Owner;
+  dayOfMonth: number; // 1-31, ajusté au dernier jour du mois si besoin
+  cc: boolean;
+  active: boolean;
 }
 
 export interface Income {
@@ -59,6 +74,9 @@ export interface Provision {
 
 // { owner: { "YYYY-MM": montant } }
 export type MonthlyAmountMap = Record<Owner, Record<string, number>>;
+
+// { owner: { "YYYY-MM": { catégorie: montant } } }
+export type CategoryBudgetMap = Record<Owner, Record<string, Record<string, number>>>;
 
 export interface BudgetState {
   expenses: Expense[];

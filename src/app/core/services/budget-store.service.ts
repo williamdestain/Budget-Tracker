@@ -4,17 +4,29 @@ import {
   Expense,
   Income,
   MonthlyAmountMap,
+  CategoryBudgetMap,
   Owner,
   OwnerOrGlobal,
   Provision,
+  RecurringExpense,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { ymOf, prevYM, monthLabel, fmtDate } from '../utils/date.utils';
+import { fmt } from '../utils/currency.utils';
 import {
   provisionUnit,
   countedExpenses,
   CountedExpense,
   lastDayOfMonthYM,
+  provisionNextHit,
+  provisionDaysUntilNext,
+  isHitMonth,
+  provisionPot,
+  effectiveProvisionAmount,
+  provisionDueAlert,
+  formatProvisionNextHit,
+  ProvisionDueAlert,
+  clampDayToMonth,
 } from '../utils/provision.utils';
 import {
   rowToExpense,
@@ -22,13 +34,20 @@ import {
   rowToIncome,
   incomeToRow,
   rowsToMonthlyMap,
+  rowsToCategoryBudgetMap,
   rowToProvision,
   provisionToRow,
   rowToProvisionAdjustment,
   adjustmentToRow,
+  rowToRecurringExpense,
+  recurringExpenseToRow,
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
+  return { moi: {}, madame: {} };
+}
+
+function emptyCategoryBudgetMap(): CategoryBudgetMap {
   return { moi: {}, madame: {} };
 }
 
@@ -41,6 +60,12 @@ export interface IncomeBarEntry {
   isRollover?: boolean;
 }
 
+export interface SmartAlert {
+  severity: 'critical' | 'warning' | 'info';
+  icon: string;
+  message: string;
+}
+
 // Store central : équivalent de l'ancien objet `state` + `renderAll()`.
 // Toute vue qui lit ces signals se met à jour automatiquement — pas besoin
 // d'appeler manuellement un "render" comme dans l'ancienne app.
@@ -49,7 +74,9 @@ export class BudgetStore {
   readonly expenses = signal<Expense[]>([]);
   readonly incomes = signal<Income[]>([]);
   readonly provisions = signal<Provision[]>([]);
+  readonly recurringExpenses = signal<RecurringExpense[]>([]);
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
+  readonly categoryBudgets = signal<CategoryBudgetMap>(emptyCategoryBudgetMap());
   readonly rollovers = signal<MonthlyAmountMap>(emptyMonthlyMap());
 
   readonly current = signal<string>(ymOf(new Date()));
@@ -65,22 +92,30 @@ export class BudgetStore {
       expensesRes,
       incomesRes,
       budgetsRes,
+      categoryBudgetsRes,
       rolloversRes,
       provisionsRes,
       adjustmentsRes,
+      recurringExpensesRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
       client.from('budgets').select('*'),
+      client.from('category_budgets').select('*'),
       client.from('rollovers').select('*'),
       client.from('provisions').select('*'),
       client.from('provision_adjustments').select('*'),
+      client.from('recurring_expenses').select('*').order('day_of_month'),
     ]);
 
     this.expenses.set((expensesRes.data ?? []).map(rowToExpense));
     this.incomes.set((incomesRes.data ?? []).map(rowToIncome));
     this.budgets.set(rowsToMonthlyMap(budgetsRes.data ?? []));
+    this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
     this.rollovers.set(rowsToMonthlyMap(rolloversRes.data ?? []));
+    this.recurringExpenses.set(
+      (recurringExpensesRes.data ?? []).map(rowToRecurringExpense),
+    );
     this.provisions.set(
       (provisionsRes.data ?? []).map((row: any) =>
         rowToProvision(row, adjustmentsRes.data ?? []),
@@ -195,6 +230,47 @@ export class BudgetStore {
       : this.provisions().filter((p) => p.owner === owner);
   });
 
+  // "À payer bientôt" : provisions dues ce mois-ci, en déficit, ou dont
+  // l'échéance tombe dans les 30 prochains jours — triées par date, la
+  // plus proche en premier. Donne une vue calendrier des gros paiements
+  // à venir, pour ne pas se faire surprendre.
+  readonly upcomingProvisions = computed(() => {
+    const ym = this.current();
+    const expenses = this.expenses();
+
+    return this.visibleProvisions()
+      .map((p) => {
+        const pot = provisionPot(p, ym, expenses);
+        const target = effectiveProvisionAmount(p, expenses);
+        const daysUntil = provisionDaysUntilNext(p, ym);
+        const dueThisMonth = isHitMonth(p, ym);
+        const dueAlert = provisionDueAlert(p, ym, expenses);
+
+        let status: 'ready' | 'accumulating' | 'deficit';
+        if (pot < 0) {
+          status = 'deficit';
+        } else if (pot >= target) {
+          status = 'ready';
+        } else {
+          status = 'accumulating';
+        }
+
+        return {
+          provision: p,
+          pot,
+          target,
+          missing: Math.max(target - pot, 0),
+          daysUntil,
+          dueThisMonth,
+          dueAlert,
+          status,
+          nextLabel: formatProvisionNextHit(p, ym),
+        };
+      })
+      .filter((row) => row.dueThisMonth || row.daysUntil <= 30 || row.status === 'deficit')
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+  });
+
   // Dépenses "comptées" pour le budget/solde/graphique : dépenses réelles des
   // catégories NON provisionnées + réserve synthétique par provision active.
   readonly countedExpensesList = computed<CountedExpense[]>(() =>
@@ -237,6 +313,227 @@ export class BudgetStore {
     };
   });
 
+  // Prévision de fin de mois : uniquement pour le mois réel en cours (pas
+  // les mois passés/futurs). Sépare les réserves de provisions (déjà
+  // comptées en entier pour le mois, pas à projeter) des dépenses réelles
+  // "variables" (celles-là seules sont extrapolées selon le rythme du mois),
+  // pour éviter qu'une grosse provision en début de mois fausse la
+  // projection (voir le point d'attention du document de roadmap).
+  readonly monthForecast = computed(() => {
+    const ym = this.current();
+    const today = new Date();
+    if (ym !== ymOf(today)) return null;
+
+    const dayOfMonth = today.getDate();
+    const daysInMonth = Number(lastDayOfMonthYM(ym).slice(-2));
+
+    const list = this.countedExpensesList();
+    const provisionPart = list
+      .filter((e) => e.provision)
+      .reduce((s, e) => s + e.amount, 0);
+    const variablePart = list
+      .filter((e) => !e.provision)
+      .reduce((s, e) => s + e.amount, 0);
+
+    const projectedVariable = (variablePart / dayOfMonth) * daysInMonth;
+    const projectedSpend = provisionPart + projectedVariable;
+
+    const { budget, rollover } = this.budgetSummary();
+    const projectedSoldeNet = budget - projectedSpend + rollover;
+
+    return {
+      dayOfMonth,
+      daysInMonth,
+      spentSoFar: provisionPart + variablePart,
+      projectedSpend,
+      projectedSoldeNet,
+    };
+  });
+
+  // Alertes intelligentes : agrège plusieurs signaux déjà calculés
+  // ailleurs (provisions, budget par catégorie, budget global, carte de
+  // crédit, solde net) en une petite liste courte, triée par gravité, sans
+  // répétition. Plafonnée à 5 pour éviter le bruit ("ne pas afficher trop
+  // d'alertes").
+  readonly smartAlerts = computed<SmartAlert[]>(() => {
+    const alerts: SmartAlert[] = [];
+    const ym = this.current();
+    const isCurrentMonth = ym === ymOf(new Date());
+    const summary = this.budgetSummary();
+
+    // Solde net négatif
+    if (summary.soldeNet < 0) {
+      alerts.push({
+        severity: 'critical',
+        icon: '🔴',
+        message: `Solde net négatif : ${fmt(summary.soldeNet)}.`,
+      });
+    }
+
+    // Provisions en retard ou bientôt dues avec cagnotte insuffisante
+    this.upcomingProvisions().forEach((row) => {
+      if (!row.dueAlert) return;
+      const when =
+        row.daysUntil < 0
+          ? `en retard de ${Math.abs(row.daysUntil)} j`
+          : row.daysUntil === 0
+            ? "aujourd'hui"
+            : row.daysUntil === 1
+              ? 'demain'
+              : `dans ${row.daysUntil} j`;
+      alerts.push({
+        severity: row.dueAlert.type === 'overdue' ? 'critical' : 'warning',
+        icon: row.dueAlert.type === 'overdue' ? '🔴' : '⏰',
+        message: `${row.provision.name} ${when} : il manque ${fmt(row.missing)}.`,
+      });
+    });
+
+    // Budget global (uniquement pour le mois réel en cours)
+    if (isCurrentMonth && summary.budget > 0) {
+      const pct = (summary.spent / summary.budget) * 100;
+      if (pct >= 100) {
+        alerts.push({
+          severity: 'critical',
+          icon: '🔴',
+          message: `Budget dépassé de ${fmt(summary.spent - summary.budget)}.`,
+        });
+      } else if (pct >= 80) {
+        alerts.push({
+          severity: 'warning',
+          icon: '⚠️',
+          message: `Budget global à ${pct.toFixed(0)} % avant la fin du mois.`,
+        });
+      }
+    }
+
+    // Catégories proches ou en dépassement de leur budget (les 2 pires)
+    this.categoryBudgetRows()
+      .filter((r) => r.budget > 0 && r.pct >= 80)
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 2)
+      .forEach((r) => {
+        if (r.pct >= 100) {
+          alerts.push({
+            severity: 'warning',
+            icon: '⚠️',
+            message: `${r.category} : dépassement de ${fmt(-r.remaining)}.`,
+          });
+        } else {
+          alerts.push({
+            severity: 'info',
+            icon: 'ℹ️',
+            message: `${r.category} à ${r.pct.toFixed(0)} % du budget.`,
+          });
+        }
+      });
+
+    // Carte de crédit élevée par rapport au budget
+    const ccTotal = this.visibleExpenses()
+      .filter(
+        (e) =>
+          e.cc && e.category !== 'Versement' && e.category !== 'Remboursement Carte Crédit',
+      )
+      .reduce((s, e) => s + e.amount, 0);
+    if (summary.budget > 0 && ccTotal / summary.budget >= 0.5) {
+      alerts.push({
+        severity: 'info',
+        icon: '💳',
+        message: `Carte de crédit : ${fmt(ccTotal)} chargés ce mois-ci (${((ccTotal / summary.budget) * 100).toFixed(0)} % du budget).`,
+      });
+    }
+
+    const order: Record<SmartAlert['severity'], number> = {
+      critical: 0,
+      warning: 1,
+      info: 2,
+    };
+    return alerts.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 5);
+  });
+
+  // Budget d'une catégorie pour un profil et un mois : hérite du mois
+  // précédent le plus récent qui en a un si rien n'est défini pour ce
+  // mois précis (même principe que prévu pour le budget mensuel).
+  effectiveCategoryBudget(owner: Owner, category: string, ym: string): number {
+    let cursor = ym;
+    for (let i = 0; i < 36; i++) {
+      const v = this.categoryBudgets()[owner]?.[cursor]?.[category];
+      if (v != null) return v;
+      cursor = prevYM(cursor);
+    }
+    return 0;
+  }
+
+  // Liste des catégories "actives" (budgétées et/ou dépensées) pour le
+  // profil/mois affichés, avec dépensé/budget/restant/%. Utilise
+  // countedExpensesList() (pas les dépenses brutes) pour rester cohérent
+  // avec les provisions, qui remplacent le paiement réel par une réserve.
+  readonly categoryBudgetRows = computed(() => {
+    const owner = this.activeOwner();
+    const ym = this.current();
+    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+
+    const spentByCategory: Record<string, number> = {};
+    this.countedExpensesList().forEach((e) => {
+      spentByCategory[e.category] = (spentByCategory[e.category] || 0) + e.amount;
+    });
+
+    const categories = new Set<string>(Object.keys(spentByCategory));
+    owners.forEach((o) => {
+      Object.values(this.categoryBudgets()[o] || {}).forEach((catMap) => {
+        Object.keys(catMap).forEach((c) => categories.add(c));
+      });
+    });
+
+    return Array.from(categories)
+      .map((category) => {
+        const budget = owners.reduce(
+          (s, o) => s + this.effectiveCategoryBudget(o, category, ym),
+          0,
+        );
+        const spent = spentByCategory[category] || 0;
+        const pct = budget > 0 ? (spent / budget) * 100 : spent > 0 ? 100 : 0;
+        return { category, budget, spent, remaining: budget - spent, pct };
+      })
+      .filter((r) => r.budget > 0 || r.spent > 0)
+      .sort((a, b) => b.spent - a.spent || b.budget - a.budget);
+  });
+
+  async setCategoryBudget(
+    owner: Owner,
+    ym: string,
+    category: string,
+    amount: number,
+  ): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('category_budgets')
+      .upsert({ owner, ym, category, amount }, { onConflict: 'owner,ym,category' });
+    if (error) throw error;
+    this.categoryBudgets.update((map) => {
+      const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
+      copy[owner] = { ...copy[owner], [ym]: { ...copy[owner][ym], [category]: amount } };
+      return copy;
+    });
+  }
+
+  async removeCategoryBudget(owner: Owner, ym: string, category: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('category_budgets')
+      .delete()
+      .eq('owner', owner)
+      .eq('ym', ym)
+      .eq('category', category);
+    if (error) throw error;
+    this.categoryBudgets.update((map) => {
+      const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
+      if (copy[owner][ym]) {
+        const catMap = { ...copy[owner][ym] };
+        delete catMap[category];
+        copy[owner] = { ...copy[owner], [ym]: catMap };
+      }
+      return copy;
+    });
+  }
+
   async addExpense(expense: Omit<Expense, 'id'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('expenses')
@@ -256,6 +553,132 @@ export class BudgetStore {
       .eq('id', id);
     if (error) throw error;
     this.expenses.update((list) => list.filter((e) => e.id !== id));
+  }
+
+  // Édite une dépense existante. Recalcule automatiquement tout ce qui en
+  // dépend (cagnotte des provisions, budget, solde net...) puisque ce sont
+  // des signals dérivés — et recale la provision correspondante si la
+  // dépense éditée tombe (toujours ou désormais) dans sa catégorie/profil,
+  // exactement comme à la création.
+  async updateExpense(
+    id: string,
+    changes: Partial<Omit<Expense, 'id'>>,
+  ): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (changes.amount !== undefined) row['amount'] = changes.amount;
+    if (changes.category !== undefined) row['category'] = changes.category;
+    if (changes.date !== undefined) row['date'] = changes.date;
+    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.cc !== undefined) row['cc'] = changes.cc;
+    if (changes.recurringSourceId !== undefined) {
+      row['recurring_source_id'] = changes.recurringSourceId;
+    }
+
+    const { data, error } = await this.supabase.client
+      .from('expenses')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    const updated = rowToExpense(data);
+    this.expenses.update((list) =>
+      list.map((e) => (e.id === id ? updated : e)),
+    );
+    await this.syncProvisionsFromExpense(updated);
+  }
+
+  readonly visibleRecurringExpenses = computed(() => {
+    const owner = this.activeOwner();
+    return owner === 'global'
+      ? this.recurringExpenses()
+      : this.recurringExpenses().filter((r) => r.owner === owner);
+  });
+
+  // "Dépenses attendues ce mois-ci" : modèles actifs qui n'ont pas encore
+  // été confirmés pour le mois affiché (aucune dépense réelle liée
+  // trouvée). Option B du document de roadmap : on suggère, on ne crée
+  // jamais automatiquement — évite les doublons avec une saisie manuelle.
+  readonly expectedThisMonth = computed(() => {
+    const ym = this.current();
+    const confirmedIds = new Set(
+      this.expenses()
+        .filter((e) => e.recurringSourceId && e.date.startsWith(ym))
+        .map((e) => e.recurringSourceId),
+    );
+    return this.visibleRecurringExpenses()
+      .filter((r) => r.active && !confirmedIds.has(r.id))
+      .map((r) => ({
+        template: r,
+        suggestedDate: clampDayToMonth(ym, r.dayOfMonth),
+      }));
+  });
+
+  async addRecurringExpense(r: Omit<RecurringExpense, 'id'>): Promise<void> {
+    const { data, error } = await this.supabase.client
+      .from('recurring_expenses')
+      .insert(recurringExpenseToRow(r))
+      .select()
+      .single();
+    if (error) throw error;
+    this.recurringExpenses.update((list) => [...list, rowToRecurringExpense(data)]);
+  }
+
+  async updateRecurringExpense(
+    id: string,
+    changes: Partial<Omit<RecurringExpense, 'id'>>,
+  ): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (changes.name !== undefined) row['name'] = changes.name;
+    if (changes.amount !== undefined) row['amount'] = changes.amount;
+    if (changes.category !== undefined) row['category'] = changes.category;
+    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
+    if (changes.cc !== undefined) row['cc'] = changes.cc;
+    if (changes.active !== undefined) row['active'] = changes.active;
+
+    const { data, error } = await this.supabase.client
+      .from('recurring_expenses')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    const updated = rowToRecurringExpense(data);
+    this.recurringExpenses.update((list) =>
+      list.map((r) => (r.id === id ? updated : r)),
+    );
+  }
+
+  async removeRecurringExpense(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('recurring_expenses')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    this.recurringExpenses.update((list) => list.filter((r) => r.id !== id));
+  }
+
+  // Confirme une dépense attendue : crée la dépense réelle correspondante,
+  // liée au modèle (pour qu'elle ne soit plus suggérée ce mois-ci).
+  // Réutilise addExpense() tel quel — création, recalage éventuel de
+  // provision, sauvegarde, tout est déjà géré là-bas.
+  async confirmRecurringExpense(
+    templateId: string,
+    amount: number,
+    date: string,
+    cc: boolean,
+  ): Promise<void> {
+    const template = this.recurringExpenses().find((r) => r.id === templateId);
+    if (!template) throw new Error('Dépense récurrente introuvable.');
+    await this.addExpense({
+      amount,
+      category: template.category,
+      date,
+      owner: template.owner,
+      cc,
+      recurringSourceId: template.id,
+    });
   }
 
   // Si une dépense réelle tombe dans la même catégorie/profil qu'une
@@ -486,12 +909,14 @@ export class BudgetStore {
       this.supabase.client.from('incomes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       this.supabase.client.from('provisions').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       this.supabase.client.from('budgets').delete().neq('owner', ''),
+      this.supabase.client.from('category_budgets').delete().neq('owner', ''),
       this.supabase.client.from('rollovers').delete().neq('owner', ''),
     ]);
     this.expenses.set([]);
     this.incomes.set([]);
     this.provisions.set([]);
     this.budgets.set(emptyMonthlyMap());
+    this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
   }
 
@@ -595,6 +1020,23 @@ export class BudgetStore {
       }
     }
 
+    if (data.categoryBudgets) {
+      const rows: any[] = [];
+      ownersList.forEach((o) => {
+        Object.entries(data.categoryBudgets[o] || {}).forEach(([ym, catMap]: [string, any]) => {
+          Object.entries(catMap || {}).forEach(([category, amount]) => {
+            rows.push({ owner: o, ym, category, amount });
+          });
+        });
+      });
+      if (rows.length) {
+        const { error } = await this.supabase.client
+          .from('category_budgets')
+          .insert(rows);
+        if (error) throw error;
+      }
+    }
+
     await this.loadAll();
   }
 
@@ -607,6 +1049,7 @@ export class BudgetStore {
       incomes: this.incomes(),
       provisions: this.provisions(),
       budgets: this.budgets(),
+      categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {

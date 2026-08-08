@@ -1,0 +1,50 @@
+@if (store.expectedThisMonth().length > 0) {
+  <div class="card expected-card">
+    <div class="card-title">🔁 Dépenses attendues ce mois-ci</div>
+    <p class="expected-hint">
+      Confirme celles qui sont passées — rien n'est ajouté tant que tu ne
+      cliques pas.
+    </p>
+    <div class="expected-list">
+      @for (item of store.expectedThisMonth(); track item.template.id) {
+        <div class="expected-row">
+          <span class="cat-dot" [style.background]="colorFor(item.template.category)"></span>
+          <span class="expected-name">
+            {{ item.template.name }}
+            <span class="expected-meta">{{ item.template.category }}</span>
+          </span>
+          <div class="input-money small">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              [ngModel]="amountFor(item.template.id, item.template.amount)"
+              (ngModelChange)="amounts[item.template.id] = $event"
+            />
+          </div>
+          <input
+            type="date"
+            class="expected-date"
+            [ngModel]="dateFor(item.template.id, item.suggestedDate)"
+            (ngModelChange)="dates[item.template.id] = $event"
+          />
+          <label class="check-label tiny" title="Carte de crédit">
+            <input
+              type="checkbox"
+              [ngModel]="ccFor(item.template.id)"
+              (ngModelChange)="ccs[item.template.id] = $event"
+            />
+            <span>💳</span>
+          </label>
+          <button
+            class="btn-primary confirm-btn"
+            [disabled]="confirming().has(item.template.id)"
+            (click)="confirm(item.template.id, item.template.amount, item.suggestedDate)"
+          >
+            ✓ Confirmer
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+}

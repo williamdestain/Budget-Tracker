@@ -90,6 +90,64 @@
   background: var(--red-soft);
   color: var(--red);
 }
+.edit {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: #cbd2dd;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+  transition: all 0.12s ease;
+  flex-shrink: 0;
+}
+.edit:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.expense-edit-form {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr 0.9fr 0.7fr auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: #f4f7ff;
+}
+.expense-edit-form .field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.expense-edit-form .check-label {
+  height: 42px;
+}
+.edit-actions {
+  display: flex;
+  gap: 6px;
+}
+.edit-actions .btn-primary {
+  height: 42px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .expense-edit-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .edit-actions {
+    grid-column: 1 / -1;
+  }
+  .edit-actions .btn-primary,
+  .edit-actions .seg {
+    flex: 1;
+  }
+}
 .empty {
   text-align: center;
   padding: 40px 20px;

@@ -12,9 +12,15 @@ import { ExpenseForm } from '../expenses/expense-form/expense-form';
 import { ExpenseList } from '../expenses/expense-list/expense-list';
 import { ProvisionForm } from '../provisions/provision-form/provision-form';
 import { ProvisionList } from '../provisions/provision-list/provision-list';
+import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
 import { BudgetProgress } from '../budget/budget-progress/budget-progress';
 import { SpendingChart } from '../budget/spending-chart/spending-chart';
+import { CategoryBudgets } from '../budget/category-budgets/category-budgets';
+import { MonthForecast } from '../budget/month-forecast/month-forecast';
+import { SmartAlerts } from './smart-alerts/smart-alerts';
+import { ExpectedThisMonth } from '../recurring-expenses/expected-this-month/expected-this-month';
+import { RecurringExpensesManage } from '../recurring-expenses/recurring-expenses-manage/recurring-expenses-manage';
 import { DataManagement } from '../data-management/data-management/data-management';
 
 @Component({
@@ -26,9 +32,15 @@ import { DataManagement } from '../data-management/data-management/data-manageme
     ExpenseList,
     ProvisionForm,
     ProvisionList,
+    UpcomingProvisions,
     CreditCard,
     BudgetProgress,
     SpendingChart,
+    CategoryBudgets,
+    MonthForecast,
+    SmartAlerts,
+    ExpectedThisMonth,
+    RecurringExpensesManage,
     DataManagement,
   ],
   templateUrl: './dashboard.html',

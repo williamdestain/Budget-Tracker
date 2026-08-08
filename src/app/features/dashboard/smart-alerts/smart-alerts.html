@@ -1,0 +1,13 @@
+@if (store.smartAlerts().length > 0) {
+  <div class="card alerts-card">
+    <div class="card-title">👀 À surveiller</div>
+    <div class="alerts-list">
+      @for (a of store.smartAlerts(); track a.message) {
+        <div class="alert-row" [class]="a.severity">
+          <span class="alert-icon">{{ a.icon }}</span>
+          <span class="alert-msg">{{ a.message }}</span>
+        </div>
+      }
+    </div>
+  </div>
+}

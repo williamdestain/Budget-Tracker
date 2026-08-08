@@ -1,18 +1,30 @@
-import { Component, computed } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP, OWNERS, OWNERS_SHORT } from '../../../core/utils/categories';
+import { COLOR_MAP, OWNERS, OWNERS_SHORT, CATEGORIES } from '../../../core/utils/categories';
 import { fmtDate } from '../../../core/utils/date.utils';
 import { fmt } from '../../../core/utils/currency.utils';
-import { Owner } from '../../../core/models/budget.models';
+import { Expense, Owner } from '../../../core/models/budget.models';
 import { CountedExpense } from '../../../core/utils/provision.utils';
 
 @Component({
   selector: 'app-expense-list',
-  imports: [],
+  imports: [FormsModule],
   templateUrl: './expense-list.html',
   styleUrl: './expense-list.scss',
 })
 export class ExpenseList {
+  readonly categories = CATEGORIES.filter((c) => c !== 'Revenu');
+
+  readonly editingId = signal<string | null>(null);
+  readonly savingEdit = signal(false);
+
+  editAmount: number | null = null;
+  editCategory = '';
+  editDate = '';
+  editOwner: Owner = 'moi';
+  editCc = false;
+
   constructor(public store: BudgetStore) {}
 
   // Dépenses réelles + réserves synthétiques des provisions (même logique
@@ -69,5 +81,40 @@ export class ExpenseList {
 
   remove(id: string): void {
     this.store.removeExpense(id);
+  }
+
+  // Édition : les réserves synthétiques de provision (id "prov-...") ne
+  // sont jamais éditables — elles n'existent pas vraiment en base, ce sont
+  // des lignes calculées. On ne propose donc le bouton crayon que sur les
+  // vraies dépenses (le template s'en charge déjà en excluant cette branche).
+  startEdit(e: CountedExpense): void {
+    this.editingId.set(e.id);
+    this.editAmount = e.amount;
+    this.editCategory = e.category;
+    this.editDate = e.date;
+    this.editOwner = e.owner;
+    this.editCc = e.cc;
+  }
+
+  cancelEdit(): void {
+    this.editingId.set(null);
+  }
+
+  async saveEdit(id: string): Promise<void> {
+    if (!this.editAmount || this.editAmount <= 0 || !this.editDate) return;
+    this.savingEdit.set(true);
+    try {
+      const changes: Partial<Omit<Expense, 'id'>> = {
+        amount: this.editAmount,
+        category: this.editCategory,
+        date: this.editDate,
+        owner: this.editOwner,
+        cc: this.editCc,
+      };
+      await this.store.updateExpense(id, changes);
+      this.editingId.set(null);
+    } finally {
+      this.savingEdit.set(false);
+    }
   }
 }

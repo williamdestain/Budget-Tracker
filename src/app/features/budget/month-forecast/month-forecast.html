@@ -1,0 +1,21 @@
+@if (store.monthForecast(); as fc) {
+  <div class="card forecast-card" [class.over]="!positive">
+    <div class="forecast-icon">{{ positive ? '📈' : '⚠️' }}</div>
+    <div class="forecast-body">
+      <div class="forecast-main">
+        @if (positive) {
+          À ce rythme, il resterait environ <strong>{{ fmt(fc.projectedSoldeNet) }}</strong>
+          à la fin du mois.
+        } @else {
+          Risque de dépassement de <strong>{{ fmt(-fc.projectedSoldeNet) }}</strong> à la
+          fin du mois, à ce rythme.
+        }
+      </div>
+      <div class="forecast-sub">
+        Basé sur {{ fmt(fc.spentSoFar) }} dépensés au jour {{ fc.dayOfMonth }}/{{ fc.daysInMonth }}
+        — projection : {{ fmt(fc.projectedSpend) }} d'ici la fin du mois. Les grosses
+        dépenses ponctuelles peuvent fausser l'estimation.
+      </div>
+    </div>
+  </div>
+}

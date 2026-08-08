@@ -29,6 +29,15 @@ export function lastDayOfMonthYM(ym: string): string {
   return isoOfDate(new Date(y, m, 0));
 }
 
+// Construit une date "YYYY-MM-DD" pour un jour donné dans un mois, en
+// ramenant au dernier jour du mois si celui-ci en a moins (ex. jour 31
+// dans un mois de 30 jours, ou le 29/30/31 février).
+export function clampDayToMonth(ym: string, day: number): string {
+  const lastDay = Number(lastDayOfMonthYM(ym).slice(-2));
+  const clamped = Math.min(Math.max(day, 1), lastDay);
+  return `${ym}-${String(clamped).padStart(2, '0')}`;
+}
+
 export function provisionStart(p: Provision): string {
   if (provisionUnit(p) === 'days') {
     return p.startDate || p.startYM + '-01';
@@ -244,7 +253,7 @@ function provisionNextHitAsDate(p: Provision, currentYM: string): string {
   return provisionUnit(p) === 'days' ? hit : hit + '-01';
 }
 
-function provisionDaysUntilNext(p: Provision, currentYM: string): number {
+export function provisionDaysUntilNext(p: Provision, currentYM: string): number {
   const ref = provisionReferenceDate(currentYM);
   const next = provisionNextHitAsDate(p, currentYM);
   return Math.floor(

@@ -8,6 +8,22 @@
 
 create extension if not exists "uuid-ossp";
 
+-- Modèles de dépenses récurrentes ("Dépenses attendues ce mois-ci").
+-- Option B du document de roadmap : on suggère, l'utilisateur confirme —
+-- pas de création automatique, pour éviter les doublons avec une saisie
+-- manuelle. Créée avant "expenses" car cette dernière la référence.
+create table if not exists recurring_expenses (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  amount numeric(12,2) not null,
+  category text not null,
+  owner text not null check (owner in ('moi','madame')),
+  day_of_month integer not null check (day_of_month between 1 and 31),
+  cc boolean not null default false,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 -- Dépenses
 create table if not exists expenses (
   id uuid primary key default uuid_generate_v4(),
@@ -16,6 +32,7 @@ create table if not exists expenses (
   date date not null,
   owner text not null check (owner in ('moi','madame')),
   cc boolean not null default false,
+  recurring_source_id uuid references recurring_expenses(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -66,6 +83,17 @@ create table if not exists budgets (
   primary key (owner, ym)
 );
 
+-- Budget par catégorie, profil et mois ("Budget par catégorie").
+-- Un mois sans valeur explicite hérite du montant du mois précédent le plus
+-- récent qui en a une (géré côté application, pas en SQL).
+create table if not exists category_budgets (
+  owner text not null check (owner in ('moi','madame')),
+  ym text not null, -- "YYYY-MM"
+  category text not null,
+  amount numeric(12,2) not null,
+  primary key (owner, ym, category)
+);
+
 -- Report de solde (clôture du mois) par profil et par mois.
 -- Le report "Global" n'est jamais stocké : toujours recalculé comme
 -- moi[ym] + madame[ym] côté application, comme dans l'ancienne app.
@@ -79,13 +107,17 @@ create table if not exists rollovers (
 -- Row Level Security : accès réservé aux utilisateurs connectés
 -- (compte partagé unique pour Moi + Madame).
 alter table expenses enable row level security;
+alter table recurring_expenses enable row level security;
 alter table incomes enable row level security;
 alter table provisions enable row level security;
 alter table provision_adjustments enable row level security;
 alter table budgets enable row level security;
+alter table category_budgets enable row level security;
 alter table rollovers enable row level security;
 
 create policy "authenticated_all_expenses" on expenses
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_recurring_expenses" on recurring_expenses
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_incomes" on incomes
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
@@ -94,6 +126,8 @@ create policy "authenticated_all_provisions" on provisions
 create policy "authenticated_all_provision_adjustments" on provision_adjustments
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_budgets" on budgets
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_category_budgets" on category_budgets
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_rollovers" on rollovers
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

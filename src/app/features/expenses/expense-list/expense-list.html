@@ -16,8 +16,47 @@
     </div>
   } @else {
     @for (e of mergedList(); track e.id) {
-      @if (e.provision) {
-        <!-- Réserve synthétique de provision (ou ajout au fonds) -->
+      @if (editingId() === e.id) {
+        <!-- Formulaire d'édition inline -->
+        <form class="expense-edit-form" (ngSubmit)="saveEdit(e.id)">
+          <div class="field">
+            <label>Montant</label>
+            <div class="input-money">
+              <input type="number" min="0" step="0.01" name="editAmount" [(ngModel)]="editAmount" required />
+            </div>
+          </div>
+          <div class="field field-category">
+            <label>Catégorie</label>
+            <select name="editCategory" [(ngModel)]="editCategory">
+              @for (c of categories; track c) {
+                <option [value]="c">{{ c }}</option>
+              }
+            </select>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" name="editDate" [(ngModel)]="editDate" required />
+          </div>
+          <div class="field">
+            <label>Profil</label>
+            <select name="editOwner" [(ngModel)]="editOwner">
+              <option value="moi">Moi</option>
+              <option value="madame">Madame</option>
+            </select>
+          </div>
+          <label class="check-label">
+            <input type="checkbox" name="editCc" [(ngModel)]="editCc" />
+            <span>💳</span>
+          </label>
+          <div class="field-actions edit-actions">
+            <button type="button" class="seg" (click)="cancelEdit()">Annuler</button>
+            <button type="submit" class="btn-primary" [disabled]="savingEdit()">
+              {{ savingEdit() ? 'Enregistrement…' : 'Enregistrer' }}
+            </button>
+          </div>
+        </form>
+      } @else if (e.provision) {
+        <!-- Réserve synthétique de provision (ou ajout au fonds) : non éditable -->
         <div class="expense prov-reserve">
           <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
           @if (showBadge) {
@@ -48,6 +87,7 @@
           <span class="cat-amt transfer-amt">
             −{{ fmt(e.amount) }} <span class="transfer-plus">+{{ fmt(e.amount) }}</span>
           </span>
+          <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
           <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
         </div>
       } @else if (e.category === 'Versement') {
@@ -62,6 +102,7 @@
             <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
           </span>
           <span class="cat-amt">{{ fmt(e.amount) }}</span>
+          <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
           <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
         </div>
       } @else {
@@ -79,6 +120,7 @@
             <span class="cc-tag">💳</span>
           }
           <span class="cat-amt">{{ fmt(e.amount) }}</span>
+          <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
           <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
         </div>
       }
