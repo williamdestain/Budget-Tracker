@@ -63,6 +63,15 @@ export class ExpenseList {
     return `Aucune dépense pour ${owner === 'global' ? 'le foyer' : OWNERS[owner]} sur cette période.`;
   }
 
+  get title(): string {
+    const owner = this.store.activeOwner();
+    return 'Dépenses de ' + (owner === 'global' ? 'foyer' : OWNERS[owner]);
+  }
+
+  get provisionEntryCount(): number {
+    return this.store.countedExpensesList().filter((e) => e.provision).length;
+  }
+
   reserveLabel(e: CountedExpense): string {
     return e.provisionAdjustment ? 'ajout au fonds' : 'réserve';
   }
@@ -81,6 +90,36 @@ export class ExpenseList {
 
   remove(id: string): void {
     this.store.removeExpense(id);
+  }
+
+  // Un versement est "réparti" s'il a des ajouts de provisions liés (créés
+  // via "🤝 Répartir un versement"). Dans ce cas, on remplace le
+  // supprimer/modifier classique par "Annuler la répartition" pour éviter
+  // de laisser des ajouts orphelins sur les provisions.
+  isSplitVersement(e: CountedExpense): boolean {
+    return this.store
+      .provisions()
+      .some((p) => p.adjustments.some((a) => a.versementExpenseId === e.id));
+  }
+
+  cancelSplit(e: CountedExpense): void {
+    if (
+      !confirm(
+        `Annuler cette répartition de ${fmt(e.amount)} ? La dépense "Versement" et tous les ajouts de provisions liés seront supprimés.`,
+      )
+    ) {
+      return;
+    }
+    this.store.cancelVersementSplit(e.id);
+  }
+
+  // Supprime un ajout manuel sur une provision (le bouton ✕ dans la liste
+  // pour les lignes "ajout provision"). Contrairement aux dépenses
+  // normales, ces lignes ne sont pas dans la table expenses : il faut
+  // passer par removeProvisionAdjustment avec l'id de la provision.
+  removeProvisionAdjustment(e: CountedExpense): void {
+    if (!e.provisionId || !e.adjustmentId) return;
+    this.store.removeProvisionAdjustment(e.provisionId, e.adjustmentId);
   }
 
   // Édition : les réserves synthétiques de provision (id "prov-...") ne

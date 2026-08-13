@@ -21,7 +21,7 @@
 </button>
 
 @if (open()) {
-  <div class="reset-overlay open" (click)="$event.target === $event.currentTarget && close()">
+  <div class="reset-overlay open" (click)="onOverlayClick($event)">
     <div class="reset-modal">
       @if (step() === 'choice') {
         <div class="reset-modal-header">

@@ -62,6 +62,7 @@ create table if not exists provisions (
   category text not null,
   owner text not null check (owner in ('moi','madame')),
   auto_recalibrate boolean not null default true,
+  allocation_percent numeric(5,2) not null default 0, -- part (%) utilisée pour préremplir la répartition d'un versement
   rolling_count integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -72,7 +73,8 @@ create table if not exists provision_adjustments (
   provision_id uuid not null references provisions(id) on delete cascade,
   amount numeric(12,2) not null,
   date date not null,
-  note text not null default ''
+  note text not null default '',
+  versement_expense_id uuid references expenses(id) on delete cascade
 );
 
 -- Budget manuel par profil et par mois : { owner: { "YYYY-MM": montant } }

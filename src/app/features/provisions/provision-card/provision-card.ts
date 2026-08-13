@@ -28,6 +28,9 @@ export class ProvisionCard {
   adjustDate = isoOfDate(new Date());
   adjustNote = '';
 
+  readonly percentOpen = signal(false);
+  editPercent: number | null = null;
+
   constructor(public store: BudgetStore) {}
 
   readonly stats = computed(() => {
@@ -35,7 +38,6 @@ export class ProvisionCard {
     const expenses = this.store.expenses();
     const ym = this.store.current();
 
-    const monthly = PU.provisionReserveForMonth(p, ym, expenses);
     const pot = PU.provisionPot(p, ym, expenses);
     const nextLabel = PU.formatProvisionNextHit(p, ym);
     const isHit = PU.isHitMonth(p, ym);
@@ -44,7 +46,7 @@ export class ProvisionCard {
       PU.provisionUnit(p) === 'days' ? 'Dernier prélèvement' : 'Début';
     const nextFieldLabel =
       PU.provisionUnit(p) === 'days'
-        ? 'Prochain prélèvement'
+        ? 'Prochaine échéance'
         : 'Prochaine échéance';
     const dueAlert = PU.provisionDueAlert(p, ym, expenses);
     const targetForNext = PU.effectiveProvisionAmount(p, expenses);
@@ -57,28 +59,31 @@ export class ProvisionCard {
     if (pot < 0) {
       statusClass = 'deficit';
       barClass = 'deficit';
-      statusText = `⚠️ Déficit de ${fmt(Math.abs(pot))} (sous-provisionnée)`;
+      statusText = `⚠️ Déficit de ${fmt(Math.abs(pot))} (payé avant d'avoir assez économisé)`;
     } else if (isHit && spent < targetForNext) {
       statusClass = 'warn';
       barClass = 'partial';
-      statusText = `Prélèvement ce mois — ${fmt(targetForNext - spent)} restant à payer`;
+      statusText = `Échéance ce mois — ${fmt(targetForNext - spent)} restant à payer`;
     } else if (isHit && spent >= targetForNext) {
       statusClass = 'ok';
       barClass = 'full';
-      statusText = `✓ Prélèvement couvert ce mois`;
+      statusText = `✓ Échéance couverte ce mois`;
     } else if (pot >= targetForNext) {
       statusClass = 'ok';
       barClass = 'full';
-      statusText = `Prêt ✓ (prochain prélèvement couvert)`;
+      statusText = `Prêt ✓ (objectif atteint)`;
     } else {
       statusClass = 'warn';
       barClass = 'partial';
-      statusText = `En accumulation — manque ${fmt(targetForNext - pot)} pour le prochain`;
+      statusText = `En accumulation — manque ${fmt(targetForNext - pot)} pour atteindre l'objectif`;
     }
 
-    const fillPct = Math.min((Math.max(pot, 0) / targetForNext) * 100, 100);
-    const reserveLabel =
-      PU.provisionUnit(p) === 'days' ? `${fmt(monthly)} ce mois` : `${fmt(monthly)}/mois`;
+    const fillPct =
+      targetForNext > 0
+        ? Math.min((Math.max(pot, 0) / targetForNext) * 100, 100)
+        : pot >= 0
+          ? 100
+          : 0;
     const metaLine = PU.provisionMetaLine(p, expenses);
     const rollingLabel = PU.provisionRollingLabel(p, expenses);
 
@@ -93,7 +98,6 @@ export class ProvisionCard {
     );
 
     return {
-      monthly,
       pot,
       nextLabel,
       isHit,
@@ -107,7 +111,6 @@ export class ProvisionCard {
       barClass,
       statusText,
       fillPct,
-      reserveLabel,
       metaLine,
       rollingLabel,
       adjustmentsUpTo,
@@ -186,5 +189,26 @@ export class ProvisionCard {
 
   remove(): void {
     this.store.removeProvision(this.provision().id);
+  }
+
+  startEditPercent(): void {
+    this.editPercent = this.provision().allocationPercent || null;
+    this.percentOpen.set(true);
+  }
+
+  cancelEditPercent(): void {
+    this.percentOpen.set(false);
+  }
+
+  async saveEditPercent(): Promise<void> {
+    this.saving.set(true);
+    try {
+      await this.store.updateProvision(this.provision().id, {
+        allocationPercent: this.editPercent || 0,
+      });
+      this.percentOpen.set(false);
+    } finally {
+      this.saving.set(false);
+    }
   }
 }

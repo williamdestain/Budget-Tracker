@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner, RecurringInterval } from '../../../core/models/budget.models';
@@ -32,8 +32,13 @@ export class IncomeForm {
   readonly saving = signal(false);
 
   constructor(private store: BudgetStore) {
-    const active = this.store.activeOwner();
-    if (active === 'moi' || active === 'madame') this.owner = active;
+    // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame),
+    // y compris si on change d'onglet après l'ouverture de la page — pas
+    // seulement au premier chargement.
+    effect(() => {
+      const active = this.store.activeOwner();
+      if (active === 'moi' || active === 'madame') this.owner = active;
+    });
   }
 
   async submit(): Promise<void> {

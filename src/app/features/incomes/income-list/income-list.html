@@ -1,0 +1,30 @@
+<div class="card income-list-card">
+  <div class="card-title">📊 Entrées du mois</div>
+
+  @if (store.visibleIncomes().length === 0) {
+    <div class="empty">
+      <div class="big">📭</div>
+      Aucun revenu ce mois.
+    </div>
+  } @else {
+    <div class="income-list">
+      @for (i of store.visibleIncomes(); track i.id) {
+        <div class="income-item">
+          <div class="income-info">
+            <div class="income-type">
+              {{ typeLabel(i.type) }} • {{ fmtDate(i.date) }} • {{ ownerBadge(i.owner) }}
+            </div>
+            @if (i.note) {
+              <div class="income-note">{{ i.note }}</div>
+            }
+          </div>
+          @if (i.recurring) {
+            <span class="income-recurring">{{ intervalLabel(i.recurringInterval) }}</span>
+          }
+          <span class="income-amount">{{ fmt(i.amount) }}</span>
+          <button class="del" title="Supprimer" (click)="remove(i.id)">✕</button>
+        </div>
+      }
+    </div>
+  }
+</div>

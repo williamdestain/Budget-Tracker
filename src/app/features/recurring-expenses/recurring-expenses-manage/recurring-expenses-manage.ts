@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { CATEGORIES, COLOR_MAP } from '../../../core/utils/categories';
@@ -23,7 +23,13 @@ export class RecurringExpensesManage {
   owner: Owner = 'moi';
   cc = false;
 
-  constructor(public store: BudgetStore) {}
+  constructor(public store: BudgetStore) {
+    // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame).
+    effect(() => {
+      const active = this.store.activeOwner();
+      if (active === 'moi' || active === 'madame') this.owner = active;
+    });
+  }
 
   colorFor(category: string): string {
     return COLOR_MAP[category] || '#94a3b8';

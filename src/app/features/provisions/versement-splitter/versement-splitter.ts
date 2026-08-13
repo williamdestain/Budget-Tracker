@@ -10,7 +10,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-type SplitMethod = 'equal' | 'proportional' | 'manual';
+type SplitMethod = 'percent' | 'equal' | 'proportional' | 'manual';
 
 @Component({
   selector: 'app-versement-splitter',
@@ -24,9 +24,10 @@ export class VersementSplitter {
 
   totalAmount: number | null = null;
   date = isoOfDate(new Date());
-  splitMethod: SplitMethod = 'equal';
+  splitMethod: SplitMethod = 'percent';
   selected = new Set<string>();
   manualAmounts: Record<string, number | undefined> = {};
+  keepRemainderInBudget = false;
 
   constructor(public store: BudgetStore) {}
 
@@ -38,8 +39,9 @@ export class VersementSplitter {
     return this.store.activeOwner() === 'moi' ? 'Madame' : 'Moi';
   }
 
-  // Provisions du profil actif qui ont encore besoin d'argent — seules
-  // candidates pertinentes pour répartir un versement reçu.
+  // Provisions candidates : celles qui manquent encore d'argent, ET celles
+  // qui ont une part (%) définie même si déjà couvertes pour l'instant (pour
+  // que la répartition automatique reste disponible mois après mois).
   readonly candidates = computed(() => {
     const ym = this.store.current();
     const expenses = this.store.expenses();
@@ -51,11 +53,19 @@ export class VersementSplitter {
       .map((p) => {
         const pot = provisionPot(p, ym, expenses);
         const target = effectiveProvisionAmount(p, expenses);
-        return { provision: p, missing: Math.max(target - pot, 0) };
+        return {
+          provision: p,
+          missing: Math.max(target - pot, 0),
+          percent: p.allocationPercent || 0,
+        };
       })
-      .filter((row) => row.missing > 0)
-      .sort((a, b) => b.missing - a.missing);
+      .filter((row) => row.missing > 0 || row.percent > 0)
+      .sort((a, b) => b.percent - a.percent || b.missing - a.missing);
   });
+
+  get hasPercentDefined(): boolean {
+    return this.candidates().some((c) => c.percent > 0);
+  }
 
   colorFor(category: string): string {
     return COLOR_MAP[category] || '#94a3b8';
@@ -69,9 +79,12 @@ export class VersementSplitter {
     this.open.update((v) => !v);
     if (this.open()) {
       this.totalAmount = null;
-      this.splitMethod = 'equal';
       this.manualAmounts = {};
+      this.keepRemainderInBudget = false;
       this.selected = new Set(this.candidates().map((c) => c.provision.id));
+      // Si au moins une provision a une part définie, on part de ce mode
+      // (le plus pratique au quotidien) ; sinon, égal par défaut.
+      this.splitMethod = this.hasPercentDefined ? 'percent' : 'equal';
     }
   }
 
@@ -94,15 +107,25 @@ export class VersementSplitter {
     return this.selectedRows.reduce((s, r) => s + r.missing, 0);
   }
 
+  get totalPercentSelected(): number {
+    return this.selectedRows.reduce((s, r) => s + r.percent, 0);
+  }
+
   // Montant attribué à une provision selon la méthode choisie (avant
   // ajustement d'arrondi final).
-  allocationFor(provisionId: string, missing: number): number {
+  allocationFor(provisionId: string, missing: number, percent: number): number {
     const rows = this.selectedRows;
     if (rows.length === 0) return 0;
     const amount = this.totalAmount ?? 0;
 
     if (this.splitMethod === 'manual') {
       return this.manualAmounts[provisionId] ?? 0;
+    }
+    if (this.splitMethod === 'percent') {
+      // Repli sur une répartition égale si aucune des provisions
+      // sélectionnées n'a de part définie.
+      if (this.totalPercentSelected <= 0) return amount / rows.length;
+      return (percent / this.totalPercentSelected) * amount;
     }
     if (this.splitMethod === 'equal') {
       return amount / rows.length;
@@ -114,7 +137,7 @@ export class VersementSplitter {
 
   get allocatedSum(): number {
     return this.selectedRows.reduce(
-      (s, r) => s + this.allocationFor(r.provision.id, r.missing),
+      (s, r) => s + this.allocationFor(r.provision.id, r.missing, r.percent),
       0,
     );
   }
@@ -124,13 +147,17 @@ export class VersementSplitter {
   }
 
   get canSubmit(): boolean {
-    return (
-      !!this.totalAmount &&
-      this.totalAmount > 0 &&
-      !!this.date &&
-      this.selectedRows.length > 0 &&
-      Math.abs(this.remaining) < 0.01
-    );
+    if (!this.totalAmount || this.totalAmount <= 0 || !this.date || this.selectedRows.length === 0) {
+      return false;
+    }
+    // Dépassement (plus assigné que le montant reçu) : jamais permis.
+    if (this.remaining < -0.01) return false;
+    // Reste non assigné : permis seulement si l'option est cochée — il
+    // reste alors simplement dans le budget disponible (le versement au
+    // complet est déjà compté comme revenu, seule la part assignée aux
+    // provisions est mise de côté).
+    if (this.remaining > 0.01 && !this.keepRemainderInBudget) return false;
+    return true;
   }
 
   async submit(): Promise<void> {
@@ -143,7 +170,7 @@ export class VersementSplitter {
       // écarts de centimes dus aux arrondis).
       const allocations = rows.map((r) => ({
         provisionId: r.provision.id,
-        amount: round2(this.allocationFor(r.provision.id, r.missing)),
+        amount: round2(this.allocationFor(r.provision.id, r.missing, r.percent)),
       }));
       const sum = allocations.reduce((s, a) => s + a.amount, 0);
       const drift = round2(this.totalAmount - sum);

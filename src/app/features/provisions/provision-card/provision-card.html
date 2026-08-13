@@ -17,8 +17,27 @@
         {{ provision().name }}
       </div>
       <div class="prov-meta">
-        {{ stats().reserveLabel }} · {{ stats().metaLine }}{{ stats().rollingLabel }} ·
+        {{ stats().metaLine }}{{ stats().rollingLabel }} ·
         catégorie <strong>{{ provision().category }}</strong>
+        ·
+        @if (percentOpen()) {
+          <span class="prov-percent-edit">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              [(ngModel)]="editPercent"
+              (keyup.enter)="saveEditPercent()"
+            />%
+            <button class="prov-percent-btn" (click)="saveEditPercent()" [disabled]="saving()">✓</button>
+            <button class="prov-percent-btn" (click)="cancelEditPercent()">✕</button>
+          </span>
+        } @else {
+          <span class="prov-percent" (click)="startEditPercent()" title="Modifier la part utilisée lors d'un versement">
+            {{ provision().allocationPercent > 0 ? provision().allocationPercent + '% d\'un versement ✏️' : 'Définir une part de versement ✏️' }}
+          </span>
+        }
       </div>
     </div>
     <div class="prov-actions">

@@ -21,14 +21,15 @@
         </div>
 
         <div class="field">
-          <label for="prov-amount">Montant du prélèvement</label>
+          <label for="prov-amount">Montant à économiser</label>
           <div class="input-money">
-            <input id="prov-amount" type="number" min="0" step="0.01" name="amount" [(ngModel)]="amount" placeholder="180" required />
+            <input id="prov-amount" type="number" min="0" step="0.01" name="amount" [(ngModel)]="amount" placeholder="Ex. 900" />
           </div>
+          <span class="prov-field-hint">Rien n'est prélevé automatiquement : tu alimentes toi-même la provision avec le bouton +$ après sa création, jusqu'à atteindre ce montant.</span>
         </div>
 
         <div class="field">
-          <label for="prov-unit">Type de prélèvement</label>
+          <label for="prov-unit">Type d'échéance</label>
           <select id="prov-unit" name="intervalUnit" [(ngModel)]="intervalUnit">
             <option value="months">Tous les N mois</option>
             <option value="days">Tous les ~N jours</option>
@@ -36,7 +37,7 @@
         </div>
 
         <div class="field">
-          <label for="prov-every">{{ intervalUnit === 'days' ? 'Intervalle (jours)' : 'Intervalle (mois)' }}</label>
+          <label for="prov-every">{{ intervalUnit === 'days' ? "Dans combien de jours l'avoir" : "Dans combien de mois l'avoir" }}</label>
           <input id="prov-every" type="number" min="1" step="1" name="everyN" [(ngModel)]="everyN" placeholder="3" required />
         </div>
 
@@ -47,7 +48,7 @@
           </div>
         } @else {
           <div class="field">
-            <label for="prov-start-date">Dernier prélèvement</label>
+            <label for="prov-start-date">Départ du cycle</label>
             <input id="prov-start-date" type="date" name="startDate" [(ngModel)]="startDate" required />
           </div>
         }
@@ -55,27 +56,6 @@
         <div class="field-actions">
           <button type="submit" class="btn-primary" [disabled]="saving()">Créer</button>
         </div>
-      </div>
-
-      <div class="prov-form-options">
-        <label class="prov-check">
-          <input type="checkbox" name="autoRecalibrate" [(ngModel)]="autoRecalibrate" />
-          Recaler au paiement saisi
-        </label>
-        <label class="prov-check">
-          <input type="checkbox" name="rollingAvg" [(ngModel)]="rollingAvg" />
-          Montant =
-        </label>
-        <input
-          type="number"
-          min="2"
-          max="24"
-          name="rollingCount"
-          [(ngModel)]="rollingCount"
-          [disabled]="!rollingAvg"
-          title="Nombre de factures pour la moyenne"
-        />
-        <span class="prov-rolling-hint">dernières factures (moyenne)</span>
       </div>
     </form>
   }

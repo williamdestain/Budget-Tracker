@@ -25,9 +25,6 @@ export class ProvisionForm {
   everyN: number | null = null;
   startYM = ymOf(new Date());
   startDate = isoOfDate(new Date());
-  autoRecalibrate = true;
-  rollingAvg = false;
-  rollingCount = 4;
 
   constructor(private store: BudgetStore) {}
 
@@ -39,13 +36,11 @@ export class ProvisionForm {
     if (
       !this.name ||
       !this.category ||
-      !this.amount ||
-      this.amount <= 0 ||
+      (this.amount !== null && this.amount < 0) ||
       !this.everyN ||
       this.everyN <= 0 ||
       (this.intervalUnit === 'months' && !this.startYM) ||
-      (this.intervalUnit === 'days' && !this.startDate) ||
-      (this.rollingAvg && this.rollingCount < 2)
+      (this.intervalUnit === 'days' && !this.startDate)
     ) {
       return;
     }
@@ -59,20 +54,19 @@ export class ProvisionForm {
       await this.store.addProvision({
         name: this.name.trim() || this.category,
         category: this.category,
-        amount: this.amount,
+        amount: this.amount || 0,
         everyN: this.everyN,
         intervalUnit: this.intervalUnit,
         startYM: this.intervalUnit === 'months' ? this.startYM : this.startDate.slice(0, 7),
         startDate: this.intervalUnit === 'days' ? this.startDate : '',
         owner,
-        autoRecalibrate: this.autoRecalibrate,
-        rollingCount: this.rollingAvg ? this.rollingCount : 0,
+        autoRecalibrate: true,
+        allocationPercent: 0,
+        rollingCount: 0,
       });
       this.name = '';
       this.amount = null;
       this.everyN = null;
-      this.autoRecalibrate = true;
-      this.rollingAvg = false;
       this.open.set(false);
     } finally {
       this.saving.set(false);

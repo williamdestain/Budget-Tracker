@@ -2,6 +2,7 @@ import { Component, computed } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { OWNERS } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
+import { monthLabel } from '../../../core/utils/date.utils';
 
 @Component({
   selector: 'app-budget-progress',
@@ -13,7 +14,7 @@ export class BudgetProgress {
   constructor(public store: BudgetStore) {}
 
   get title(): string {
-    return 'Budget mensuel — ' + OWNERS[this.store.activeOwner()];
+    return 'Budget — ' + monthLabel(this.store.current()) + ' — ' + OWNERS[this.store.activeOwner()];
   }
 
   fmt(n: number): string {

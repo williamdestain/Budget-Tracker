@@ -53,6 +53,10 @@ export interface ProvisionAdjustment {
   amount: number;
   date: string; // "YYYY-MM-DD"
   note: string;
+  // Renseigné quand l'ajout vient de "🤝 Répartir un versement" : l'id de
+  // la dépense "Versement" d'origine, pour pouvoir annuler toute la
+  // répartition en un clic.
+  versementExpenseId?: string;
 }
 
 export type ProvisionIntervalUnit = 'months' | 'days';
@@ -68,6 +72,9 @@ export interface Provision {
   category: string;
   owner: Owner;
   autoRecalibrate: boolean;
+  // Part (%) de cette provision utilisée pour préremplir sa portion dans
+  // l'outil "Répartir un versement" (0 = pas de préremplissage automatique).
+  allocationPercent: number;
   rollingCount: number;
   adjustments: ProvisionAdjustment[];
 }

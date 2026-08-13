@@ -1,9 +1,12 @@
 <div class="card expense-list-card">
   <div class="list-head">
-    <h3>Dépenses</h3>
+    <h3>{{ title }}</h3>
     <span class="list-count">
       @if (realCount) {
         {{ realCount }} {{ realCount > 1 ? 'dépenses' : 'dépense' }}
+        @if (provisionEntryCount) {
+          · {{ provisionEntryCount }} {{ provisionEntryCount > 1 ? 'ajouts provisions' : 'ajout provision' }}
+        }
       }
     </span>
   </div>
@@ -15,6 +18,7 @@
       Ajoutez-en une avec le formulaire ci-dessus.
     </div>
   } @else {
+    <div class="expense-rows">
     @for (e of mergedList(); track e.id) {
       @if (editingId() === e.id) {
         <!-- Formulaire d'édition inline -->
@@ -56,7 +60,7 @@
           </div>
         </form>
       } @else if (e.provision) {
-        <!-- Réserve synthétique de provision (ou ajout au fonds) : non éditable -->
+        <!-- Ajout manuel sur une provision (bouton "+$") : supprimable -->
         <div class="expense prov-reserve">
           <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
           @if (showBadge) {
@@ -71,6 +75,7 @@
           </span>
           <span class="prov-reserve-tag">{{ reserveTag(e) }}</span>
           <span class="cat-amt">{{ fmt(e.amount) }}</span>
+          <button class="del" title="Supprimer cet ajout" (click)="removeProvisionAdjustment(e)">✕</button>
         </div>
       } @else if (e.category === 'Versement' && store.activeOwner() === 'global') {
         <!-- Versement en vue Globale : transfert interne, annulé -->
@@ -83,12 +88,19 @@
             Versement
             <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
             <span class="transfer-note">Transfert interne — non comptabilisé dans le total</span>
+            @if (isSplitVersement(e)) {
+              <span class="transfer-note">Réparti entre des provisions</span>
+            }
           </span>
           <span class="cat-amt transfer-amt">
             −{{ fmt(e.amount) }} <span class="transfer-plus">+{{ fmt(e.amount) }}</span>
           </span>
-          <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
-          <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+          @if (isSplitVersement(e)) {
+            <button class="del" title="Annuler la répartition (supprime le versement et les ajouts de provisions liés)" (click)="cancelSplit(e)">↩️</button>
+          } @else {
+            <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
+            <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+          }
         </div>
       } @else if (e.category === 'Versement') {
         <!-- Versement en vue individuelle : l'expéditeur paie -->
@@ -100,10 +112,17 @@
           <span class="cat-name">
             Versement → {{ e.owner === 'moi' ? 'Madame' : 'Moi' }}
             <span class="cat-date"> · {{ fmtDate(e.date) }}</span>
+            @if (isSplitVersement(e)) {
+              <span class="transfer-note">Réparti entre des provisions</span>
+            }
           </span>
           <span class="cat-amt">{{ fmt(e.amount) }}</span>
-          <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
-          <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+          @if (isSplitVersement(e)) {
+            <button class="del" title="Annuler la répartition (supprime le versement et les ajouts de provisions liés)" (click)="cancelSplit(e)">↩️</button>
+          } @else {
+            <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
+            <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
+          }
         </div>
       } @else {
         <!-- Dépense normale -->
@@ -125,5 +144,6 @@
         </div>
       }
     }
+    </div>
   }
 </div>

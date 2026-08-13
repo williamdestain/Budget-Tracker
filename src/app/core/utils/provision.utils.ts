@@ -49,15 +49,6 @@ export function provisionStartYM(p: Provision): string {
   return provisionStart(p).slice(0, 7);
 }
 
-function daysInMonthOverlap(p: Provision, ym: string): number {
-  const start = provisionStart(p);
-  const monthStart = ym + '-01';
-  const monthEnd = lastDayOfMonthYM(ym);
-  if (start > monthEnd) return 0;
-  const effectiveStart = start > monthStart ? start : monthStart;
-  return daysBetween(effectiveStart, monthEnd);
-}
-
 function sumCategory(
   expenses: Expense[],
   category: string,
@@ -124,19 +115,6 @@ export function effectiveProvisionAmount(p: Provision, expenses: Expense[]): num
   return recent.reduce((s, e) => s + e.amount, 0) / recent.length;
 }
 
-export function provisionAccrualRate(p: Provision, expenses: Expense[]): number {
-  return effectiveProvisionAmount(p, expenses) / p.everyN;
-}
-
-// Réserve comptabilisée pour un mois donné.
-export function provisionReserveForMonth(p: Provision, ym: string, expenses: Expense[]): number {
-  if (provisionUnit(p) === 'days') {
-    return provisionAccrualRate(p, expenses) * daysInMonthOverlap(p, ym);
-  }
-  if (monthsBetween(p.startYM, ym) <= 0) return 0;
-  return provisionAccrualRate(p, expenses);
-}
-
 export function provisionAdjustmentsUpTo(p: Provision, currentYM: string): ProvisionAdjustment[] {
   const end = lastDayOfMonthYM(currentYM);
   return (p.adjustments || []).filter((a) => a.date <= end);
@@ -159,21 +137,12 @@ export function provisionSpent(p: Provision, currentYM: string, expenses: Expens
   return sumCategory(expenses, p.category, p.owner, p.startYM, currentYM);
 }
 
-// Cagnotte actuelle = réserves accumulées + ajouts manuels − paiements réels.
-// Peut être négative (sous-provisionnée).
+// Cagnotte actuelle = ajouts manuels − paiements réels. Aucun prélèvement
+// automatique n'est fait sur le budget : tout vient des ajouts manuels
+// (bouton "+$") jusqu'à ce que le montant cible soit atteint.
+// Peut être négative (facture payée avant d'avoir assez économisé).
 export function provisionPot(p: Provision, currentYM: string, expenses: Expense[]): number {
-  let reserved = 0;
-  if (provisionUnit(p) === 'days') {
-    const start = provisionStart(p);
-    const end = lastDayOfMonthYM(currentYM);
-    if (start <= end) {
-      reserved = provisionAccrualRate(p, expenses) * daysBetween(start, end);
-    }
-  } else {
-    const monthsElapsed = monthsBetween(p.startYM, currentYM);
-    reserved = provisionAccrualRate(p, expenses) * Math.max(monthsElapsed, 0);
-  }
-  return reserved + provisionAdjustmentTotal(p, currentYM) - provisionSpent(p, currentYM, expenses);
+  return provisionAdjustmentTotal(p, currentYM) - provisionSpent(p, currentYM, expenses);
 }
 
 // Prochaine échéance (YYYY-MM-DD si jours, YYYY-MM si mois).
@@ -204,9 +173,9 @@ export function formatProvisionStart(p: Provision): string {
 export function provisionMetaLine(p: Provision, expenses: Expense[]): string {
   const target = effectiveProvisionAmount(p, expenses);
   if (provisionUnit(p) === 'days') {
-    return `${fmt(provisionAccrualRate(p, expenses))}/jour · ${fmt(target)} par prélèvement (~${p.everyN} j)`;
+    return `${fmt(target)} à économiser tous les ~${p.everyN} j`;
   }
-  return `${fmt(provisionAccrualRate(p, expenses))}/mois · ${fmt(target)} par prélèvement (${p.everyN} mois)`;
+  return `${fmt(target)} à économiser tous les ${p.everyN} mois`;
 }
 
 export function provisionRollingLabel(p: Provision, expenses: Expense[]): string {
@@ -296,15 +265,18 @@ export interface CountedExpense {
   cc: boolean;
   provision?: boolean;
   provisionAdjustment?: boolean;
+  provisionId?: string;
+  adjustmentId?: string;
   provisionName?: string;
   note?: string;
 }
 
 // Dépenses "comptées" pour le budget/solde : les dépenses réelles des
-// catégories NON provisionnées, plus une réserve synthétique par provision
-// active pour le mois consulté (et ses ajustements manuels du mois).
-// Remplace les paiements réels des catégories provisionnées pour éviter le
-// double comptage — la provision absorbe déjà ces paiements dans sa cagnotte.
+// catégories NON provisionnées, plus les ajouts manuels ("+$") faits ce
+// mois-ci sur chaque provision active. Remplace les paiements réels des
+// catégories provisionnées pour éviter le double comptage — la provision
+// absorbe déjà ces paiements dans sa cagnotte (voir provisionPot). Aucun
+// prélèvement automatique n'est ajouté : seuls les ajouts manuels comptent.
 export function countedExpenses(
   expenses: Expense[],
   provisions: Provision[],
@@ -325,18 +297,6 @@ export function countedExpenses(
 
   const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
   relevant.forEach((p) => {
-    const amount = provisionReserveForMonth(p, currentYM, expenses);
-    if (amount > 0) {
-      counted.push({
-        id: 'prov-' + p.id + '-' + currentYM,
-        amount,
-        category: p.category,
-        date: currentYM + '-01',
-        owner: p.owner,
-        cc: false,
-        provision: true,
-      });
-    }
     provisionAdjustmentsForMonth(p, currentYM).forEach((a) => {
       if (!(a.amount > 0)) return;
       counted.push({
@@ -348,6 +308,8 @@ export function countedExpenses(
         cc: false,
         provision: true,
         provisionAdjustment: true,
+        provisionId: p.id,
+        adjustmentId: a.id,
         provisionName: p.name,
         note: a.note,
       });

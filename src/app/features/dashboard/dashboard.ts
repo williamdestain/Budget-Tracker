@@ -8,6 +8,7 @@ import { OWNERS } from '../../core/utils/categories';
 import { Owner } from '../../core/models/budget.models';
 import { IncomeBar } from '../incomes/income-bar/income-bar';
 import { IncomeForm } from '../incomes/income-form/income-form';
+import { IncomeList } from '../incomes/income-list/income-list';
 import { ExpenseForm } from '../expenses/expense-form/expense-form';
 import { ExpenseList } from '../expenses/expense-list/expense-list';
 import { ProvisionForm } from '../provisions/provision-form/provision-form';
@@ -29,6 +30,7 @@ import { DataManagement } from '../data-management/data-management/data-manageme
   imports: [
     IncomeBar,
     IncomeForm,
+    IncomeList,
     ExpenseForm,
     ExpenseList,
     ProvisionForm,

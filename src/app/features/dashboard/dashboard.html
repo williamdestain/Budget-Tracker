@@ -29,20 +29,7 @@
       </button>
     </div>
 
-    <div class="month-nav">
-      <button class="icon-btn" (click)="prevMonth()" title="Mois précédent">‹</button>
-      <span class="month-label">{{ monthLabel }}</span>
-      <button class="icon-btn" (click)="nextMonth()" title="Mois suivant">›</button>
-    </div>
-
     <div class="header-actions">
-      <button
-        class="seg close-month-btn"
-        (click)="closeMonth()"
-        title="Reporter le solde net de ce mois vers le mois suivant"
-      >
-        🔒 Clôturer le mois
-      </button>
       <app-data-management />
     </div>
   </header>
@@ -50,21 +37,47 @@
   @if (store.loading()) {
     <p class="placeholder">Chargement des données…</p>
   } @else {
+    <div class="period-budget-grid">
+      <div class="card period-card">
+        <div class="card-title">Période</div>
+        <div class="month-nav">
+          <button class="icon-btn" (click)="prevMonth()" title="Mois précédent">‹</button>
+          <span class="month-label">{{ monthLabel }}</span>
+          <button class="icon-btn" (click)="nextMonth()" title="Mois suivant">›</button>
+        </div>
+        <button
+          class="seg close-month-btn"
+          (click)="closeMonth()"
+          title="Reporter le solde net de ce mois vers le mois suivant"
+        >
+          🔒 Clôturer le mois
+        </button>
+      </div>
+      <app-budget-progress />
+    </div>
+
     <app-income-bar />
     <app-smart-alerts />
     <app-month-forecast />
-    <app-expected-this-month />
-    <app-upcoming-provisions />
-    <app-budget-progress />
-    <app-category-budgets />
-    <app-spending-chart />
+
+    <app-income-list />
     <app-income-form />
-    <app-expense-form />
-    <app-expense-list />
-    <app-recurring-expenses-manage />
-    <app-versement-splitter />
+
+    <app-upcoming-provisions />
     <app-provision-form />
     <app-provision-list />
+    <app-versement-splitter />
+
+    <app-category-budgets />
+    <app-expense-form />
+    <app-expected-this-month />
+    <app-recurring-expenses-manage />
+
+    <div class="chart-expenses-grid">
+      <app-spending-chart />
+      <app-expense-list />
+    </div>
+
     <app-credit-card />
   }
 </div>

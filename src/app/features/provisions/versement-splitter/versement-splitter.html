@@ -41,6 +41,10 @@
 
       <div class="splitter-method">
         <label class="method-opt">
+          <input type="radio" name="splitMethod" value="percent" [(ngModel)]="splitMethod" />
+          Selon les % définis
+        </label>
+        <label class="method-opt">
           <input type="radio" name="splitMethod" value="equal" [(ngModel)]="splitMethod" />
           Égal
         </label>
@@ -54,6 +58,14 @@
         </label>
       </div>
 
+      @if (splitMethod === 'percent' && !hasPercentDefined) {
+        <p class="splitter-hint warn">
+          Aucune de tes provisions n'a de part (%) définie — la répartition
+          se fait donc également entre elles. Tu peux définir une part sur
+          chaque carte de provision (à côté de la catégorie).
+        </p>
+      }
+
       <div class="splitter-rows">
         @for (row of candidates(); track row.provision.id) {
           <div class="splitter-row" [class.excluded]="!isSelected(row.provision.id)">
@@ -65,7 +77,12 @@
             <span class="cat-dot" [style.background]="colorFor(row.provision.category)"></span>
             <span class="splitter-name">
               {{ row.provision.name }}
-              <span class="splitter-missing">manque {{ fmt(row.missing) }}</span>
+              <span class="splitter-missing">
+                manque {{ fmt(row.missing) }}
+                @if (row.percent > 0) {
+                  · {{ row.percent }}% défini
+                }
+              </span>
             </span>
             @if (splitMethod === 'manual') {
               <div class="input-money small">
@@ -80,7 +97,7 @@
               </div>
             } @else {
               <span class="splitter-alloc">
-                {{ isSelected(row.provision.id) ? fmt(allocationFor(row.provision.id, row.missing)) : '—' }}
+                {{ isSelected(row.provision.id) ? fmt(allocationFor(row.provision.id, row.missing, row.percent)) : '—' }}
               </span>
             }
           </div>
@@ -91,10 +108,21 @@
         <span>Total réparti : {{ fmt(allocatedSum) }} / {{ fmt(totalAmount || 0) }}</span>
         @if (remaining !== 0 && totalAmount) {
           <span class="splitter-remaining">
-            {{ remaining > 0 ? 'Reste à assigner : ' + fmt(remaining) : 'Dépassement : ' + fmt(-remaining) }}
+            @if (remaining > 0) {
+              {{ keepRemainderInBudget ? 'Reste dans le budget : ' + fmt(remaining) : 'Reste à assigner : ' + fmt(remaining) }}
+            } @else {
+              Dépassement : {{ fmt(-remaining) }}
+            }
           </span>
         }
       </div>
+
+      @if (remaining > 0.01 && totalAmount) {
+        <label class="method-opt keep-remainder-opt">
+          <input type="checkbox" [(ngModel)]="keepRemainderInBudget" />
+          Laisser le reste ({{ fmt(remaining) }}) dans le budget, sans l'assigner à une provision
+        </label>
+      }
 
       <div class="splitter-actions">
         <button class="seg" (click)="toggle()">Annuler</button>

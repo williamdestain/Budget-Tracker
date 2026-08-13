@@ -18,14 +18,12 @@ import {
   countedExpenses,
   CountedExpense,
   lastDayOfMonthYM,
-  provisionNextHit,
   provisionDaysUntilNext,
   isHitMonth,
   provisionPot,
   effectiveProvisionAmount,
   provisionDueAlert,
   formatProvisionNextHit,
-  ProvisionDueAlert,
   clampDayToMonth,
 } from '../utils/provision.utils';
 import {
@@ -219,6 +217,17 @@ export class BudgetStore {
     return this.expenses()
       .filter((e) => owner === 'global' || e.owner === owner)
       .filter((e) => e.date.startsWith(ym))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  });
+
+  // Revenus du profil et du mois affichés (mêmes règles que dans la barre
+  // "Entrées du mois" : incomeAppliesToMonth() gère aussi la récurrence).
+  readonly visibleIncomes = computed(() => {
+    const ym = this.current();
+    const owner = this.activeOwner();
+    return this.incomes()
+      .filter((i) => owner === 'global' || i.owner === owner)
+      .filter((i) => incomeAppliesToMonth(i, ym))
       .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   });
 
@@ -534,7 +543,7 @@ export class BudgetStore {
     });
   }
 
-  async addExpense(expense: Omit<Expense, 'id'>): Promise<void> {
+  async addExpense(expense: Omit<Expense, 'id'>): Promise<Expense> {
     const { data, error } = await this.supabase.client
       .from('expenses')
       .insert(expenseToRow(expense))
@@ -544,6 +553,7 @@ export class BudgetStore {
     const newExpense = rowToExpense(data);
     this.expenses.update((list) => [...list, newExpense]);
     await this.syncProvisionsFromExpense(newExpense);
+    return newExpense;
   }
 
   async removeExpense(id: string): Promise<void> {
@@ -737,13 +747,52 @@ export class BudgetStore {
     this.provisions.update((list) => list.filter((p) => p.id !== id));
   }
 
+  // Édite une provision existante (utilisé pour l'instant pour ajuster le
+  // pourcentage de répartition, mais reste générique pour d'autres champs).
+  async updateProvision(
+    id: string,
+    changes: Partial<Omit<Provision, 'id' | 'adjustments'>>,
+  ): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (changes.name !== undefined) row['name'] = changes.name;
+    if (changes.amount !== undefined) row['amount'] = changes.amount;
+    if (changes.everyN !== undefined) row['every_n'] = changes.everyN;
+    if (changes.intervalUnit !== undefined) row['interval_unit'] = changes.intervalUnit;
+    if (changes.startYM !== undefined) row['start_ym'] = changes.startYM || null;
+    if (changes.startDate !== undefined) row['start_date'] = changes.startDate || null;
+    if (changes.category !== undefined) row['category'] = changes.category;
+    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.autoRecalibrate !== undefined) row['auto_recalibrate'] = changes.autoRecalibrate;
+    if (changes.allocationPercent !== undefined) row['allocation_percent'] = changes.allocationPercent;
+    if (changes.rollingCount !== undefined) row['rolling_count'] = changes.rollingCount;
+
+    const { data, error } = await this.supabase.client
+      .from('provisions')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    const existing = this.provisions().find((p) => p.id === id);
+    const updated = rowToProvision(data, existing ? existing.adjustments.map((a) => ({
+      id: a.id,
+      provision_id: id,
+      amount: a.amount,
+      date: a.date,
+      note: a.note,
+    })) : []);
+    this.provisions.update((list) => list.map((p) => (p.id === id ? updated : p)));
+  }
+
   // Marque une provision comme payée : crée la dépense réelle correspondante.
   // Réutilise addExpense() tel quel (création + recalage automatique via
   // syncProvisionsFromExpense) — rien n'est dupliqué ici.
   // Enregistre un versement reçu ET le répartit en un seul geste entre
   // plusieurs provisions (ajouts au fonds), pour aider à payer des
   // provisions à plusieurs. Réutilise addExpense() et
-  // addProvisionAdjustment() tels quels — rien n'est dupliqué.
+  // addProvisionAdjustment() tels quels — rien n'est dupliqué. Chaque
+  // ajout est lié à la dépense "Versement" via versementExpenseId, pour
+  // pouvoir annuler toute la répartition en un clic (cancelVersementSplit).
   async splitVersementIntoProvisions(
     totalAmount: number,
     date: string,
@@ -756,7 +805,7 @@ export class BudgetStore {
     const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
     const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
 
-    await this.addExpense({
+    const versementExpense = await this.addExpense({
       amount: totalAmount,
       category: 'Versement',
       date,
@@ -771,9 +820,41 @@ export class BudgetStore {
           a.amount,
           date,
           `Versement de ${senderLabel}`,
+          versementExpense.id,
         );
       }
     }
+  }
+
+  // Annule une répartition de versement faite avec splitVersementIntoProvisions :
+  // supprime la dépense "Versement" ET tous les ajouts de provisions qui lui
+  // sont liés (versementExpenseId), en une seule action cohérente.
+  async cancelVersementSplit(versementExpenseId: string): Promise<void> {
+    const linked = this.provisions().flatMap((p) =>
+      p.adjustments
+        .filter((a) => a.versementExpenseId === versementExpenseId)
+        .map((a) => ({ provisionId: p.id, adjustmentId: a.id })),
+    );
+
+    if (linked.length > 0) {
+      const { error } = await this.supabase.client
+        .from('provision_adjustments')
+        .delete()
+        .in(
+          'id',
+          linked.map((l) => l.adjustmentId),
+        );
+      if (error) throw error;
+      const linkedIds = new Set(linked.map((l) => l.adjustmentId));
+      this.provisions.update((list) =>
+        list.map((p) => ({
+          ...p,
+          adjustments: p.adjustments.filter((a) => !linkedIds.has(a.id)),
+        })),
+      );
+    }
+
+    await this.removeExpense(versementExpenseId);
   }
 
   async payProvision(
@@ -798,10 +879,11 @@ export class BudgetStore {
     amount: number,
     date: string,
     note: string,
+    versementExpenseId?: string,
   ): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('provision_adjustments')
-      .insert(adjustmentToRow(provisionId, { amount, date, note }))
+      .insert(adjustmentToRow(provisionId, { amount, date, note, versementExpenseId }))
       .select()
       .single();
     if (error) throw error;

@@ -113,6 +113,7 @@ export function rowToProvisionAdjustment(row: any): ProvisionAdjustment {
     amount: Number(row.amount),
     date: row.date,
     note: row.note ?? '',
+    versementExpenseId: row.versement_expense_id ?? undefined,
   };
 }
 
@@ -125,6 +126,7 @@ export function adjustmentToRow(
     amount: a.amount,
     date: a.date,
     note: a.note,
+    versement_expense_id: a.versementExpenseId ?? null,
   };
 }
 
@@ -142,6 +144,7 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
     category: row.category,
     owner: row.owner,
     autoRecalibrate: row.auto_recalibrate,
+    allocationPercent: Number(row.allocation_percent ?? 0),
     rollingCount: row.rolling_count,
     adjustments: adjustmentRows
       .filter((a) => a.provision_id === row.id)
@@ -160,6 +163,7 @@ export function provisionToRow(p: Omit<Provision, 'id' | 'adjustments'>): any {
     category: p.category,
     owner: p.owner,
     auto_recalibrate: p.autoRecalibrate,
+    allocation_percent: p.allocationPercent,
     rolling_count: p.rollingCount,
   };
 }

@@ -21,6 +21,7 @@ h1 {
 }
 .tabs {
   display: flex;
+  justify-content: center;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -41,6 +42,7 @@ h1 {
 }
 .month-nav {
   display: flex;
+  justify-content: center;
   align-items: center;
   gap: 12px;
 }
@@ -84,4 +86,40 @@ h1 {
 }
 .placeholder {
   color: var(--ink-soft);
+}
+.period-budget-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.period-card .card-title {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+.period-card .month-nav {
+  margin-bottom: 16px;
+  justify-content: flex-start;
+}
+.period-card .close-month-btn {
+  margin-top: 0;
+}
+@media (max-width: 720px) {
+  .period-budget-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.chart-expenses-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .chart-expenses-grid {
+    grid-template-columns: 1fr;
+  }
 }

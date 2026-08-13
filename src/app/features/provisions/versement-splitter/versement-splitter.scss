@@ -12,6 +12,13 @@
   color: var(--ink-soft);
   margin: 8px 0 0;
 }
+.splitter-hint.warn {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 0 0 12px;
+}
 .splitter-top {
   display: flex;
   gap: 12px;
@@ -107,6 +114,19 @@
 }
 .splitter-remaining {
   font-size: 12px;
+}
+.keep-remainder-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.keep-remainder-opt input {
+  accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .splitter-actions {

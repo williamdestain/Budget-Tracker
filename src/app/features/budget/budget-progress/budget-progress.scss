@@ -1,6 +1,11 @@
 .budget-card {
   margin-bottom: 18px;
 }
+.budget-card .card-title {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+}
 .progress-wrap {
   margin-top: 16px;
 }

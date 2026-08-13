@@ -44,6 +44,17 @@ export class DataManagement {
     this.open.set(false);
   }
 
+  // Ferme la modale uniquement si le clic a eu lieu sur le fond lui-même
+  // (pas sur son contenu). Écrite comme une vraie méthode plutôt qu'une
+  // expression "a === b && close()" dans le template : Angular annule
+  // l'action par défaut de l'événement quand un binding (click) renvoie
+  // `false`, ce qui empêchait au passage les cases à cocher de basculer.
+  onOverlayClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) {
+      this.close();
+    }
+  }
+
   export(): void {
     this.store.exportData();
     this.toast.show('💾 Sauvegarde téléchargée.');

@@ -50,8 +50,29 @@ Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1
 - [x] Dépenses récurrentes (option B : suggestion à confirmer)
 - [x] Alertes intelligentes
 - [x] Répartition d'un versement entre plusieurs provisions
+- [x] Pourcentage d'allocation par provision (préremplit la répartition)
 - [x] Clôture du mois / report de solde
 - [x] Gestion des données (réinitialisation, export)
+
+## Corrections récentes
+
+- **Bug des cases à cocher (Gestion des données)** : le clic sur le fond de
+  la modale utilisait `(click)="a === b && fermer()"` dans le template.
+  Angular annule l'action par défaut d'un événement quand un binding
+  `(click)` renvoie `false` — ce qui empêchait toute case à cocher de
+  basculer dès qu'on cliquait à l'intérieur de la modale (l'événement
+  remonte jusqu'au fond). Remplacé par une vraie méthode
+  (`onOverlayClick()`). Vérifié avec un test automatisé (Playwright) qui
+  clique réellement chaque case et confirme le changement d'état.
+- **Profil par défaut des formulaires** : "Ajouter un revenu", "Ajouter une
+  dépense" et "Dépenses récurrentes" ne reprenaient l'onglet actif (Moi/
+  Madame) qu'au tout premier chargement de la page, jamais après. Corrigé
+  avec un `effect()` qui garde le profil du formulaire aligné sur l'onglet
+  actif en permanence.
+- Réorganisation de l'ordre des sections du tableau de bord, onglets et
+  navigation de mois centrés, hauteur de "Dépenses" et "Budgets par
+  catégorie" plafonnée (~10 éléments visibles, défilement interne) sans
+  jamais masquer complètement la section.
 
 ## Notes sur les écarts volontaires avec l'ancienne app
 
