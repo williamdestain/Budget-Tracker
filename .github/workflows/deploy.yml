@@ -1,0 +1,52 @@
+name: Déploiement sur GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Le nom du repo devient le sous-chemin de l'URL GitHub Pages
+      # (https://<user>.github.io/<repo>/) : Angular doit connaître ce
+      # préfixe pour charger correctement ses fichiers et ses routes.
+      - run: npx ng build --configuration production --base-href "/${{ github.event.repository.name }}/"
+
+      # Sans ce fichier, recharger une page (ou un lien profond) sur GitHub
+      # Pages renvoie une 404, car il n'y a pas de vrai serveur pour router
+      # les URL — Angular gère le routage lui-même une fois index.html chargé.
+      - run: cp dist/budget-tracker/browser/index.html dist/budget-tracker/browser/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/budget-tracker/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
