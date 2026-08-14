@@ -1,0 +1,96 @@
+.yearly-card {
+  margin-bottom: 18px;
+}
+.yearly-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.yearly-hint {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 10px 0 0;
+}
+.yearly-year-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0;
+}
+.yearly-year-label {
+  font-size: 17px;
+  font-weight: 700;
+  min-width: 60px;
+  text-align: center;
+}
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+}
+.icon-btn:hover {
+  border-color: var(--accent);
+}
+
+.yearly-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.yearly-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.yearly-table th,
+.yearly-table td {
+  padding: 7px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+.yearly-row-label {
+  text-align: left !important;
+  color: var(--ink-soft);
+  font-weight: 500;
+  position: sticky;
+  left: 0;
+  background: var(--card);
+}
+.yearly-table th {
+  font-weight: 600;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.yearly-table th.current {
+  color: var(--accent);
+}
+.yearly-table th.future,
+.yearly-table td.future {
+  color: var(--ink-soft);
+  opacity: 0.55;
+}
+.yearly-total-col {
+  font-weight: 700;
+  border-left: 2px solid var(--line);
+}
+td.over {
+  color: var(--red);
+  font-weight: 600;
+  background: var(--red-soft);
+}
+td.positive {
+  color: var(--green);
+}
+td.negative {
+  color: var(--red);
+}
+.yearly-legend {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin: 8px 0 0;
+}

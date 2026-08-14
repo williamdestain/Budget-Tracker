@@ -1,0 +1,76 @@
+.comparison-card {
+  margin-bottom: 18px;
+}
+.comparison-card .card-title {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+}
+.comparison-empty {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.comparison-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.comparison-total-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.comparison-total-delta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.comparison-total-delta.up {
+  color: var(--red);
+}
+.comparison-total-delta.down {
+  color: var(--green);
+}
+.comparison-note {
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
+.comparison-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.comparison-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.cat-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.comparison-cat {
+  flex: 1;
+  color: var(--ink);
+}
+.comparison-delta {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.comparison-delta.up {
+  color: var(--red);
+}
+.comparison-delta.down {
+  color: var(--green);
+}

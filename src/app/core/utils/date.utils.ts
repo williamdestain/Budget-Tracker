@@ -6,9 +6,19 @@ const MOIS = [
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
 ];
 
+const MOIS_COURT = [
+  'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+  'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc',
+];
+
 export function monthLabel(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
   return `${MOIS[m - 1]} ${y}`;
+}
+
+export function monthShortLabel(ym: string): string {
+  const [, m] = ym.split('-').map(Number);
+  return MOIS_COURT[m - 1];
 }
 
 export function fmtDate(iso: string): string {

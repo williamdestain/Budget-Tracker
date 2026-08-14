@@ -1,0 +1,18 @@
+<div class="card goal-card">
+  <h3>Objectifs d'épargne</h3>
+
+  @if (store.visibleSavingsGoals().length === 0) {
+    <div class="goal-empty">
+      <div class="big">🎯</div>
+      Aucun objectif d'épargne pour l'instant.<br />
+      Créez-en un pour accumuler vers un projet (fonds d'urgence, vacances,
+      CELI, rénovation…) — sans échéance de facture, à votre rythme.
+    </div>
+  } @else {
+    <div class="goal-list">
+      @for (g of store.visibleSavingsGoals(); track g.id) {
+        <app-savings-goal-card [goal]="g" />
+      }
+    </div>
+  }
+</div>

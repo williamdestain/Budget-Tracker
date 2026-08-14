@@ -1,0 +1,104 @@
+<div class="card yearly-card">
+  <div class="yearly-head">
+    <div class="card-title">📅 Vue annuelle</div>
+    <button class="seg" (click)="toggle()">
+      {{ open() ? '− Fermer' : '+ Afficher' }}
+    </button>
+  </div>
+
+  @if (!open()) {
+    <p class="yearly-hint">
+      Vois les 12 mois de l'année en un coup d'œil : dépenses, budget, solde
+      net, revenus, provisions et carte de crédit — utile pour repérer les
+      mois plus lourds (taxes, assurances, vacances) et planifier à l'avance.
+    </p>
+  }
+
+  @if (open()) {
+    <div class="yearly-year-nav">
+      <button class="icon-btn" (click)="prevYear()" title="Année précédente">‹</button>
+      <span class="yearly-year-label">{{ store.yearlyYear() }}</span>
+      <button class="icon-btn" (click)="nextYear()" title="Année suivante">›</button>
+    </div>
+
+    @if (store.yearlyView(); as yv) {
+      <div class="yearly-table-wrap">
+        <table class="yearly-table">
+          <thead>
+            <tr>
+              <th class="yearly-row-label"></th>
+              @for (m of yv.months; track m.ym) {
+                <th [class.current]="m.isCurrentMonth" [class.future]="m.isFuture">{{ m.label }}</th>
+              }
+              <th class="yearly-total-col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="yearly-row-label">Revenus</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture">{{ fmt(m.revenus) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.revenus) }}</td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Budget</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture">{{ fmt(m.budget) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.budget) }}</td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Dépenses</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture" [class.over]="m.overBudget">{{ fmt(m.spent) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.spent) }}</td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Solde net</td>
+              @for (m of yv.months; track m.ym) {
+                <td
+                  [class.future]="m.isFuture"
+                  [class.positive]="m.soldeNet > 0"
+                  [class.negative]="m.soldeNet < 0"
+                >
+                  {{ fmt(m.soldeNet) }}
+                </td>
+              }
+              <td
+                class="yearly-total-col"
+                [class.positive]="yv.totals.soldeNet > 0"
+                [class.negative]="yv.totals.soldeNet < 0"
+              >
+                {{ fmt(yv.totals.soldeNet) }}
+              </td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Provisions accumulées</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture">{{ fmt(m.provisionsAccumulated) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.provisionsAccumulated) }}</td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Provisions payées</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture">{{ fmt(m.provisionsPaid) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.provisionsPaid) }}</td>
+            </tr>
+            <tr>
+              <td class="yearly-row-label">Carte de crédit</td>
+              @for (m of yv.months; track m.ym) {
+                <td [class.future]="m.isFuture">{{ fmt(m.ccTotal) }}</td>
+              }
+              <td class="yearly-total-col">{{ fmt(yv.totals.ccTotal) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="yearly-legend">🔴 Dépenses au-dessus du budget du mois</p>
+    }
+  }
+</div>

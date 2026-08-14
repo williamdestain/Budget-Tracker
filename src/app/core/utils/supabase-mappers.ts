@@ -7,6 +7,8 @@ import {
   Provision,
   ProvisionAdjustment,
   RecurringExpense,
+  SavingsGoal,
+  SavingsContribution,
 } from '../models/budget.models';
 
 export function rowToExpense(row: any): Expense {
@@ -165,5 +167,51 @@ export function provisionToRow(p: Omit<Provision, 'id' | 'adjustments'>): any {
     auto_recalibrate: p.autoRecalibrate,
     allocation_percent: p.allocationPercent,
     rolling_count: p.rollingCount,
+  };
+}
+
+export function rowToSavingsContribution(row: any): SavingsContribution {
+  return {
+    id: row.id,
+    amount: Number(row.amount),
+    date: row.date,
+    note: row.note ?? '',
+  };
+}
+
+export function savingsContributionToRow(
+  goalId: string,
+  c: Omit<SavingsContribution, 'id'>,
+): any {
+  return {
+    savings_goal_id: goalId,
+    amount: c.amount,
+    date: c.date,
+    note: c.note,
+  };
+}
+
+// Un objectif d'épargne est reconstitué à partir de sa ligne `savings_goals`
+// et de ses lignes `savings_goal_contributions` associées (jointes
+// séparément), comme les provisions et leurs ajustements.
+export function rowToSavingsGoal(row: any, contributionRows: any[]): SavingsGoal {
+  return {
+    id: row.id,
+    name: row.name,
+    targetAmount: Number(row.target_amount),
+    targetDate: row.target_date ?? null,
+    owner: row.owner,
+    contributions: contributionRows
+      .filter((c) => c.savings_goal_id === row.id)
+      .map(rowToSavingsContribution),
+  };
+}
+
+export function savingsGoalToRow(g: Omit<SavingsGoal, 'id' | 'contributions'>): any {
+  return {
+    name: g.name,
+    target_amount: g.targetAmount,
+    target_date: g.targetDate || null,
+    owner: g.owner,
   };
 }

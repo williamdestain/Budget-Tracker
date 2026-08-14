@@ -53,6 +53,9 @@ Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1
 - [x] Pourcentage d'allocation par provision (préremplit la répartition)
 - [x] Clôture du mois / report de solde
 - [x] Gestion des données (réinitialisation, export)
+- [x] Comparaison avec le mois précédent (total + par catégorie)
+- [x] Vue annuelle (12 mois : dépenses, budget, solde net, revenus, provisions, carte de crédit)
+- [x] Objectifs d'épargne (accumulation libre vers une cible, sans échéance de facture)
 
 ## Corrections récentes
 

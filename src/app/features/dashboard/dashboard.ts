@@ -15,11 +15,15 @@ import { ProvisionForm } from '../provisions/provision-form/provision-form';
 import { ProvisionList } from '../provisions/provision-list/provision-list';
 import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
 import { VersementSplitter } from '../provisions/versement-splitter/versement-splitter';
+import { SavingsGoalForm } from '../savings/savings-goal-form/savings-goal-form';
+import { SavingsGoalList } from '../savings/savings-goal-list/savings-goal-list';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
 import { BudgetProgress } from '../budget/budget-progress/budget-progress';
 import { SpendingChart } from '../budget/spending-chart/spending-chart';
 import { CategoryBudgets } from '../budget/category-budgets/category-budgets';
 import { MonthForecast } from '../budget/month-forecast/month-forecast';
+import { MonthComparison } from '../budget/month-comparison/month-comparison';
+import { YearlyView } from '../budget/yearly-view/yearly-view';
 import { SmartAlerts } from './smart-alerts/smart-alerts';
 import { ExpectedThisMonth } from '../recurring-expenses/expected-this-month/expected-this-month';
 import { RecurringExpensesManage } from '../recurring-expenses/recurring-expenses-manage/recurring-expenses-manage';
@@ -37,11 +41,15 @@ import { DataManagement } from '../data-management/data-management/data-manageme
     ProvisionList,
     UpcomingProvisions,
     VersementSplitter,
+    SavingsGoalForm,
+    SavingsGoalList,
     CreditCard,
     BudgetProgress,
     SpendingChart,
     CategoryBudgets,
     MonthForecast,
+    MonthComparison,
+    YearlyView,
     SmartAlerts,
     ExpectedThisMonth,
     RecurringExpensesManage,

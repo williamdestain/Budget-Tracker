@@ -1,0 +1,38 @@
+@if (store.monthComparison(); as cmp) {
+  <div class="card comparison-card">
+    <div class="card-title">Comparaison avec {{ cmp.prevLabel }}</div>
+
+    @if (!cmp.hasPrevData) {
+      <div class="comparison-empty">Aucune dépense enregistrée en {{ cmp.prevLabel }} pour comparer.</div>
+    } @else {
+      <div class="comparison-total">
+        <span class="comparison-total-amount">{{ fmt(cmp.currentTotal) }}</span>
+        <span class="comparison-total-delta" [class.up]="cmp.delta > 0" [class.down]="cmp.delta < 0">
+          {{ deltaText(cmp.delta) }} vs {{ fmt(cmp.prevTotal) }}
+        </span>
+      </div>
+
+      @if (cmp.isPartialMonth) {
+        <div class="comparison-note">
+          ⓘ Mois en cours, pas encore terminé — cette comparaison est partielle.
+        </div>
+      }
+
+      @if (cmp.rows.length > 0) {
+        <div class="comparison-rows">
+          @for (row of cmp.rows; track row.category) {
+            <div class="comparison-row">
+              <span class="cat-dot" [style.background]="colorFor(row.category)"></span>
+              <span class="comparison-cat">{{ row.category }}</span>
+              <span class="comparison-delta" [class.up]="row.delta > 0" [class.down]="row.delta < 0">
+                {{ deltaText(row.delta) }}
+              </span>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="comparison-empty">Aucun changement notable par catégorie.</div>
+      }
+    }
+  </div>
+}

@@ -77,6 +77,27 @@ create table if not exists provision_adjustments (
   versement_expense_id uuid references expenses(id) on delete cascade
 );
 
+-- Objectifs d'épargne ("Objectifs d'épargne") : accumulation libre vers une
+-- cible, sans échéance récurrente ni facture à absorber (contrairement aux
+-- provisions).
+create table if not exists savings_goals (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  target_amount numeric(12,2) not null,
+  target_date date, -- optionnelle, indicative
+  owner text not null check (owner in ('moi','madame')),
+  created_at timestamptz not null default now()
+);
+
+-- Ajouts ponctuels à un objectif d'épargne.
+create table if not exists savings_goal_contributions (
+  id uuid primary key default uuid_generate_v4(),
+  savings_goal_id uuid not null references savings_goals(id) on delete cascade,
+  amount numeric(12,2) not null,
+  date date not null,
+  note text not null default ''
+);
+
 -- Budget manuel par profil et par mois : { owner: { "YYYY-MM": montant } }
 create table if not exists budgets (
   owner text not null check (owner in ('moi','madame')),
@@ -113,6 +134,8 @@ alter table recurring_expenses enable row level security;
 alter table incomes enable row level security;
 alter table provisions enable row level security;
 alter table provision_adjustments enable row level security;
+alter table savings_goals enable row level security;
+alter table savings_goal_contributions enable row level security;
 alter table budgets enable row level security;
 alter table category_budgets enable row level security;
 alter table rollovers enable row level security;
@@ -126,6 +149,10 @@ create policy "authenticated_all_incomes" on incomes
 create policy "authenticated_all_provisions" on provisions
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_provision_adjustments" on provision_adjustments
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_savings_goals" on savings_goals
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_savings_goal_contributions" on savings_goal_contributions
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_budgets" on budgets
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

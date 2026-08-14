@@ -85,10 +85,31 @@ export type MonthlyAmountMap = Record<Owner, Record<string, number>>;
 // { owner: { "YYYY-MM": { catégorie: montant } } }
 export type CategoryBudgetMap = Record<Owner, Record<string, Record<string, number>>>;
 
+export interface SavingsContribution {
+  id: string;
+  amount: number;
+  date: string; // "YYYY-MM-DD"
+  note: string;
+}
+
+// Objectif d'épargne (roadmap #10) : à la différence d'une provision, pas
+// de facture ni d'échéance récurrente à absorber — juste une accumulation
+// libre vers une cible, avec une date cible optionnelle (indicative, pas
+// contraignante).
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  targetDate: string | null; // "YYYY-MM-DD", optionnelle
+  owner: Owner;
+  contributions: SavingsContribution[];
+}
+
 export interface BudgetState {
   expenses: Expense[];
   incomes: Income[];
   provisions: Provision[];
+  savingsGoals: SavingsGoal[];
   budgets: MonthlyAmountMap;
   rollovers: MonthlyAmountMap;
 }

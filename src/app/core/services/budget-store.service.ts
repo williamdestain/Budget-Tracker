@@ -9,9 +9,10 @@ import {
   OwnerOrGlobal,
   Provision,
   RecurringExpense,
+  SavingsGoal,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
-import { ymOf, prevYM, monthLabel, fmtDate } from '../utils/date.utils';
+import { ymOf, prevYM, monthLabel, monthShortLabel, fmtDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import {
   provisionUnit,
@@ -25,6 +26,7 @@ import {
   provisionDueAlert,
   formatProvisionNextHit,
   clampDayToMonth,
+  provisionAdjustmentsForMonth,
 } from '../utils/provision.utils';
 import {
   rowToExpense,
@@ -39,6 +41,9 @@ import {
   adjustmentToRow,
   rowToRecurringExpense,
   recurringExpenseToRow,
+  rowToSavingsGoal,
+  savingsGoalToRow,
+  savingsContributionToRow,
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
@@ -72,6 +77,7 @@ export class BudgetStore {
   readonly expenses = signal<Expense[]>([]);
   readonly incomes = signal<Income[]>([]);
   readonly provisions = signal<Provision[]>([]);
+  readonly savingsGoals = signal<SavingsGoal[]>([]);
   readonly recurringExpenses = signal<RecurringExpense[]>([]);
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
   readonly categoryBudgets = signal<CategoryBudgetMap>(emptyCategoryBudgetMap());
@@ -95,6 +101,8 @@ export class BudgetStore {
       provisionsRes,
       adjustmentsRes,
       recurringExpensesRes,
+      savingsGoalsRes,
+      savingsContributionsRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
@@ -104,6 +112,8 @@ export class BudgetStore {
       client.from('provisions').select('*'),
       client.from('provision_adjustments').select('*'),
       client.from('recurring_expenses').select('*').order('day_of_month'),
+      client.from('savings_goals').select('*'),
+      client.from('savings_goal_contributions').select('*'),
     ]);
 
     this.expenses.set((expensesRes.data ?? []).map(rowToExpense));
@@ -117,6 +127,11 @@ export class BudgetStore {
     this.provisions.set(
       (provisionsRes.data ?? []).map((row: any) =>
         rowToProvision(row, adjustmentsRes.data ?? []),
+      ),
+    );
+    this.savingsGoals.set(
+      (savingsGoalsRes.data ?? []).map((row: any) =>
+        rowToSavingsGoal(row, savingsContributionsRes.data ?? []),
       ),
     );
     this.loading.set(false);
@@ -239,6 +254,13 @@ export class BudgetStore {
       : this.provisions().filter((p) => p.owner === owner);
   });
 
+  readonly visibleSavingsGoals = computed(() => {
+    const owner = this.activeOwner();
+    return owner === 'global'
+      ? this.savingsGoals()
+      : this.savingsGoals().filter((g) => g.owner === owner);
+  });
+
   // "À payer bientôt" : provisions dues ce mois-ci, en déficit, ou dont
   // l'échéance tombe dans les 30 prochains jours — triées par date, la
   // plus proche en premier. Donne une vue calendrier des gros paiements
@@ -291,8 +313,162 @@ export class BudgetStore {
     ),
   );
 
-  // Revenus du profil/mois affichés (+ versements reçus, sauf au Global où
-  // les versements sont de simples transferts internes qui s'annulent).
+  // Vue annuelle (roadmap #9) : signal indépendant du mois affiché
+  // ailleurs, pour pouvoir consulter une année sans perturber la vue
+  // "mois" du reste du tableau de bord.
+  readonly yearlyYear = signal<number>(new Date().getFullYear());
+
+  // Vision 12 mois du budget : dépenses, budget, solde net, revenus,
+  // provisions accumulées/payées et carte de crédit, mois par mois, pour
+  // le profil actif (Moi/Madame/Global — même filtre que le reste de
+  // l'app). Utilise countedExpenses() pour rester cohérent avec les
+  // provisions, qui remplacent le paiement réel par une réserve.
+  readonly yearlyView = computed(() => {
+    const owner = this.activeOwner();
+    const year = this.yearlyYear();
+    const provisions = this.provisions();
+    const expenses = this.expenses();
+    const incomes = this.incomes();
+    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const todayYm = ymOf(new Date());
+
+    const relevantProvisions =
+      owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
+    const provisionCategories = new Set(relevantProvisions.map((p) => p.category));
+
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
+
+      let revenus = 0;
+      owners.forEach((o) => {
+        incomes.forEach((inc) => {
+          if (inc.owner === o) revenus += incomeForMonth(inc, ym);
+        });
+        if (owner !== 'global') revenus += this.versementsRecus(o, ym);
+      });
+
+      const spent = countedExpenses(expenses, provisions, owner, ym).reduce(
+        (s, e) => s + e.amount,
+        0,
+      );
+      const rollover = this.rolloverFor(owner, ym);
+      const budget = revenus;
+      const soldeNet = budget - spent + rollover;
+
+      const provisionsAccumulated = relevantProvisions.reduce(
+        (s, p) => s + provisionAdjustmentsForMonth(p, ym).reduce((s2, a) => s2 + a.amount, 0),
+        0,
+      );
+      const provisionsPaid = expenses
+        .filter(
+          (e) =>
+            provisionCategories.has(e.category) &&
+            e.date.startsWith(ym) &&
+            (owner === 'global' || e.owner === owner),
+        )
+        .reduce((s, e) => s + e.amount, 0);
+
+      const ccTotal = expenses
+        .filter(
+          (e) =>
+            (owner === 'global' || e.owner === owner) &&
+            e.date.startsWith(ym) &&
+            e.cc &&
+            e.category !== 'Versement' &&
+            e.category !== 'Remboursement Carte Crédit',
+        )
+        .reduce((s, e) => s + e.amount, 0);
+
+      return {
+        ym,
+        label: monthShortLabel(ym),
+        revenus,
+        budget,
+        spent,
+        soldeNet,
+        provisionsAccumulated,
+        provisionsPaid,
+        ccTotal,
+        overBudget: budget > 0 && spent > budget,
+        isCurrentMonth: ym === todayYm,
+        isFuture: ym > todayYm,
+      };
+    });
+
+    const totals = months.reduce(
+      (acc, m) => ({
+        revenus: acc.revenus + m.revenus,
+        budget: acc.budget + m.budget,
+        spent: acc.spent + m.spent,
+        soldeNet: acc.soldeNet + m.soldeNet,
+        provisionsAccumulated: acc.provisionsAccumulated + m.provisionsAccumulated,
+        provisionsPaid: acc.provisionsPaid + m.provisionsPaid,
+        ccTotal: acc.ccTotal + m.ccTotal,
+      }),
+      {
+        revenus: 0,
+        budget: 0,
+        spent: 0,
+        soldeNet: 0,
+        provisionsAccumulated: 0,
+        provisionsPaid: 0,
+        ccTotal: 0,
+      },
+    );
+
+    return { year, months, totals };
+  });
+
+
+  // countedExpenses() (pas les dépenses brutes) pour rester cohérent avec
+  // les provisions, qui lissent déjà certaines dépenses irrégulières.
+  readonly monthComparison = computed(() => {
+    const owner = this.activeOwner();
+    const ym = this.current();
+    const prevYm = prevYM(ym);
+
+    const currentList = this.countedExpensesList();
+    const prevList = countedExpenses(this.expenses(), this.provisions(), owner, prevYm);
+
+    const currentTotal = currentList.reduce((s, e) => s + e.amount, 0);
+    const prevTotal = prevList.reduce((s, e) => s + e.amount, 0);
+
+    const byCategory = (list: CountedExpense[]) => {
+      const map = new Map<string, number>();
+      list.forEach((e) => map.set(e.category, (map.get(e.category) ?? 0) + e.amount));
+      return map;
+    };
+    const currentByCat = byCategory(currentList);
+    const prevByCat = byCategory(prevList);
+
+    const categories = new Set([...currentByCat.keys(), ...prevByCat.keys()]);
+    const rows = Array.from(categories)
+      .map((category) => {
+        const current = currentByCat.get(category) ?? 0;
+        const previous = prevByCat.get(category) ?? 0;
+        return { category, current, previous, delta: current - previous };
+      })
+      .filter((r) => Math.abs(r.delta) >= 0.01)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+    // Mois en cours = comparaison partielle (le mois n'est pas terminé) :
+    // signalé pour éviter une lecture trompeuse (voir point d'attention
+    // de la roadmap), plutôt que de faire une projection approximative.
+    const isPartialMonth = ym === ymOf(new Date());
+
+    return {
+      prevYm,
+      prevLabel: monthLabel(prevYm),
+      currentTotal,
+      prevTotal,
+      delta: currentTotal - prevTotal,
+      rows,
+      isPartialMonth,
+      hasPrevData: prevList.length > 0,
+    };
+  });
+
+
   readonly revenueBase = computed(() => {
     const owner = this.activeOwner();
     const ym = this.current();
@@ -747,6 +923,67 @@ export class BudgetStore {
     this.provisions.update((list) => list.filter((p) => p.id !== id));
   }
 
+  // --- Objectifs d'épargne (roadmap #10) ---------------------------------
+
+  async addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'contributions'>): Promise<void> {
+    const { data, error } = await this.supabase.client
+      .from('savings_goals')
+      .insert(savingsGoalToRow(goal))
+      .select()
+      .single();
+    if (error) throw error;
+    this.savingsGoals.update((list) => [...list, rowToSavingsGoal(data, [])]);
+  }
+
+  async removeSavingsGoal(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('savings_goals')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    this.savingsGoals.update((list) => list.filter((g) => g.id !== id));
+  }
+
+  async addSavingsGoalContribution(
+    goalId: string,
+    amount: number,
+    date: string,
+    note: string,
+  ): Promise<void> {
+    const { data, error } = await this.supabase.client
+      .from('savings_goal_contributions')
+      .insert(savingsContributionToRow(goalId, { amount, date, note }))
+      .select()
+      .single();
+    if (error) throw error;
+    const contribution = {
+      id: data.id,
+      amount: Number(data.amount),
+      date: data.date,
+      note: data.note ?? '',
+    };
+    this.savingsGoals.update((list) =>
+      list.map((g) =>
+        g.id === goalId ? { ...g, contributions: [...g.contributions, contribution] } : g,
+      ),
+    );
+  }
+
+  async removeSavingsGoalContribution(goalId: string, contributionId: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('savings_goal_contributions')
+      .delete()
+      .eq('id', contributionId);
+    if (error) throw error;
+    this.savingsGoals.update((list) =>
+      list.map((g) =>
+        g.id === goalId
+          ? { ...g, contributions: g.contributions.filter((c) => c.id !== contributionId) }
+          : g,
+      ),
+    );
+  }
+
   // Édite une provision existante (utilisé pour l'instant pour ajuster le
   // pourcentage de répartition, mais reste générique pour d'autres champs).
   async updateProvision(
@@ -1026,6 +1263,7 @@ export class BudgetStore {
       this.supabase.client.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       this.supabase.client.from('incomes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       this.supabase.client.from('provisions').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+      this.supabase.client.from('savings_goals').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
       this.supabase.client.from('budgets').delete().neq('owner', ''),
       this.supabase.client.from('category_budgets').delete().neq('owner', ''),
       this.supabase.client.from('rollovers').delete().neq('owner', ''),
@@ -1033,6 +1271,7 @@ export class BudgetStore {
     this.expenses.set([]);
     this.incomes.set([]);
     this.provisions.set([]);
+    this.savingsGoals.set([]);
     this.budgets.set(emptyMonthlyMap());
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
@@ -1090,6 +1329,37 @@ export class BudgetStore {
           .from('provision_adjustments')
           .insert(adjustmentRows);
         if (adjError) throw adjError;
+      }
+    }
+
+    // Optionnel : absent des sauvegardes faites avant l'ajout des objectifs
+    // d'épargne, donc on ne bloque pas l'import si le champ manque.
+    if (Array.isArray(data.savingsGoals) && data.savingsGoals.length) {
+      const goalIdMap = new Map<string, string>();
+      const goalRows = data.savingsGoals.map((g: SavingsGoal) => {
+        const newId = idFor(g.id);
+        goalIdMap.set(String(g.id), newId);
+        return { id: newId, ...savingsGoalToRow(g) };
+      });
+      const { error: goalError } = await this.supabase.client
+        .from('savings_goals')
+        .insert(goalRows);
+      if (goalError) throw goalError;
+
+      const contributionRows = data.savingsGoals.flatMap((g: SavingsGoal) =>
+        (g.contributions || []).map((c) => ({
+          id: idFor(c.id),
+          savings_goal_id: goalIdMap.get(String(g.id))!,
+          amount: c.amount,
+          date: c.date,
+          note: c.note,
+        })),
+      );
+      if (contributionRows.length) {
+        const { error: contribError } = await this.supabase.client
+          .from('savings_goal_contributions')
+          .insert(contributionRows);
+        if (contribError) throw contribError;
       }
     }
 
@@ -1166,6 +1436,7 @@ export class BudgetStore {
       expenses: this.expenses(),
       incomes: this.incomes(),
       provisions: this.provisions(),
+      savingsGoals: this.savingsGoals(),
       budgets: this.budgets(),
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),

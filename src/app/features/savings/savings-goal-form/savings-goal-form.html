@@ -1,0 +1,32 @@
+<div class="card prov-form-card">
+  <button type="button" class="btn-primary toggle-btn" (click)="toggle()">
+    {{ open() ? '− Fermer' : '+ Nouvel objectif' }}
+  </button>
+
+  @if (open()) {
+    <form class="prov-form" (ngSubmit)="submit()">
+      <div class="prov-form-row">
+        <div class="field">
+          <label for="goal-name">Nom</label>
+          <input id="goal-name" type="text" name="name" [(ngModel)]="name" placeholder="Ex. Fonds d'urgence" required />
+        </div>
+
+        <div class="field">
+          <label for="goal-amount">Montant cible</label>
+          <div class="input-money">
+            <input id="goal-amount" type="number" min="0" step="0.01" name="targetAmount" [(ngModel)]="targetAmount" placeholder="Ex. 5000" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="goal-date">Date cible (optionnel)</label>
+          <input id="goal-date" type="date" name="targetDate" [(ngModel)]="targetDate" />
+        </div>
+
+        <div class="field-actions">
+          <button type="submit" class="btn-primary" [disabled]="saving()">Créer</button>
+        </div>
+      </div>
+    </form>
+  }
+</div>

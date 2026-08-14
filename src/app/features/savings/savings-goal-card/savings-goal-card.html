@@ -1,0 +1,63 @@
+<div class="prov-item goal-item" [class.overdue]="stats().statusClass === 'overdue'" [class.ok]="stats().reached">
+  <div class="prov-top">
+    <div>
+      <div class="prov-name">🎯 {{ goal().name }}</div>
+      <div class="prov-meta">
+        Objectif : <strong>{{ fmt(goal().targetAmount) }}</strong>
+        @if (goal().targetDate) {
+          · cible : {{ fmtDate(goal().targetDate!) }}
+        }
+      </div>
+    </div>
+    <div class="prov-actions">
+      <button title="Ajouter un montant" class="add-prov-adjust" (click)="toggleAdd()">+$</button>
+      <button title="Supprimer" class="del-prov" (click)="remove()">✕</button>
+    </div>
+  </div>
+
+  @if (addOpen()) {
+    <form class="prov-adjust-form" (ngSubmit)="submitAdd()">
+      <div class="field">
+        <label>Montant</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="addAmount" [(ngModel)]="addAmount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="addDate" [(ngModel)]="addDate" required />
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <input type="text" name="addNote" [(ngModel)]="addNote" placeholder="Ex. bonus, extra ce mois-ci" />
+      </div>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary" [disabled]="saving()">Ajouter</button>
+      </div>
+    </form>
+  }
+
+  <div class="prov-bar-wrap">
+    <div class="prov-bar" [class.full]="stats().reached" [class.partial]="!stats().reached" [style.width.%]="barWidth()"></div>
+  </div>
+
+  <div class="prov-foot">
+    <span>Cagnotte : <strong>{{ fmt(stats().pot) }}</strong> / {{ fmt(goal().targetAmount) }} ({{ stats().pct | number: '1.0-0' }}%)</span>
+    <span class="prov-status" [class]="stats().statusClass === 'overdue' ? 'deficit' : stats().reached ? 'ok' : 'warn'">
+      {{ stats().statusText }}
+    </span>
+  </div>
+
+  @if (stats().contributions.length) {
+    <div class="prov-adjust-history">
+      @for (c of stats().contributions.slice(0, 3); track c.id) {
+        <div class="prov-adjust-row">
+          <strong>{{ fmt(c.amount) }}</strong>
+          <span>{{ c.note || 'Ajout' }}</span>
+          <span>{{ fmtDate(c.date) }}</span>
+          <button class="del-prov-adjust" title="Supprimer cet ajout" (click)="removeContribution(c.id)">✕</button>
+        </div>
+      }
+    </div>
+  }
+</div>
