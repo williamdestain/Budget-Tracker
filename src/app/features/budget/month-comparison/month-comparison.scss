@@ -1,6 +1,16 @@
 .comparison-card {
   margin-bottom: 18px;
 }
+.comparison-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.comparison-hint {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 10px 0 0;
+}
 .comparison-card .card-title {
   text-transform: uppercase;
   letter-spacing: 0.03em;

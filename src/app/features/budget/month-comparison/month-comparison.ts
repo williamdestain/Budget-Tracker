@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
 import { COLOR_MAP } from '../../../core/utils/categories';
@@ -10,7 +10,13 @@ import { COLOR_MAP } from '../../../core/utils/categories';
   styleUrl: './month-comparison.scss',
 })
 export class MonthComparison {
+  readonly open = signal(false);
+
   constructor(public store: BudgetStore) {}
+
+  toggle(): void {
+    this.open.update((v) => !v);
+  }
 
   fmt(n: number): string {
     return fmt(n);

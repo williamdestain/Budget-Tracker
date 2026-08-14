@@ -92,6 +92,11 @@ h1 {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   margin-bottom: 18px;
+  align-items: stretch;
+}
+.period-card {
+  display: flex;
+  flex-direction: column;
 }
 .period-card .card-title {
   text-transform: uppercase;
@@ -116,7 +121,7 @@ h1 {
   grid-template-columns: 1.4fr 1fr;
   gap: 16px;
   margin-bottom: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 @media (max-width: 900px) {
   .chart-expenses-grid {

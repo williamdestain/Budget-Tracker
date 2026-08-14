@@ -25,7 +25,6 @@
           <div class="input-money">
             <input id="prov-amount" type="number" min="0" step="0.01" name="amount" [(ngModel)]="amount" placeholder="Ex. 900" />
           </div>
-          <span class="prov-field-hint">Rien n'est prélevé automatiquement : tu alimentes toi-même la provision avec le bouton +$ après sa création, jusqu'à atteindre ce montant.</span>
         </div>
 
         <div class="field">
@@ -42,9 +41,20 @@
         </div>
 
         @if (intervalUnit === 'months') {
-          <div class="field">
-            <label for="prov-start">Début du cycle</label>
-            <input id="prov-start" type="month" name="startYM" [(ngModel)]="startYM" required />
+          <div class="field field-start">
+            <label for="prov-start-month">Début du cycle</label>
+            <div class="prov-start-select">
+              <select id="prov-start-month" name="startMonth" [(ngModel)]="startMonth">
+                @for (m of monthNames; track m; let i = $index) {
+                  <option [value]="i + 1">{{ m }}</option>
+                }
+              </select>
+              <select id="prov-start-year" name="startYear" [(ngModel)]="startYear">
+                @for (y of years; track y) {
+                  <option [value]="y">{{ y }}</option>
+                }
+              </select>
+            </div>
           </div>
         } @else {
           <div class="field">

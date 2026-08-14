@@ -1,21 +1,33 @@
 <div class="card cat-budget-card">
   <div class="cat-budget-head">
     <div class="card-title">Budgets par catégorie</div>
-    @if (!isGlobal) {
-      <button class="seg" (click)="toggleAdd()">
-        {{ addOpen() ? '− Fermer' : '+ Ajouter' }}
-      </button>
-    }
+    <button class="seg" (click)="toggle()">
+      {{ open() ? '− Fermer' : '+ Afficher' }}
+    </button>
   </div>
 
-  @if (isGlobal) {
+  @if (!open()) {
     <p class="cat-budget-hint">
-      Vue Global : somme de Moi + Madame. Passe sur un profil pour modifier
-      les budgets par catégorie.
+      Définis un plafond mensuel par catégorie (Courses, Essence…) pour
+      suivre où l'argent part, en plus du budget global.
     </p>
   }
 
-  @if (addOpen() && !isGlobal) {
+  @if (open()) {
+    @if (isGlobal) {
+      <p class="cat-budget-hint">
+        Vue Global : somme de Moi + Madame. Passe sur un profil pour modifier
+        les budgets par catégorie.
+      </p>
+    } @else {
+      <div class="cat-budget-add-toggle">
+        <button class="seg" (click)="toggleAdd()">
+          {{ addOpen() ? '− Fermer' : '+ Ajouter' }}
+        </button>
+      </div>
+    }
+
+    @if (addOpen() && !isGlobal) {
     <form class="cat-budget-add-form" (ngSubmit)="submitAdd()">
       <div class="field field-category">
         <label>Catégorie</label>
@@ -94,5 +106,6 @@
         </div>
       }
     </div>
+  }
   }
 </div>

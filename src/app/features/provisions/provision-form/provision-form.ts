@@ -3,7 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner, ProvisionIntervalUnit } from '../../../core/models/budget.models';
 import { CATEGORIES } from '../../../core/utils/categories';
-import { ymOf, isoOfDate } from '../../../core/utils/date.utils';
+import { isoOfDate } from '../../../core/utils/date.utils';
+
+const MOIS_NOMS = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+];
 
 @Component({
   selector: 'app-provision-form',
@@ -18,12 +23,18 @@ export class ProvisionForm {
   readonly open = signal(false);
   readonly saving = signal(false);
 
+  readonly monthNames = MOIS_NOMS;
+  // Quelques années avant/après aujourd'hui : large marge pour une
+  // provision qui existe déjà depuis un moment, ou planifiée à l'avance.
+  readonly years = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - 4 + i);
+
   name = '';
   category = this.categories[0];
   amount: number | null = null;
   intervalUnit: ProvisionIntervalUnit = 'months';
   everyN: number | null = null;
-  startYM = ymOf(new Date());
+  startMonth = new Date().getMonth() + 1;
+  startYear = new Date().getFullYear();
   startDate = isoOfDate(new Date());
 
   constructor(private store: BudgetStore) {}
@@ -33,13 +44,13 @@ export class ProvisionForm {
   }
 
   async submit(): Promise<void> {
+    const startYM = `${this.startYear}-${String(this.startMonth).padStart(2, '0')}`;
     if (
       !this.name ||
       !this.category ||
       (this.amount !== null && this.amount < 0) ||
       !this.everyN ||
       this.everyN <= 0 ||
-      (this.intervalUnit === 'months' && !this.startYM) ||
       (this.intervalUnit === 'days' && !this.startDate)
     ) {
       return;
@@ -57,7 +68,7 @@ export class ProvisionForm {
         amount: this.amount || 0,
         everyN: this.everyN,
         intervalUnit: this.intervalUnit,
-        startYM: this.intervalUnit === 'months' ? this.startYM : this.startDate.slice(0, 7),
+        startYM: this.intervalUnit === 'months' ? startYM : this.startDate.slice(0, 7),
         startDate: this.intervalUnit === 'days' ? this.startDate : '',
         owner,
         autoRecalibrate: true,

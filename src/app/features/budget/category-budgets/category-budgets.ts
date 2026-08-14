@@ -12,6 +12,7 @@ import { Owner } from '../../../core/models/budget.models';
   styleUrl: './category-budgets.scss',
 })
 export class CategoryBudgets {
+  readonly open = signal(false);
   readonly editingCategory = signal<string | null>(null);
   editAmount: number | null = null;
 
@@ -20,6 +21,10 @@ export class CategoryBudgets {
   newAmount: number | null = null;
 
   constructor(public store: BudgetStore) {}
+
+  toggle(): void {
+    this.open.update((v) => !v);
+  }
 
   get isGlobal(): boolean {
     return this.store.activeOwner() === 'global';

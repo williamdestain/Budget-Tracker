@@ -1,18 +1,34 @@
 <div class="card goal-card">
-  <h3>Objectifs d'épargne</h3>
+  <div class="goal-head">
+    <h3>🎯 Objectifs d'épargne</h3>
+    <button class="seg" (click)="toggle()">
+      {{ open() ? '− Fermer' : '+ Afficher' }}
+    </button>
+  </div>
 
-  @if (store.visibleSavingsGoals().length === 0) {
-    <div class="goal-empty">
-      <div class="big">🎯</div>
-      Aucun objectif d'épargne pour l'instant.<br />
-      Créez-en un pour accumuler vers un projet (fonds d'urgence, vacances,
-      CELI, rénovation…) — sans échéance de facture, à votre rythme.
-    </div>
-  } @else {
-    <div class="goal-list">
-      @for (g of store.visibleSavingsGoals(); track g.id) {
-        <app-savings-goal-card [goal]="g" />
-      }
-    </div>
+  @if (!open()) {
+    <p class="goal-hint">
+      Accumule vers un projet (fonds d'urgence, vacances, rénovation…) à ton
+      rythme, sans échéance de facture.
+    </p>
+  }
+
+  @if (open()) {
+    <app-savings-goal-form />
+
+    @if (store.visibleSavingsGoals().length === 0) {
+      <div class="goal-empty">
+        <div class="big">🎯</div>
+        Aucun objectif d'épargne pour l'instant.<br />
+        Créez-en un pour accumuler vers un projet (fonds d'urgence, vacances,
+        CELI, rénovation…) — sans échéance de facture, à votre rythme.
+      </div>
+    } @else {
+      <div class="goal-list">
+        @for (g of store.visibleSavingsGoals(); track g.id) {
+          <app-savings-goal-card [goal]="g" />
+        }
+      </div>
+    }
   }
 </div>

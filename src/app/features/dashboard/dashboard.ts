@@ -15,7 +15,6 @@ import { ProvisionForm } from '../provisions/provision-form/provision-form';
 import { ProvisionList } from '../provisions/provision-list/provision-list';
 import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
 import { VersementSplitter } from '../provisions/versement-splitter/versement-splitter';
-import { SavingsGoalForm } from '../savings/savings-goal-form/savings-goal-form';
 import { SavingsGoalList } from '../savings/savings-goal-list/savings-goal-list';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
 import { BudgetProgress } from '../budget/budget-progress/budget-progress';
@@ -41,7 +40,6 @@ import { DataManagement } from '../data-management/data-management/data-manageme
     ProvisionList,
     UpcomingProvisions,
     VersementSplitter,
-    SavingsGoalForm,
     SavingsGoalList,
     CreditCard,
     BudgetProgress,
