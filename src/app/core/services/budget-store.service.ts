@@ -12,6 +12,7 @@ import {
   SavingsGoal,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
+import { occurrencesInMonth } from '../utils/recurring-expense.utils';
 import { ymOf, prevYM, monthLabel, monthShortLabel, fmtDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import {
@@ -25,7 +26,6 @@ import {
   effectiveProvisionAmount,
   provisionDueAlert,
   formatProvisionNextHit,
-  clampDayToMonth,
   provisionAdjustmentsForMonth,
 } from '../utils/provision.utils';
 import {
@@ -69,6 +69,17 @@ export interface SmartAlert {
   message: string;
 }
 
+// Résultat de remainingBudget() — objet plutôt qu'un simple nombre pour que
+// l'UI puisse expliquer le montant (budget / déjà dépensé / à venir) sans
+// recalculer la logique métier côté composant.
+export interface RemainingBudget {
+  amount: number;
+  budget: number;
+  spent: number;
+  recurringRemaining: number;
+  provisionsRemaining: number;
+}
+
 // Store central : équivalent de l'ancien objet `state` + `renderAll()`.
 // Toute vue qui lit ces signals se met à jour automatiquement — pas besoin
 // d'appeler manuellement un "render" comme dans l'ancienne app.
@@ -82,10 +93,24 @@ export class BudgetStore {
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
   readonly categoryBudgets = signal<CategoryBudgetMap>(emptyCategoryBudgetMap());
   readonly rollovers = signal<MonthlyAmountMap>(emptyMonthlyMap());
+  // Mois clôturés ("YYYY-MM") : verrou global, pas par profil — une fois
+  // un mois clôturé, plus aucune saisie/modif/suppression n'est possible
+  // pour ce mois-ci, peu importe le profil actif. Set plutôt que tableau
+  // pour des lookups O(1) (isMonthClosed est appelé par toutes les
+  // méthodes de mutation datées, potentiellement souvent).
+  readonly closedMonths = signal<Set<string>>(new Set());
 
   readonly current = signal<string>(ymOf(new Date()));
   readonly activeOwner = signal<OwnerOrGlobal>('moi');
   readonly loading = signal(true);
+  // Liste des tables dont le chargement a échoué au dernier loadAll() —
+  // null tant qu'aucun chargement n'a eu lieu, [] si tout est ok. Sans ça,
+  // une erreur réseau/Supabase sur une table se traduisait auparavant par
+  // `?? []`, indiscernable d'une table réellement vide (voir
+  // AUDIT_PRODUCTION_V2.md §3.5) — l'UI peut afficher un bandeau
+  // d'avertissement tant que loadError() n'est pas vide, plutôt que de
+  // laisser croire silencieusement que les données sont à jour.
+  readonly loadError = signal<string[] | null>(null);
 
   constructor(private supabase: SupabaseService) {}
 
@@ -103,6 +128,7 @@ export class BudgetStore {
       recurringExpensesRes,
       savingsGoalsRes,
       savingsContributionsRes,
+      closedMonthsRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
@@ -114,26 +140,69 @@ export class BudgetStore {
       client.from('recurring_expenses').select('*').order('day_of_month'),
       client.from('savings_goals').select('*'),
       client.from('savings_goal_contributions').select('*'),
+      client.from('closed_months').select('*'),
     ]);
 
-    this.expenses.set((expensesRes.data ?? []).map(rowToExpense));
-    this.incomes.set((incomesRes.data ?? []).map(rowToIncome));
-    this.budgets.set(rowsToMonthlyMap(budgetsRes.data ?? []));
-    this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
-    this.rollovers.set(rowsToMonthlyMap(rolloversRes.data ?? []));
-    this.recurringExpenses.set(
-      (recurringExpensesRes.data ?? []).map(rowToRecurringExpense),
-    );
-    this.provisions.set(
-      (provisionsRes.data ?? []).map((row: any) =>
-        rowToProvision(row, adjustmentsRes.data ?? []),
-      ),
-    );
-    this.savingsGoals.set(
-      (savingsGoalsRes.data ?? []).map((row: any) =>
-        rowToSavingsGoal(row, savingsContributionsRes.data ?? []),
-      ),
-    );
+    const failedTables = (
+      [
+        ['expenses', expensesRes],
+        ['incomes', incomesRes],
+        ['budgets', budgetsRes],
+        ['category_budgets', categoryBudgetsRes],
+        ['rollovers', rolloversRes],
+        ['provisions', provisionsRes],
+        ['provision_adjustments', adjustmentsRes],
+        ['recurring_expenses', recurringExpensesRes],
+        ['savings_goals', savingsGoalsRes],
+        ['savings_goal_contributions', savingsContributionsRes],
+        ['closed_months', closedMonthsRes],
+      ] as const
+    )
+      .filter(([, res]) => res.error)
+      .map(([table]) => table);
+
+    if (failedTables.length) {
+      // On logue pour le diagnostic (console visible en dev, et
+      // interceptable par un outil de monitoring plus tard) sans bloquer
+      // l'affichage : les tables en échec gardent leurs anciennes valeurs
+      // en mémoire (voir plus bas) plutôt que d'être vidées à tort.
+      console.error('loadAll(): échec de chargement sur', failedTables.join(', '));
+    }
+    this.loadError.set(failedTables.length ? failedTables : []);
+
+    // Chaque table n'est mise à jour que si sa requête a réussi — en cas
+    // d'erreur, on garde l'ancienne valeur du signal plutôt que de la
+    // remplacer par une liste vide qui ferait croire à des données
+    // effacées (ex. rouvrir l'app après une coupure réseau ne doit pas
+    // donner l'impression que tout a disparu).
+    if (!expensesRes.error) this.expenses.set((expensesRes.data ?? []).map(rowToExpense));
+    if (!incomesRes.error) this.incomes.set((incomesRes.data ?? []).map(rowToIncome));
+    if (!budgetsRes.error) this.budgets.set(rowsToMonthlyMap(budgetsRes.data ?? []));
+    if (!categoryBudgetsRes.error) {
+      this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
+    }
+    if (!rolloversRes.error) this.rollovers.set(rowsToMonthlyMap(rolloversRes.data ?? []));
+    if (!recurringExpensesRes.error) {
+      this.recurringExpenses.set((recurringExpensesRes.data ?? []).map(rowToRecurringExpense));
+    }
+    // provisions dépend aussi de adjustmentsRes : une erreur sur l'une ou
+    // l'autre peut faire recalculer des pots de provision incomplets, donc
+    // les deux gardent l'ancienne valeur en cas d'échec de l'une des deux.
+    if (!provisionsRes.error && !adjustmentsRes.error) {
+      this.provisions.set(
+        (provisionsRes.data ?? []).map((row: any) => rowToProvision(row, adjustmentsRes.data ?? [])),
+      );
+    }
+    if (!savingsGoalsRes.error && !savingsContributionsRes.error) {
+      this.savingsGoals.set(
+        (savingsGoalsRes.data ?? []).map((row: any) =>
+          rowToSavingsGoal(row, savingsContributionsRes.data ?? []),
+        ),
+      );
+    }
+    if (!closedMonthsRes.error) {
+      this.closedMonths.set(new Set((closedMonthsRes.data ?? []).map((row: any) => row.ym as string)));
+    }
     this.loading.set(false);
   }
 
@@ -144,6 +213,52 @@ export class BudgetStore {
       return this.rolloverFor('moi', ym) + this.rolloverFor('madame', ym);
     }
     return this.rollovers()[owner]?.[ym] ?? 0;
+  }
+
+  // --- Clôture de mois ---------------------------------------------------
+  // Un mois clôturé verrouille toutes les opérations DATÉES dans ce mois
+  // (dépenses, revenus ponctuels, ajustements de provisions, contributions
+  // d'épargne, budgets par catégorie, report). Volontairement PAS les
+  // entités structurelles qui s'étendent sur plusieurs mois (provisions,
+  // dépenses récurrentes, revenus récurrents, objectifs d'épargne
+  // eux-mêmes) : clôturer juillet ne doit pas empêcher de renommer une
+  // provision ou de désactiver un récurrent qui existe indépendamment du
+  // mois. confirmRecurringExpense/payProvision/splitVersementIntoProvisions
+  // ne sont pas gardés directement : ils délèguent à addExpense/
+  // addProvisionAdjustment, déjà gardés, donc couverts automatiquement.
+
+  isMonthClosed(ym: string): boolean {
+    return this.closedMonths().has(ym);
+  }
+
+  // Pratique pour l'UI : état de clôture du mois actuellement affiché.
+  readonly currentMonthClosed = computed(() => this.isMonthClosed(this.current()));
+
+  private assertMonthOpen(ym: string): void {
+    if (this.isMonthClosed(ym)) {
+      throw new Error(`Le mois ${ym} est clôturé : plus aucune modification n'est possible.`);
+    }
+  }
+
+  async closeMonth(ym: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('closed_months')
+      .upsert({ ym }, { onConflict: 'ym' });
+    if (error) throw error;
+    this.closedMonths.update((set) => new Set(set).add(ym));
+  }
+
+  async reopenMonth(ym: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('closed_months')
+      .delete()
+      .eq('ym', ym);
+    if (error) throw error;
+    this.closedMonths.update((set) => {
+      const copy = new Set(set);
+      copy.delete(ym);
+      return copy;
+    });
   }
 
   // Versements reçus de l'autre profil (un versement envoyé par l'autre
@@ -352,8 +467,11 @@ export class BudgetStore {
         0,
       );
       const rollover = this.rolloverFor(owner, ym);
-      const budget = revenus;
-      const soldeNet = budget - spent + rollover;
+      // "budget" inclut le report du mois clôturé précédent, comme dans
+      // budgetSummary() — sinon "Dépenses > Budget" (overBudget) serait
+      // trompeur pour un mois qui a reçu un report.
+      const budget = revenus + rollover;
+      const soldeNet = budget - spent;
 
       const provisionsAccumulated = relevantProvisions.reduce(
         (s, p) => s + provisionAdjustmentsForMonth(p, ym).reduce((s2, a) => s2 + a.amount, 0),
@@ -481,20 +599,24 @@ export class BudgetStore {
     return total;
   });
 
-  // Résumé budget + solde net du mois/profil affichés.
+  // Résumé budget + solde net du mois/profil affichés. Le report du mois
+  // clôturé précédent (rollover) est inclus dans "budget" : c'est de
+  // l'argent réellement disponible ce mois-ci, au même titre que les
+  // revenus — sinon la barre de progression et le "sur X$" affiché
+  // sous-évaluent ce qui est vraiment disponible à dépenser.
   readonly budgetSummary = computed(() => {
     const owner = this.activeOwner();
     const ym = this.current();
     const spent = this.countedExpensesList().reduce((s, e) => s + e.amount, 0);
-    const budget = this.revenueBase();
     const rollover = this.rolloverFor(owner, ym);
+    const budget = this.revenueBase() + rollover;
     const versementsIn = owner === 'global' ? 0 : this.versementsRecus(owner, ym);
     return {
       spent,
       budget,
       rollover,
       versementsIn,
-      soldeNet: budget - spent + rollover,
+      soldeNet: budget - spent,
     };
   });
 
@@ -523,8 +645,8 @@ export class BudgetStore {
     const projectedVariable = (variablePart / dayOfMonth) * daysInMonth;
     const projectedSpend = provisionPart + projectedVariable;
 
-    const { budget, rollover } = this.budgetSummary();
-    const projectedSoldeNet = budget - projectedSpend + rollover;
+    const { budget } = this.budgetSummary();
+    const projectedSoldeNet = budget - projectedSpend;
 
     return {
       dayOfMonth,
@@ -533,6 +655,64 @@ export class BudgetStore {
       projectedSpend,
       projectedSoldeNet,
     };
+  });
+
+  // "Reste réellement disponible" : budget moins ce qui est déjà dépensé,
+  // ET moins ce qui va forcément être dépensé/réservé avant la fin du
+  // mois affiché (récurrents attendus pas encore confirmés + montant
+  // manquant des provisions dont l'échéance tombe ce mois-ci). Contraire
+  // à l'ancien remainingPerDay (retiré), fonctionne pour n'importe quel
+  // mois affiché (pas seulement le mois réel en cours), car
+  // budgetSummary/expectedThisMonth/upcomingProvisions le font déjà tous.
+  //
+  // Volontairement nommé "remainingBudget" et pas "safeToSpend" : ce
+  // calcul répond uniquement à "combien reste-t-il dans mon budget ?",
+  // pas à "combien puis-je dépenser sans compromettre mes finances ?"
+  // (qui demanderait en plus épargne, marge de sécurité, etc. — hors
+  // scope de cette itération).
+  //
+  // Pas de double comptage : les contributions déjà faites ce mois-ci à
+  // une provision sont comptées dans `spent` (via countedExpenses) ET
+  // font déjà baisser `missing` d'autant (missing = target - pot, et pot
+  // inclut ces contributions) — donc les deux déductions sont
+  // complémentaires, jamais redondantes. Voir provisionPot().
+  readonly remainingBudget = computed<RemainingBudget>(() => {
+    const { budget, spent } = this.budgetSummary();
+
+    const recurringRemaining = this.expectedThisMonth().reduce(
+      (s, row) => s + row.template.amount,
+      0,
+    );
+
+    const provisionsRemaining = this.upcomingProvisions()
+      .filter((row) => row.dueThisMonth)
+      .reduce((s, row) => s + row.missing, 0);
+
+    return {
+      amount: budget - spent - recurringRemaining - provisionsRemaining,
+      budget,
+      spent,
+      recurringRemaining,
+      provisionsRemaining,
+    };
+  });
+
+  // "Disponible par jour", basé sur remainingBudget() (pas sur le budget
+  // brut — voir l'historique dans REVIEW_ARCHITECTURE_ET_PLAN_REFACTORING
+  // ou la doc de positionnement : une première version basée sur
+  // `budget - spentSoFar` seul ignorait les récurrents/provisions à venir
+  // et pouvait annoncer un montant par jour trompeur). Réparti sur les
+  // jours restants du MOIS RÉEL EN COURS uniquement — null en dehors de
+  // ce mois (même garde que monthForecast) et quand il ne reste plus de
+  // jours (dernier jour du mois).
+  readonly remainingBudgetPerDay = computed(() => {
+    const forecast = this.monthForecast();
+    if (!forecast) return null;
+
+    const daysLeft = forecast.daysInMonth - forecast.dayOfMonth;
+    if (daysLeft <= 0) return null;
+
+    return this.remainingBudget().amount / daysLeft;
   });
 
   // Alertes intelligentes : agrège plusieurs signaux déjà calculés
@@ -576,7 +756,14 @@ export class BudgetStore {
     // Budget global (uniquement pour le mois réel en cours)
     if (isCurrentMonth && summary.budget > 0) {
       const pct = (summary.spent / summary.budget) * 100;
-      if (pct >= 100) {
+      // Bug corrigé : comparer sur le pourcentage (spent/budget*100 >= 100)
+      // déclenchait "Budget dépassé de 0,00 $" dès que le budget était
+      // exactement atteint (pile 100 %, pas réellement dépassé). On
+      // compare maintenant le montant réel, plus précis qu'un pourcentage
+      // arrondi et cohérent avec le reste du code (ex. provisionDueAlert
+      // fait déjà `pot >= target` pour ne rien afficher quand la cible est
+      // pile atteinte, pas seulement dépassée).
+      if (summary.spent > summary.budget) {
         alerts.push({
           severity: 'critical',
           icon: '🔴',
@@ -597,7 +784,11 @@ export class BudgetStore {
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 2)
       .forEach((r) => {
-        if (r.pct >= 100) {
+        // Même correctif que ci-dessus : dépassement seulement si le
+        // montant restant est réellement négatif, pas juste "pct >= 100"
+        // (pile 100 % ne veut pas dire dépassé, et affichait auparavant
+        // "dépassement de 0,00 $" — trompeur).
+        if (r.remaining < 0) {
           alerts.push({
             severity: 'warning',
             icon: '⚠️',
@@ -626,6 +817,28 @@ export class BudgetStore {
         message: `Carte de crédit : ${fmt(ccTotal)} chargés ce mois-ci (${((ccTotal / summary.budget) * 100).toFixed(0)} % du budget).`,
       });
     }
+
+    // Chevauchement catégorie : une provision et une dépense récurrente
+    // active couvrent la même catégorie. Jamais traité comme une erreur —
+    // les deux peuvent être des obligations légitimes et distinctes (ex.
+    // leasing auto en récurrent + entretien auto en provision). Purement
+    // informatif, pour laisser l'utilisateur vérifier lui-même s'il ne
+    // s'agit pas en fait de la même obligation comptée deux fois. Les
+    // provisions n'ont pas de notion "active/inactive" dans le modèle
+    // (contrairement aux récurrents) : toutes comptent.
+    const provisionCategories = new Set(this.visibleProvisions().map((p) => p.category));
+    const flaggedCategories = new Set<string>();
+    this.visibleRecurringExpenses()
+      .filter((r) => r.active && provisionCategories.has(r.category))
+      .forEach((r) => {
+        if (flaggedCategories.has(r.category)) return;
+        flaggedCategories.add(r.category);
+        alerts.push({
+          severity: 'info',
+          icon: 'ℹ️',
+          message: `${r.category} : couverte par une provision et une dépense récurrente. Vérifie qu'il ne s'agit pas de la même obligation.`,
+        });
+      });
 
     const order: Record<SmartAlert['severity'], number> = {
       critical: 0,
@@ -677,9 +890,16 @@ export class BudgetStore {
         );
         const spent = spentByCategory[category] || 0;
         const pct = budget > 0 ? (spent / budget) * 100 : spent > 0 ? 100 : 0;
-        return { category, budget, spent, remaining: budget - spent, pct };
+        // Un budget explicitement mis à 0 pour LE MOIS AFFICHÉ (pas hérité
+        // d'un mois précédent) doit rester visible dans la liste, même
+        // sans dépense — sinon la ligne disparaît dès qu'on enregistre 0,
+        // ce qui donne l'impression que ça n'a pas fonctionné.
+        const hasExplicitEntryThisMonth = owners.some(
+          (o) => this.categoryBudgets()[o]?.[ym]?.[category] != null,
+        );
+        return { category, budget, spent, remaining: budget - spent, pct, hasExplicitEntryThisMonth };
       })
-      .filter((r) => r.budget > 0 || r.spent > 0)
+      .filter((r) => r.budget > 0 || r.spent > 0 || r.hasExplicitEntryThisMonth)
       .sort((a, b) => b.spent - a.spent || b.budget - a.budget);
   });
 
@@ -689,6 +909,7 @@ export class BudgetStore {
     category: string,
     amount: number,
   ): Promise<void> {
+    this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('category_budgets')
       .upsert({ owner, ym, category, amount }, { onConflict: 'owner,ym,category' });
@@ -701,6 +922,7 @@ export class BudgetStore {
   }
 
   async removeCategoryBudget(owner: Owner, ym: string, category: string): Promise<void> {
+    this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('category_budgets')
       .delete()
@@ -719,7 +941,14 @@ export class BudgetStore {
     });
   }
 
+  // Crée une dépense puis recale les provisions concernées. Les deux
+  // opérations touchent des tables différentes (pas de transaction SQL
+  // possible depuis ici) — si le recalage échoue après que la dépense a
+  // été insérée, on supprime la dépense qu'on vient de créer (rollback de
+  // compensation) plutôt que de la laisser exister sans le recalage
+  // attendu, ce qui serait un état incohérent silencieux.
   async addExpense(expense: Omit<Expense, 'id'>): Promise<Expense> {
+    this.assertMonthOpen(expense.date.slice(0, 7));
     const { data, error } = await this.supabase.client
       .from('expenses')
       .insert(expenseToRow(expense))
@@ -728,11 +957,30 @@ export class BudgetStore {
     if (error) throw error;
     const newExpense = rowToExpense(data);
     this.expenses.update((list) => [...list, newExpense]);
-    await this.syncProvisionsFromExpense(newExpense);
+    try {
+      await this.syncProvisionsFromExpense(newExpense);
+    } catch (err) {
+      const { error: rollbackError } = await this.supabase.client
+        .from('expenses')
+        .delete()
+        .eq('id', newExpense.id);
+      this.expenses.update((list) => list.filter((e) => e.id !== newExpense.id));
+      if (rollbackError) {
+        throw new Error(
+          `Le recalage des provisions a échoué (${(err as Error).message ?? err}) et la dépense créée n'a pas ` +
+            `pu être annulée (${rollbackError.message}). Vérifie manuellement dans Supabase.`,
+        );
+      }
+      throw new Error(
+        `Le recalage des provisions a échoué : ${(err as Error).message ?? err}. La dépense n'a pas été créée (annulée automatiquement).`,
+      );
+    }
     return newExpense;
   }
 
   async removeExpense(id: string): Promise<void> {
+    const existing = this.expenses().find((e) => e.id === id);
+    if (existing) this.assertMonthOpen(existing.date.slice(0, 7));
     const { error } = await this.supabase.client
       .from('expenses')
       .delete()
@@ -750,6 +998,17 @@ export class BudgetStore {
     id: string,
     changes: Partial<Omit<Expense, 'id'>>,
   ): Promise<void> {
+    const existing = this.expenses().find((e) => e.id === id);
+    if (!existing) throw new Error('Dépense introuvable.');
+    // Le mois d'origine ET le mois de destination (si la date change)
+    // doivent tous les deux être ouverts : on ne peut ni modifier une
+    // dépense qui appartient à un mois clôturé, ni en déplacer une dans
+    // un mois clôturé.
+    this.assertMonthOpen(existing.date.slice(0, 7));
+    if (changes.date !== undefined) {
+      this.assertMonthOpen(changes.date.slice(0, 7));
+    }
+
     const row: Record<string, unknown> = {};
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
@@ -771,7 +1030,27 @@ export class BudgetStore {
     this.expenses.update((list) =>
       list.map((e) => (e.id === id ? updated : e)),
     );
-    await this.syncProvisionsFromExpense(updated);
+    try {
+      await this.syncProvisionsFromExpense(updated);
+    } catch (err) {
+      // Même logique de compensation qu'addExpense() : on revient à
+      // l'état d'avant l'édition plutôt que de laisser la dépense
+      // modifiée sans son recalage de provision.
+      const { error: rollbackError } = await this.supabase.client
+        .from('expenses')
+        .update(expenseToRow(existing))
+        .eq('id', id);
+      this.expenses.update((list) => list.map((e) => (e.id === id ? existing : e)));
+      if (rollbackError) {
+        throw new Error(
+          `Le recalage des provisions a échoué (${(err as Error).message ?? err}) et la dépense n'a pas pu être ` +
+            `restaurée à son état précédent (${rollbackError.message}). Vérifie manuellement dans Supabase.`,
+        );
+      }
+      throw new Error(
+        `Le recalage des provisions a échoué : ${(err as Error).message ?? err}. La modification a été annulée automatiquement.`,
+      );
+    }
   }
 
   readonly visibleRecurringExpenses = computed(() => {
@@ -781,23 +1060,39 @@ export class BudgetStore {
       : this.recurringExpenses().filter((r) => r.owner === owner);
   });
 
-  // "Dépenses attendues ce mois-ci" : modèles actifs qui n'ont pas encore
-  // été confirmés pour le mois affiché (aucune dépense réelle liée
-  // trouvée). Option B du document de roadmap : on suggère, on ne crée
-  // jamais automatiquement — évite les doublons avec une saisie manuelle.
+  // "Dépenses attendues ce mois-ci" : occurrences non encore confirmées
+  // pour le mois affiché. Un gabarit mensuel produit une seule occurrence
+  // (comportement d'origine, inchangé) ; un gabarit hebdo/aux 2
+  // semaines/2x par mois peut en produire plusieurs pour le même mois.
+  //
+  // Correspondance confirmé/attendu par COMPTE (pas par date exacte) :
+  // si un gabarit attend K occurrences ce mois-ci et que C dépenses de ce
+  // mois y sont déjà liées (quelle que soit leur date exacte), on masque
+  // les C premières occurrences suggérées. Ça préserve exactement le
+  // comportement mensuel d'origine (K=1 : masqué dès qu'une confirmation
+  // existe, même si l'utilisateur a changé la date avant de confirmer) et
+  // se généralise proprement aux gabarits à occurrences multiples, sans
+  // dépendre d'une correspondance de date exacte fragile.
   readonly expectedThisMonth = computed(() => {
     const ym = this.current();
-    const confirmedIds = new Set(
-      this.expenses()
-        .filter((e) => e.recurringSourceId && e.date.startsWith(ym))
-        .map((e) => e.recurringSourceId),
-    );
-    return this.visibleRecurringExpenses()
-      .filter((r) => r.active && !confirmedIds.has(r.id))
-      .map((r) => ({
-        template: r,
-        suggestedDate: clampDayToMonth(ym, r.dayOfMonth),
-      }));
+    const confirmedCounts = new Map<string, number>();
+    this.expenses()
+      .filter((e) => e.recurringSourceId && e.date.startsWith(ym))
+      .forEach((e) => {
+        const id = e.recurringSourceId!;
+        confirmedCounts.set(id, (confirmedCounts.get(id) ?? 0) + 1);
+      });
+
+    const result: { template: RecurringExpense; suggestedDate: string }[] = [];
+    for (const r of this.visibleRecurringExpenses()) {
+      if (!r.active) continue;
+      const occurrences = occurrencesInMonth(r, ym);
+      const alreadyConfirmed = confirmedCounts.get(r.id) ?? 0;
+      occurrences
+        .slice(alreadyConfirmed)
+        .forEach((suggestedDate) => result.push({ template: r, suggestedDate }));
+    }
+    return result;
   });
 
   async addRecurringExpense(r: Omit<RecurringExpense, 'id'>): Promise<void> {
@@ -882,13 +1177,25 @@ export class BudgetStore {
     );
     if (matches.length === 0) return;
 
-    await Promise.all(
+    const results = await Promise.all(
       matches.map((p) => {
         const updates: any = { start_ym: expense.date.slice(0, 7) };
         if (provisionUnit(p) === 'days') updates.start_date = expense.date;
         return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
       }),
     );
+    // Bug corrigé : ces erreurs n'étaient auparavant jamais vérifiées —
+    // un échec de mise à jour d'une provision passait totalement
+    // inaperçu, laissant croire à un recalage réussi alors que la
+    // provision gardait sa date d'origine. On remonte l'erreur au lieu
+    // de continuer, pour qu'addExpense()/updateExpense() puisse
+    // déclencher leur rollback de compensation.
+    const failed = results.filter((r) => r.error);
+    if (failed.length) {
+      throw new Error(
+        `Échec de mise à jour de ${failed.length} provision(s) : ${failed[0].error?.message}`,
+      );
+    }
 
     const matchIds = new Set(matches.map((p) => p.id));
     this.provisions.update((list) =>
@@ -950,6 +1257,7 @@ export class BudgetStore {
     date: string,
     note: string,
   ): Promise<void> {
+    this.assertMonthOpen(date.slice(0, 7));
     const { data, error } = await this.supabase.client
       .from('savings_goal_contributions')
       .insert(savingsContributionToRow(goalId, { amount, date, note }))
@@ -970,6 +1278,9 @@ export class BudgetStore {
   }
 
   async removeSavingsGoalContribution(goalId: string, contributionId: string): Promise<void> {
+    const goal = this.savingsGoals().find((g) => g.id === goalId);
+    const contribution = goal?.contributions.find((c) => c.id === contributionId);
+    if (contribution) this.assertMonthOpen(contribution.date.slice(0, 7));
     const { error } = await this.supabase.client
       .from('savings_goal_contributions')
       .delete()
@@ -1024,16 +1335,41 @@ export class BudgetStore {
   // Marque une provision comme payée : crée la dépense réelle correspondante.
   // Réutilise addExpense() tel quel (création + recalage automatique via
   // syncProvisionsFromExpense) — rien n'est dupliqué ici.
+  // Versements "Versement" déjà enregistrés (via le formulaire de dépense
+  // classique) pour l'expéditeur du profil actif, mais pas encore répartis
+  // entre des provisions (aucun ajustement lié). Permet de répartir un
+  // versement existant sans en recréer un — et donc sans le décompter deux
+  // fois du budget de l'expéditeur.
+  readonly unsplitVersements = computed(() => {
+    const receiver = this.activeOwner();
+    if (receiver === 'global') return [];
+    const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
+    const linkedIds = new Set(
+      this.provisions().flatMap((p) =>
+        p.adjustments.map((a) => a.versementExpenseId).filter((id): id is string => !!id),
+      ),
+    );
+    return this.expenses()
+      .filter((e) => e.category === 'Versement' && e.owner === sender && !linkedIds.has(e.id))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  });
+
   // Enregistre un versement reçu ET le répartit en un seul geste entre
   // plusieurs provisions (ajouts au fonds), pour aider à payer des
   // provisions à plusieurs. Réutilise addExpense() et
   // addProvisionAdjustment() tels quels — rien n'est dupliqué. Chaque
   // ajout est lié à la dépense "Versement" via versementExpenseId, pour
-  // pouvoir annuler toute la répartition en un clic (cancelVersementSplit).
+  // pouvoir défaire la répartition en un clic (cancelVersementSplit),
+  // sans supprimer le versement lui-même.
+  // Si existingExpenseId est fourni (versement déjà enregistré via le
+  // formulaire de dépense classique), aucune nouvelle dépense n'est créée
+  // — on répartit celle qui existe déjà, pour éviter de la décompter deux
+  // fois du budget de l'expéditeur.
   async splitVersementIntoProvisions(
     totalAmount: number,
     date: string,
     allocations: { provisionId: string; amount: number }[],
+    existingExpenseId?: string,
   ): Promise<void> {
     const receiver = this.activeOwner();
     if (receiver === 'global') {
@@ -1042,13 +1378,21 @@ export class BudgetStore {
     const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
     const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
 
-    const versementExpense = await this.addExpense({
-      amount: totalAmount,
-      category: 'Versement',
-      date,
-      owner: sender,
-      cc: false,
-    });
+    let versementExpenseId: string;
+    if (existingExpenseId) {
+      const existing = this.expenses().find((e) => e.id === existingExpenseId);
+      if (!existing) throw new Error('Versement introuvable.');
+      versementExpenseId = existing.id;
+    } else {
+      const versementExpense = await this.addExpense({
+        amount: totalAmount,
+        category: 'Versement',
+        date,
+        owner: sender,
+        cc: false,
+      });
+      versementExpenseId = versementExpense.id;
+    }
 
     for (const a of allocations) {
       if (a.amount > 0) {
@@ -1057,41 +1401,47 @@ export class BudgetStore {
           a.amount,
           date,
           `Versement de ${senderLabel}`,
-          versementExpense.id,
+          versementExpenseId,
         );
       }
     }
   }
 
   // Annule une répartition de versement faite avec splitVersementIntoProvisions :
-  // supprime la dépense "Versement" ET tous les ajouts de provisions qui lui
-  // sont liés (versementExpenseId), en une seule action cohérente.
+  // supprime uniquement les ajouts de provisions qui lui sont liés
+  // (versementExpenseId) — PAS la dépense "Versement" elle-même. Le
+  // versement redevient une dépense normale, modifiable/supprimable comme
+  // les autres (utile car un versement "existant" a pu être enregistré
+  // indépendamment de la répartition, et ne doit pas disparaître avec elle).
   async cancelVersementSplit(versementExpenseId: string): Promise<void> {
     const linked = this.provisions().flatMap((p) =>
       p.adjustments
         .filter((a) => a.versementExpenseId === versementExpenseId)
-        .map((a) => ({ provisionId: p.id, adjustmentId: a.id })),
+        .map((a) => ({ provisionId: p.id, adjustmentId: a.id, date: a.date })),
     );
+    if (linked.length === 0) return;
 
-    if (linked.length > 0) {
-      const { error } = await this.supabase.client
-        .from('provision_adjustments')
-        .delete()
-        .in(
-          'id',
-          linked.map((l) => l.adjustmentId),
-        );
-      if (error) throw error;
-      const linkedIds = new Set(linked.map((l) => l.adjustmentId));
-      this.provisions.update((list) =>
-        list.map((p) => ({
-          ...p,
-          adjustments: p.adjustments.filter((a) => !linkedIds.has(a.id)),
-        })),
+    // Toutes les répartitions liées à un même versement partagent
+    // normalement la même date (créées ensemble par
+    // splitVersementIntoProvisions), mais on vérifie chaque mois concerné
+    // par sécurité plutôt que de supposer.
+    new Set(linked.map((l) => l.date.slice(0, 7))).forEach((ym) => this.assertMonthOpen(ym));
+
+    const { error } = await this.supabase.client
+      .from('provision_adjustments')
+      .delete()
+      .in(
+        'id',
+        linked.map((l) => l.adjustmentId),
       );
-    }
-
-    await this.removeExpense(versementExpenseId);
+    if (error) throw error;
+    const linkedIds = new Set(linked.map((l) => l.adjustmentId));
+    this.provisions.update((list) =>
+      list.map((p) => ({
+        ...p,
+        adjustments: p.adjustments.filter((a) => !linkedIds.has(a.id)),
+      })),
+    );
   }
 
   async payProvision(
@@ -1118,6 +1468,7 @@ export class BudgetStore {
     note: string,
     versementExpenseId?: string,
   ): Promise<void> {
+    this.assertMonthOpen(date.slice(0, 7));
     const { data, error } = await this.supabase.client
       .from('provision_adjustments')
       .insert(adjustmentToRow(provisionId, { amount, date, note, versementExpenseId }))
@@ -1138,6 +1489,10 @@ export class BudgetStore {
     provisionId: string,
     adjustmentId: string,
   ): Promise<void> {
+    const adjustment = this.provisions()
+      .find((p) => p.id === provisionId)
+      ?.adjustments.find((a) => a.id === adjustmentId);
+    if (adjustment) this.assertMonthOpen(adjustment.date.slice(0, 7));
     const { error } = await this.supabase.client
       .from('provision_adjustments')
       .delete()
@@ -1153,6 +1508,11 @@ export class BudgetStore {
   }
 
   async addIncome(income: Omit<Income, 'id'>): Promise<void> {
+    // Un revenu récurrent est une entité structurelle (s'applique à tous
+    // les mois à partir de recurringStartMonth) — sa création n'est pas
+    // bloquée par la clôture du mois de sa date de référence. Seuls les
+    // revenus ponctuels sont de vraies transactions datées.
+    if (!income.recurring) this.assertMonthOpen(income.date.slice(0, 7));
     const { data, error } = await this.supabase.client
       .from('incomes')
       .insert(incomeToRow(income))
@@ -1163,6 +1523,8 @@ export class BudgetStore {
   }
 
   async removeIncome(id: string): Promise<void> {
+    const existing = this.incomes().find((i) => i.id === id);
+    if (existing && !existing.recurring) this.assertMonthOpen(existing.date.slice(0, 7));
     const { error } = await this.supabase.client
       .from('incomes')
       .delete()
@@ -1174,6 +1536,7 @@ export class BudgetStore {
   // En vue Global, retire le report des DEUX profils pour ce mois (le report
   // Global affiché n'est que leur somme, jamais stocké séparément).
   async removeRollover(owner: OwnerOrGlobal, ym: string): Promise<void> {
+    this.assertMonthOpen(ym);
     const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
     await Promise.all(
       owners.map((o) =>
@@ -1196,6 +1559,7 @@ export class BudgetStore {
 
   // Écrit (ou remplace) le report d'un profil pour un mois donné.
   async setRollover(owner: Owner, ym: string, amount: number): Promise<void> {
+    this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('rollovers')
       .upsert({ owner, ym, amount }, { onConflict: 'owner,ym' });
@@ -1228,6 +1592,7 @@ export class BudgetStore {
 
   // Supprime les dépenses du mois donné (tous profils).
   async resetExpensesForMonth(ym: string): Promise<void> {
+    this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('expenses')
       .delete()
@@ -1241,6 +1606,7 @@ export class BudgetStore {
   // récurrents ne sont jamais supprimés ici : ils s'appliquent à tous les
   // mois, un par mois n'aurait pas de sens.
   async resetIncomesForMonth(ym: string): Promise<void> {
+    this.assertMonthOpen(ym);
     const targets = this.incomes().filter(
       (i) => !i.recurring && i.date.startsWith(ym),
     );
@@ -1257,21 +1623,26 @@ export class BudgetStore {
     this.incomes.update((list) => list.filter((i) => !ids.has(i.id)));
   }
 
-  // Réinitialisation complète : efface tout, tous les profils, tous les mois.
+  // Réinitialisation complète : efface tout, tous les profils, tous les
+  // mois. Passe par la fonction Postgres reset_everything() (voir
+  // supabase/migration-008-atomic-reset.sql) plutôt que par 8 DELETE
+  // séparés depuis le client : la fonction s'exécute dans une seule
+  // transaction, donc soit tout est supprimé, soit rien ne l'est — plus
+  // de risque de suppression partielle en cas d'échec réseau/permission
+  // à mi-parcours (voir AUDIT_PRODUCTION_V2.md §3.3).
   async resetEverything(): Promise<void> {
-    await Promise.all([
-      this.supabase.client.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      this.supabase.client.from('incomes').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      this.supabase.client.from('provisions').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      this.supabase.client.from('savings_goals').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      this.supabase.client.from('budgets').delete().neq('owner', ''),
-      this.supabase.client.from('category_budgets').delete().neq('owner', ''),
-      this.supabase.client.from('rollovers').delete().neq('owner', ''),
-    ]);
+    const { error } = await this.supabase.client.rpc('reset_everything');
+    if (error) {
+      throw new Error(
+        `Échec de la réinitialisation : ${error.message}. Opération atomique — aucune donnée n'a été supprimée.`,
+      );
+    }
+
     this.expenses.set([]);
     this.incomes.set([]);
     this.provisions.set([]);
     this.savingsGoals.set([]);
+    this.recurringExpenses.set([]);
     this.budgets.set(emptyMonthlyMap());
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
@@ -1280,6 +1651,19 @@ export class BudgetStore {
   // Restaure une sauvegarde .json exportée précédemment : remplace TOUTES
   // les données actuelles. Les identifiants d'origine sont conservés pour
   // que les ajustements de provisions restent liés à la bonne provision.
+  //
+  // Atomicité (voir AUDIT_PRODUCTION_V2.md §3.3) : la restauration elle-même
+  // reste ~10 insert Supabase séquentiels (contrairement à
+  // resetEverything(), une vraie transaction SQL pour ~10 tables aux
+  // formes différentes — legacy id remapping compris — serait un chantier
+  // à part entière, pas fait ici). Ce qu'on garantit à la place : un
+  // "tout ou rien" par compensation. Si un insert échoue en cours de
+  // route, on revide tout ce qui vient d'être partiellement inséré via
+  // resetEverything() (déjà atomique) avant de remonter l'erreur — pour
+  // ne jamais laisser la base dans un état "à moitié restauré". Le pire
+  // cas possible n'est donc plus "données mélangées entre l'ancien et le
+  // nouvel import", mais "import annulé, base vide" — un état sans
+  // ambiguïté, que l'utilisateur peut réessayer.
   async importData(data: any): Promise<void> {
     if (
       !data ||
@@ -1290,6 +1674,34 @@ export class BudgetStore {
       throw new Error('Format de fichier non reconnu.');
     }
 
+    await this.resetEverything();
+
+    try {
+      await this.insertImportedData(data);
+    } catch (err) {
+      try {
+        await this.resetEverything();
+      } catch (rollbackErr) {
+        // Cas rare et sérieux : l'import a échoué ET le rollback de
+        // compensation a échoué aussi (ex. panne réseau prolongée). On ne
+        // masque ni l'un ni l'autre — l'utilisateur doit savoir que l'état
+        // de la base est incertain et vérifier manuellement, plutôt que de
+        // recevoir un message qui ne parle que de l'échec d'origine.
+        throw new Error(
+          `Échec de l'import (${(err as Error).message ?? err}), et la restauration automatique de secours a ` +
+            `elle-même échoué (${(rollbackErr as Error).message ?? rollbackErr}). L'état de la base est incertain ` +
+            `— vérifie manuellement dans Supabase avant de réessayer.`,
+        );
+      }
+      throw new Error(
+        `Import annulé : ${(err as Error).message ?? err}. Aucune donnée n'a été conservée (la base a été revidée), tu peux réessayer.`,
+      );
+    }
+
+    await this.loadAll();
+  }
+
+  private async insertImportedData(data: any): Promise<void> {
     // L'ancienne application (fichier HTML unique) générait des identifiants
     // courts (ex. "mrztns345pw3k"), pas de vrais UUID comme Supabase les
     // exige. On les remplace ici par de vrais UUID, en gardant une table de
@@ -1300,8 +1712,6 @@ export class BudgetStore {
       typeof v === 'string' &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const idFor = (v: unknown): string => (isUuid(v) ? v : crypto.randomUUID());
-
-    await this.resetEverything();
 
     if (data.provisions.length) {
       const provisionIdMap = new Map<string, string>();
@@ -1361,6 +1771,18 @@ export class BudgetStore {
           .insert(contributionRows);
         if (contribError) throw contribError;
       }
+    }
+
+    // Optionnel : absent des sauvegardes exportées avant ce correctif —
+    // même garde que pour savingsGoals ci-dessus, on ne bloque pas
+    // l'import d'un fichier plus ancien qui ne les contient pas.
+    if (Array.isArray(data.recurringExpenses) && data.recurringExpenses.length) {
+      const rows = data.recurringExpenses.map((r: RecurringExpense) => ({
+        id: idFor(r.id),
+        ...recurringExpenseToRow(r),
+      }));
+      const { error } = await this.supabase.client.from('recurring_expenses').insert(rows);
+      if (error) throw error;
     }
 
     if (data.expenses.length) {
@@ -1424,8 +1846,6 @@ export class BudgetStore {
         if (error) throw error;
       }
     }
-
-    await this.loadAll();
   }
 
   // Sauvegarde complète en .json (téléchargement local), pour archive
@@ -1437,6 +1857,7 @@ export class BudgetStore {
       incomes: this.incomes(),
       provisions: this.provisions(),
       savingsGoals: this.savingsGoals(),
+      recurringExpenses: this.recurringExpenses(),
       budgets: this.budgets(),
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),

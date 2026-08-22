@@ -25,7 +25,35 @@ npm start
 
 Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1.3.
 
-## 3. Déployer sur GitHub Pages
+## 3. Tests
+
+```bash
+npm test
+```
+
+Lance la suite Vitest (via `@angular/build:unit-test`, intégré nativement à
+Angular CLI — pas de config Karma/Jasmine séparée à maintenir).
+
+- **Tests unitaires** (`src/app/core/utils/*.spec.ts`) : logique métier pure
+  (dates, montants, revenus récurrents, provisions, épargne) — aucune
+  dépendance, rapides, la majorité de la couverture.
+- **Tests d'intégration** (`src/app/core/services/budget-store.service.spec.ts`) :
+  `BudgetStore` complet contre un faux client Supabase en mémoire
+  (`src/app/core/testing/fake-supabase-client.ts`), pas de dépendance réseau
+  ni de vraie base — vérifie que requêtes, mapping ligne↔modèle et signals
+  fonctionnent bien ensemble.
+
+Certains tests documentent volontairement des **bugs connus** plutôt que le
+comportement idéal (ex. `resetEverything()` qui n'efface pas les dépenses
+récurrentes — voir `AUDIT_PRODUCTION_V2.md` §3.1). Ce sont des filets de
+non-régression assumés : le jour où un correctif est appliqué, le test
+correspondant est censé casser, et son assertion doit être mise à jour en
+connaissance de cause plutôt que d'être découverte par accident.
+
+Un workflow GitHub Actions (`.github/workflows/tests.yml`) lance cette
+suite + un build de production sur chaque push et pull request.
+
+## 4. Déployer sur GitHub Pages
 
 1. Pousse ce projet sur un repo GitHub.
 2. Dans le repo : **Settings → Pages → Source: GitHub Actions**.
@@ -65,8 +93,9 @@ Ouvre http://localhost:4200 — connecte-toi avec le compte créé à l'étape 1
   `(click)` renvoie `false` — ce qui empêchait toute case à cocher de
   basculer dès qu'on cliquait à l'intérieur de la modale (l'événement
   remonte jusqu'au fond). Remplacé par une vraie méthode
-  (`onOverlayClick()`). Vérifié avec un test automatisé (Playwright) qui
-  clique réellement chaque case et confirme le changement d'état.
+  (`onOverlayClick()`). Vérifié manuellement en local avec Playwright au
+  moment du correctif (script ad hoc, non conservé dans le repo — voir
+  section Tests ci-dessous pour la suite de tests réellement reproductible).
 - **Profil par défaut des formulaires** : "Ajouter un revenu", "Ajouter une
   dépense" et "Dépenses récurrentes" ne reprenaient l'onglet actif (Moi/
   Madame) qu'au tout premier chargement de la page, jamais après. Corrigé

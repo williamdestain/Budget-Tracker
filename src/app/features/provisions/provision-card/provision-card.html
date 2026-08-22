@@ -103,10 +103,27 @@
   </div>
   <div class="prov-foot" style="margin-top: 4px">
     <span>{{ stats().nextFieldLabel }} : <strong>{{ stats().nextLabel }}</strong></span>
-    <span>
-      {{ stats().startFieldLabel }} : {{ stats().startLabel }}
-      {{ provision().autoRecalibrate === false ? '· recalage manuel' : '' }}
-    </span>
+    @if (startEditOpen()) {
+      <span class="prov-percent-edit">
+        {{ stats().startFieldLabel }} :
+        @if (provision().intervalUnit === 'days') {
+          <input type="date" [(ngModel)]="editStartDate" (keyup.enter)="saveEditStartDate()" />
+        } @else {
+          <input type="month" [(ngModel)]="editStartYM" (keyup.enter)="saveEditStartDate()" />
+        }
+        <button class="prov-percent-btn" (click)="saveEditStartDate()" [disabled]="saving()">✓</button>
+        <button class="prov-percent-btn" (click)="cancelEditStartDate()">✕</button>
+      </span>
+    } @else {
+      <span
+        class="prov-percent"
+        (click)="startEditStartDate()"
+        title="Modifier la date d'ancrage du cycle (déplace aussi la prochaine échéance)"
+      >
+        {{ stats().startFieldLabel }} : {{ stats().startLabel }} ✏️
+        {{ provision().autoRecalibrate === false ? '· recalage manuel' : '' }}
+      </span>
+    }
   </div>
 
   @if (stats().adjustmentTotal > 0) {

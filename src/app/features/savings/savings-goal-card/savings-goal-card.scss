@@ -2,15 +2,15 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
-  background: #fbfcfe;
+  background: var(--surface-soft);
 }
 .goal-item.overdue {
-  border-color: #fca5a5;
-  background: #fef2f2;
+  border-color: var(--red-soft-border);
+  background: var(--red-soft);
 }
 .goal-item.ok {
-  border-color: #86e0a6;
-  background: #f4fbf6;
+  border-color: var(--green-soft-border);
+  background: var(--green-soft);
 }
 .prov-top {
   display: flex;
@@ -41,7 +41,7 @@
 }
 .prov-actions button {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   color: var(--ink-soft);
   width: 28px;
   height: 28px;
@@ -61,7 +61,7 @@
 .prov-actions .del-prov:hover {
   background: var(--red-soft);
   color: var(--red);
-  border-color: #fecaca;
+  border-color: var(--red-soft-border);
 }
 
 .prov-adjust-form {
@@ -72,8 +72,8 @@
   margin: 10px 0;
   padding: 10px;
   border-radius: 10px;
-  border: 1px solid #d5def2;
-  background: #f8faff;
+  border: 1px solid var(--accent-soft-border);
+  background: var(--accent-soft);
 }
 .prov-adjust-form .btn-primary {
   height: 38px;
@@ -94,7 +94,7 @@
   color: var(--ink-soft);
   padding: 6px 8px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--line);
 }
 .prov-adjust-row strong {
@@ -102,7 +102,7 @@
 }
 .del-prov-adjust {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   color: var(--ink-soft);
   width: 24px;
   height: 24px;
@@ -115,7 +115,7 @@
 .del-prov-adjust:hover {
   background: var(--red-soft);
   color: var(--red);
-  border-color: #fecaca;
+  border-color: var(--red-soft-border);
 }
 .prov-bar-wrap {
   height: 8px;

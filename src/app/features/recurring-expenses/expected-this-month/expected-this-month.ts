@@ -15,6 +15,12 @@ export class ExpectedThisMonth {
 
   // Valeurs éditables par ligne avant confirmation (montant/date/cc peuvent
   // varier légèrement d'un mois à l'autre pour une facture réelle).
+  //
+  // Clé = occurrence (template.id + suggestedDate), PAS juste template.id :
+  // un gabarit hebdomadaire/aux 2 semaines/2x par mois peut produire
+  // plusieurs suggestions le même mois pour le même gabarit — les clefs
+  // doivent rester distinctes entre elles, sinon éditer une ligne
+  // écraserait l'état de l'autre.
   amounts: Record<string, number> = {};
   dates: Record<string, string> = {};
   ccs: Record<string, boolean> = {};
@@ -29,35 +35,39 @@ export class ExpectedThisMonth {
     return fmt(n);
   }
 
-  amountFor(id: string, fallback: number): number {
-    return this.amounts[id] ?? fallback;
+  key(templateId: string, suggestedDate: string): string {
+    return `${templateId}|${suggestedDate}`;
   }
 
-  dateFor(id: string, fallback: string): string {
-    return this.dates[id] ?? fallback;
+  amountFor(key: string, fallback: number): number {
+    return this.amounts[key] ?? fallback;
   }
 
-  ccFor(id: string): boolean {
-    return this.ccs[id] ?? false;
+  dateFor(key: string, fallback: string): string {
+    return this.dates[key] ?? fallback;
   }
 
-  async confirm(templateId: string, fallbackAmount: number, fallbackDate: string): Promise<void> {
-    const amount = this.amountFor(templateId, fallbackAmount);
-    const date = this.dateFor(templateId, fallbackDate);
+  ccFor(key: string): boolean {
+    return this.ccs[key] ?? false;
+  }
+
+  async confirm(key: string, templateId: string, fallbackAmount: number, fallbackDate: string): Promise<void> {
+    const amount = this.amountFor(key, fallbackAmount);
+    const date = this.dateFor(key, fallbackDate);
     if (!(amount > 0) || !date) return;
 
-    this.confirming.update((set) => new Set(set).add(templateId));
+    this.confirming.update((set) => new Set(set).add(key));
     try {
-      await this.store.confirmRecurringExpense(templateId, amount, date, this.ccFor(templateId));
+      await this.store.confirmRecurringExpense(templateId, amount, date, this.ccFor(key));
     } finally {
       this.confirming.update((set) => {
         const copy = new Set(set);
-        copy.delete(templateId);
+        copy.delete(key);
         return copy;
       });
-      delete this.amounts[templateId];
-      delete this.dates[templateId];
-      delete this.ccs[templateId];
+      delete this.amounts[key];
+      delete this.dates[key];
+      delete this.ccs[key];
     }
   }
 }

@@ -13,7 +13,7 @@
   margin: 8px 0 0;
 }
 .splitter-hint.warn {
-  background: #fef3c7;
+  background: var(--amber-soft);
   color: #92400e;
   padding: 8px 10px;
   border-radius: 8px;
@@ -27,6 +27,13 @@
 }
 .splitter-top .field {
   flex: 1 1 160px;
+}
+.splitter-source {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  font-size: 13px;
 }
 .splitter-method {
   display: flex;
@@ -104,7 +111,7 @@
   margin-top: 14px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #f7f9fc;
+  background: var(--surface-soft);
   font-size: 13px;
   font-weight: 600;
 }

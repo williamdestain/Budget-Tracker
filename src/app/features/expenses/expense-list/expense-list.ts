@@ -1,7 +1,7 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP, OWNERS, OWNERS_SHORT, CATEGORIES } from '../../../core/utils/categories';
+import { COLOR_MAP, OWNERS, OWNERS_SHORT, CATEGORIES, sortedAlpha } from '../../../core/utils/categories';
 import { fmtDate } from '../../../core/utils/date.utils';
 import { fmt } from '../../../core/utils/currency.utils';
 import { Expense, Owner } from '../../../core/models/budget.models';
@@ -14,7 +14,7 @@ import { CountedExpense } from '../../../core/utils/provision.utils';
   styleUrl: './expense-list.scss',
 })
 export class ExpenseList {
-  readonly categories = CATEGORIES.filter((c) => c !== 'Revenu');
+  readonly categories = sortedAlpha(CATEGORIES.filter((c) => c !== 'Revenu'));
 
   readonly editingId = signal<string | null>(null);
   readonly savingEdit = signal(false);
@@ -105,7 +105,7 @@ export class ExpenseList {
   cancelSplit(e: CountedExpense): void {
     if (
       !confirm(
-        `Annuler cette répartition de ${fmt(e.amount)} ? La dépense "Versement" et tous les ajouts de provisions liés seront supprimés.`,
+        `Annuler cette répartition de ${fmt(e.amount)} ? Les ajouts liés sur les provisions seront supprimés. Le versement lui-même reste, tu pourras le supprimer séparément si besoin.`,
       )
     ) {
       return;

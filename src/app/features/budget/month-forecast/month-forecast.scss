@@ -4,11 +4,11 @@
   align-items: flex-start;
   margin-bottom: 18px;
   background: var(--green-soft);
-  border: 1px solid #b8e6c4;
+  border: 1px solid var(--green-soft-border);
 }
 .forecast-card.over {
   background: var(--red-soft);
-  border-color: #f5b8b8;
+  border-color: var(--red-soft-border);
 }
 .forecast-icon {
   font-size: 22px;

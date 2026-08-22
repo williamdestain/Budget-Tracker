@@ -1,2 +1,11 @@
 <router-outlet />
 <app-toast />
+<button
+  class="theme-toggle"
+  type="button"
+  (click)="theme.toggle()"
+  [title]="theme.theme() === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'"
+  [attr.aria-label]="theme.theme() === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'"
+>
+  {{ theme.theme() === 'dark' ? '☀️' : '🌙' }}
+</button>

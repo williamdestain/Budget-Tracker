@@ -31,9 +31,35 @@
         </div>
       </div>
       <div class="field">
-        <label>Jour du mois</label>
-        <input type="number" min="1" max="31" name="dayOfMonth" [(ngModel)]="dayOfMonth" required />
+        <label>Fréquence</label>
+        <select name="interval" [(ngModel)]="interval">
+          @for (i of intervalOptions; track i) {
+            <option [value]="i">{{ intervalLabels[i] }}</option>
+          }
+        </select>
       </div>
+      @if (interval === 'monthly') {
+        <div class="field">
+          <label>Jour du mois</label>
+          <input type="number" min="1" max="31" name="dayOfMonth" [(ngModel)]="dayOfMonth" required />
+        </div>
+      }
+      @if (interval === 'semimonthly') {
+        <div class="field">
+          <label>1er jour</label>
+          <input type="number" min="1" max="31" name="dayOfMonth" [(ngModel)]="dayOfMonth" required />
+        </div>
+        <div class="field">
+          <label>2e jour</label>
+          <input type="number" min="1" max="31" name="secondDayOfMonth" [(ngModel)]="secondDayOfMonth" required />
+        </div>
+      }
+      @if (interval === 'weekly' || interval === 'biweekly') {
+        <div class="field">
+          <label>Prochaine échéance</label>
+          <input type="date" name="startDate" [(ngModel)]="startDate" required />
+        </div>
+      }
       <div class="field">
         <label>Profil</label>
         <select name="owner" [(ngModel)]="owner">
@@ -58,7 +84,7 @@
           <span class="cat-dot" [style.background]="colorFor(r.category)"></span>
           <span class="recurring-name">
             {{ r.name }}
-            <span class="recurring-meta">{{ r.category }} · jour {{ r.dayOfMonth }}</span>
+            <span class="recurring-meta">{{ r.category }} · {{ frequencySummary(r) }}</span>
           </span>
           <span class="recurring-amt">{{ fmt(r.amount) }}</span>
           <button class="seg tiny" [title]="r.active ? 'Désactiver' : 'Activer'" (click)="toggleActive(r.id, r.active)">

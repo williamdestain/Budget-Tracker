@@ -25,13 +25,23 @@ export interface Expense {
 // Modèle de dépense récurrente ("Dépenses attendues ce mois-ci").
 // Option B du document de roadmap : suggestion à confirmer, jamais générée
 // automatiquement (pour éviter les doublons avec une saisie manuelle).
+//
+// Fréquence : 'monthly' (comportement d'origine, une échéance par mois à
+// dayOfMonth) | 'weekly' | 'biweekly' (calées sur startDate, peuvent
+// produire 0, 1, 2 ou 3 échéances selon le mois) | 'semimonthly' (deux
+// échéances fixes par mois, dayOfMonth + secondDayOfMonth).
+export type RecurringExpenseInterval = 'monthly' | 'weekly' | 'biweekly' | 'semimonthly';
+
 export interface RecurringExpense {
   id: string;
   name: string;
   amount: number;
   category: string;
   owner: Owner;
-  dayOfMonth: number; // 1-31, ajusté au dernier jour du mois si besoin
+  interval: RecurringExpenseInterval;
+  dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
+  secondDayOfMonth?: number | null; // 1-31 — utilisé seulement si interval 'semimonthly'
+  startDate?: string | null; // "YYYY-MM-DD" — date d'ancrage, utilisée si interval 'weekly'/'biweekly'
   cc: boolean;
   active: boolean;
 }

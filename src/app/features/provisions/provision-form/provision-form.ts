@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner, ProvisionIntervalUnit } from '../../../core/models/budget.models';
-import { CATEGORIES } from '../../../core/utils/categories';
+import { CATEGORIES, sortedAlpha } from '../../../core/utils/categories';
 import { isoOfDate } from '../../../core/utils/date.utils';
 
 const MOIS_NOMS = [
@@ -17,8 +17,8 @@ const MOIS_NOMS = [
   styleUrl: './provision-form.scss',
 })
 export class ProvisionForm {
-  readonly categories = CATEGORIES.filter(
-    (c) => !['Revenu', 'Versement'].includes(c),
+  readonly categories = sortedAlpha(
+    CATEGORIES.filter((c) => !['Revenu', 'Versement'].includes(c)),
   );
   readonly open = signal(false);
   readonly saving = signal(false);

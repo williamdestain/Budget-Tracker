@@ -6,40 +6,40 @@
       cliques pas.
     </p>
     <div class="expected-list">
-      @for (item of store.expectedThisMonth(); track item.template.id) {
+      @for (item of store.expectedThisMonth(); track key(item.template.id, item.suggestedDate)) {
         <div class="expected-row">
           <span class="cat-dot" [style.background]="colorFor(item.template.category)"></span>
           <span class="expected-name">
             {{ item.template.name }}
-            <span class="expected-meta">{{ item.template.category }}</span>
+            <span class="expected-meta">{{ item.template.category }} · {{ item.suggestedDate }}</span>
           </span>
           <div class="input-money small">
             <input
               type="number"
               min="0"
               step="0.01"
-              [ngModel]="amountFor(item.template.id, item.template.amount)"
-              (ngModelChange)="amounts[item.template.id] = $event"
+              [ngModel]="amountFor(key(item.template.id, item.suggestedDate), item.template.amount)"
+              (ngModelChange)="amounts[key(item.template.id, item.suggestedDate)] = $event"
             />
           </div>
           <input
             type="date"
             class="expected-date"
-            [ngModel]="dateFor(item.template.id, item.suggestedDate)"
-            (ngModelChange)="dates[item.template.id] = $event"
+            [ngModel]="dateFor(key(item.template.id, item.suggestedDate), item.suggestedDate)"
+            (ngModelChange)="dates[key(item.template.id, item.suggestedDate)] = $event"
           />
           <label class="check-label tiny" title="Carte de crédit">
             <input
               type="checkbox"
-              [ngModel]="ccFor(item.template.id)"
-              (ngModelChange)="ccs[item.template.id] = $event"
+              [ngModel]="ccFor(key(item.template.id, item.suggestedDate))"
+              (ngModelChange)="ccs[key(item.template.id, item.suggestedDate)] = $event"
             />
             <span>💳</span>
           </label>
           <button
             class="btn-primary confirm-btn"
-            [disabled]="confirming().has(item.template.id)"
-            (click)="confirm(item.template.id, item.template.amount, item.suggestedDate)"
+            [disabled]="confirming().has(key(item.template.id, item.suggestedDate))"
+            (click)="confirm(key(item.template.id, item.suggestedDate), item.template.id, item.template.amount, item.suggestedDate)"
           >
             ✓ Confirmer
           </button>

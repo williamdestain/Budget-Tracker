@@ -96,7 +96,7 @@
             −{{ fmt(e.amount) }} <span class="transfer-plus">+{{ fmt(e.amount) }}</span>
           </span>
           @if (isSplitVersement(e)) {
-            <button class="del" title="Annuler la répartition (supprime le versement et les ajouts de provisions liés)" (click)="cancelSplit(e)">↩️</button>
+            <button class="del" title="Annuler la répartition (retire les ajouts sur les provisions, garde le versement)" (click)="cancelSplit(e)">↩️</button>
           } @else {
             <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
             <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>
@@ -118,7 +118,7 @@
           </span>
           <span class="cat-amt">{{ fmt(e.amount) }}</span>
           @if (isSplitVersement(e)) {
-            <button class="del" title="Annuler la répartition (supprime le versement et les ajouts de provisions liés)" (click)="cancelSplit(e)">↩️</button>
+            <button class="del" title="Annuler la répartition (retire les ajouts sur les provisions, garde le versement)" (click)="cancelSplit(e)">↩️</button>
           } @else {
             <button class="edit" title="Modifier" (click)="startEdit(e)">✏️</button>
             <button class="del" title="Supprimer" (click)="remove(e.id)">✕</button>

@@ -27,7 +27,7 @@ h1 {
 }
 .tab {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   border-radius: 999px;
   padding: 7px 16px;
   font-size: 13px;
@@ -52,12 +52,17 @@ h1 {
   gap: 10px;
   margin-top: 10px;
 }
+.close-month-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .close-month-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   border-radius: 10px;
   padding: 8px 14px;
   font-size: 13px;
@@ -68,6 +73,47 @@ h1 {
 }
 .close-month-btn:hover {
   background: var(--accent-soft);
+}
+// Variante volontairement plus discrète (pas de couleur accent) : c'est
+// l'action moins courante des deux, elle ne doit pas attirer l'oeil en
+// premier ni se confondre visuellement avec le bouton principal.
+.close-month-fresh-btn {
+  color: var(--ink-soft);
+  border-color: var(--line);
+}
+.close-month-fresh-btn:hover {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+.reopen-month-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.reopen-month-btn:hover {
+  background: var(--red-soft);
+  color: #991b1b;
+  border-color: var(--red-soft-border);
+}
+.closed-month-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--red-soft);
+  color: #991b1b;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 .month-label {
   font-weight: 700;
@@ -80,7 +126,7 @@ h1 {
   height: 32px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   cursor: pointer;
   font-size: 16px;
 }
@@ -109,6 +155,10 @@ h1 {
   justify-content: flex-start;
 }
 .period-card .close-month-btn {
+  margin-top: 0;
+}
+.period-card .reopen-month-btn,
+.period-card .closed-month-badge {
   margin-top: 0;
 }
 @media (max-width: 720px) {

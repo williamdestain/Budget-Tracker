@@ -1,0 +1,41 @@
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 200;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+}
+.theme-toggle:hover {
+  transform: scale(1.06);
+}
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+
+@media (max-width: 640px) {
+  // Sur mobile, décalé pour ne pas empiéter sur une éventuelle encoche/
+  // barre système, et légèrement plus petit pour rester discret.
+  .theme-toggle {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+}

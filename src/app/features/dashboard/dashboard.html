@@ -37,6 +37,9 @@
   @if (store.loading()) {
     <p class="placeholder">Chargement des données…</p>
   } @else {
+    <app-load-error-banner />
+    <app-money-pulse />
+
     <div class="period-budget-grid">
       <div class="card period-card">
         <div class="card-title">Période</div>
@@ -45,13 +48,33 @@
           <span class="month-label">{{ monthLabel }}</span>
           <button class="icon-btn" (click)="nextMonth()" title="Mois suivant">›</button>
         </div>
-        <button
-          class="seg close-month-btn"
-          (click)="closeMonth()"
-          title="Reporter le solde net de ce mois vers le mois suivant"
-        >
-          🔒 Clôturer le mois
-        </button>
+        @if (store.currentMonthClosed()) {
+          <div class="closed-month-badge">🔒 Mois clôturé — aucune modification possible</div>
+          <button
+            class="seg reopen-month-btn"
+            (click)="reopenMonth()"
+            title="Autoriser à nouveau les modifications pour ce mois"
+          >
+            🔓 Rouvrir le mois
+          </button>
+        } @else {
+          <div class="close-month-actions">
+            <button
+              class="seg close-month-btn"
+              (click)="closeMonth()"
+              title="Reporter le solde net de ce mois vers le mois suivant, puis verrouiller le mois"
+            >
+              🔒 Clôturer le mois
+            </button>
+            <button
+              class="seg close-month-btn close-month-fresh-btn"
+              (click)="closeMonthFresh()"
+              title="Verrouiller le mois SANS reporter le solde — le mois suivant démarre à 0"
+            >
+              🆕 Clôturer sans reporter
+            </button>
+          </div>
+        }
       </div>
       <app-budget-progress />
     </div>

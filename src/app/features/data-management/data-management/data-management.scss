@@ -90,7 +90,7 @@
   background: var(--red-soft);
 }
 .reset-check:hover {
-  background: #fafbfd;
+  background: var(--surface-soft);
 }
 .reset-check small {
   grid-column: 2;
@@ -135,7 +135,7 @@
   display: flex;
   justify-content: space-between;
   padding: 6px 10px;
-  background: #fafbfd;
+  background: var(--surface-soft);
   border-radius: 8px;
   border: 1px solid var(--line);
 }

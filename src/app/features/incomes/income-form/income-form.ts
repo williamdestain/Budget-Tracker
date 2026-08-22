@@ -1,8 +1,10 @@
 import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
+import { ToastService } from '../../../core/services/toast.service';
 import { Owner, RecurringInterval } from '../../../core/models/budget.models';
 import { isoOfDate } from '../../../core/utils/date.utils';
+import { sortedAlpha } from '../../../core/utils/categories';
 import {
   INCOME_TYPE_LABELS,
   RECURRING_INTERVAL_LABELS,
@@ -15,7 +17,10 @@ import {
   styleUrl: './income-form.scss',
 })
 export class IncomeForm {
-  readonly typeOptions = Object.keys(INCOME_TYPE_LABELS);
+  // Trié sur la clé (Salaire, Remboursement, ...), pas sur le libellé
+  // affiché (qui a un emoji en préfixe — trier dessus donnerait un ordre
+  // sans rapport avec l'alphabet).
+  readonly typeOptions = sortedAlpha(Object.keys(INCOME_TYPE_LABELS));
   readonly intervalOptions = Object.entries(RECURRING_INTERVAL_LABELS).filter(
     ([key]) => key !== 'once',
   );
@@ -31,7 +36,7 @@ export class IncomeForm {
 
   readonly saving = signal(false);
 
-  constructor(private store: BudgetStore) {
+  constructor(private store: BudgetStore, private toast: ToastService) {
     // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame),
     // y compris si on change d'onglet après l'ouverture de la page — pas
     // seulement au premier chargement.
@@ -58,6 +63,8 @@ export class IncomeForm {
       this.amount = null;
       this.note = '';
       this.recurring = false;
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {
       this.saving.set(false);
     }

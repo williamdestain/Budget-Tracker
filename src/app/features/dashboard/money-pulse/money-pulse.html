@@ -1,0 +1,24 @@
+@if (pulse(); as p) {
+  <div class="card pulse-card" [class]="p.severity">
+    <div class="pulse-icon">{{ p.icon }}</div>
+    <div class="pulse-body">
+      <div class="pulse-headline">{{ p.headline }}</div>
+      @if (p.sub) {
+        <div class="pulse-sub">{{ p.sub }}</div>
+      }
+      @if (p.perDayText) {
+        <div class="pulse-per-day">{{ p.perDayText }}</div>
+      }
+      @if (topAlerts().length > 0) {
+        <div class="pulse-alerts">
+          @for (a of topAlerts(); track a.message) {
+            <div class="pulse-alert-row" [class]="a.severity">
+              <span>{{ a.icon }}</span>
+              <span>{{ a.message }}</span>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </div>
+}

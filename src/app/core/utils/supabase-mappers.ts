@@ -41,7 +41,13 @@ export function rowToRecurringExpense(row: any): RecurringExpense {
     amount: Number(row.amount),
     category: row.category,
     owner: row.owner,
+    // Rétrocompatibilité : les lignes créées avant la migration-009
+    // n'ont pas encore cette colonne — 'monthly' préserve leur
+    // comportement d'origine à l'identique.
+    interval: row.interval ?? 'monthly',
     dayOfMonth: row.day_of_month,
+    secondDayOfMonth: row.second_day_of_month ?? null,
+    startDate: row.start_date ?? null,
     cc: row.cc,
     active: row.active,
   };
@@ -55,7 +61,10 @@ export function recurringExpenseToRow(
     amount: r.amount,
     category: r.category,
     owner: r.owner,
+    interval: r.interval,
     day_of_month: r.dayOfMonth,
+    second_day_of_month: r.secondDayOfMonth ?? null,
+    start_date: r.startDate ?? null,
     cc: r.cc,
     active: r.active,
   };

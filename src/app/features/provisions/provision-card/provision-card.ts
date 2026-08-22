@@ -31,6 +31,16 @@ export class ProvisionCard {
   readonly percentOpen = signal(false);
   editPercent: number | null = null;
 
+  // Édition de la date d'ancrage du cycle (startYM pour les provisions
+  // mensuelles, startDate pour celles en jours) — déplace le "Début"/
+  // "Dernier prélèvement" ET recalcule donc la prochaine échéance en
+  // fonction de cette nouvelle ancre. Utile pour repartir un cycle à zéro
+  // sans recréer la provision (ex. la première échéance réelle n'est pas
+  // celle configurée au départ).
+  readonly startEditOpen = signal(false);
+  editStartYM = '';
+  editStartDate = '';
+
   constructor(public store: BudgetStore) {}
 
   readonly stats = computed(() => {
@@ -207,6 +217,34 @@ export class ProvisionCard {
         allocationPercent: this.editPercent || 0,
       });
       this.percentOpen.set(false);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  startEditStartDate(): void {
+    const p = this.provision();
+    this.editStartYM = p.startYM || this.store.current();
+    this.editStartDate = p.startDate || isoOfDate(new Date());
+    this.startEditOpen.set(true);
+  }
+
+  cancelEditStartDate(): void {
+    this.startEditOpen.set(false);
+  }
+
+  async saveEditStartDate(): Promise<void> {
+    const p = this.provision();
+    this.saving.set(true);
+    try {
+      if (PU.provisionUnit(p) === 'days') {
+        if (!this.editStartDate) return;
+        await this.store.updateProvision(p.id, { startDate: this.editStartDate });
+      } else {
+        if (!this.editStartYM) return;
+        await this.store.updateProvision(p.id, { startYM: this.editStartYM });
+      }
+      this.startEditOpen.set(false);
     } finally {
       this.saving.set(false);
     }

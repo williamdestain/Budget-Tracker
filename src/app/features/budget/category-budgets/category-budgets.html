@@ -82,8 +82,8 @@
                   {{ fmt(row.spent) }} / {{ fmt(row.budget) }}
                   @if (!isGlobal) {
                     <button class="cat-budget-edit-btn" title="Modifier le budget" (click)="startEdit(row.category, row.budget)">✏️</button>
-                    @if (row.budget > 0) {
-                      <button class="cat-budget-edit-btn" title="Retirer ce budget" (click)="removeBudget(row.category)">✕</button>
+                    @if (row.hasExplicitEntryThisMonth) {
+                      <button class="cat-budget-edit-btn" title="Retirer ce budget (revient à l'héritage du mois précédent)" (click)="removeBudget(row.category)">✕</button>
                     }
                   }
                 </span>
@@ -98,6 +98,10 @@
                   {{ row.remaining >= 0 ? 'Restant : ' + fmt(row.remaining) : 'Dépassement : ' + fmt(-row.remaining) }}
                 </span>
                 <span>{{ row.pct.toFixed(0) }}%</span>
+              } @else if (row.hasExplicitEntryThisMonth) {
+                <span [class.over]="row.spent > 0">
+                  Budget à 0 $ ce mois-ci{{ row.spent > 0 ? ' — ' + fmt(row.spent) + ' dépensé quand même' : ' — catégorie gelée' }}
+                </span>
               } @else {
                 <span class="no-budget">Aucun budget défini pour cette catégorie</span>
               }

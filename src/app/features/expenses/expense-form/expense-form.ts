@@ -1,8 +1,9 @@
 import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
+import { ToastService } from '../../../core/services/toast.service';
 import { Owner } from '../../../core/models/budget.models';
-import { CATEGORIES } from '../../../core/utils/categories';
+import { CATEGORIES, sortedAlpha } from '../../../core/utils/categories';
 import { isoOfDate } from '../../../core/utils/date.utils';
 
 @Component({
@@ -12,7 +13,7 @@ import { isoOfDate } from '../../../core/utils/date.utils';
   styleUrl: './expense-form.scss',
 })
 export class ExpenseForm {
-  readonly categories = CATEGORIES.filter((c) => c !== 'Revenu');
+  readonly categories = sortedAlpha(CATEGORIES.filter((c) => c !== 'Revenu'));
 
   amount: number | null = null;
   category = this.categories[0];
@@ -22,7 +23,7 @@ export class ExpenseForm {
 
   readonly saving = signal(false);
 
-  constructor(private store: BudgetStore) {
+  constructor(private store: BudgetStore, private toast: ToastService) {
     // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame),
     // y compris si on change d'onglet après l'ouverture de la page.
     effect(() => {
@@ -44,6 +45,8 @@ export class ExpenseForm {
       });
       this.amount = null;
       this.cc = false;
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {
       this.saving.set(false);
     }

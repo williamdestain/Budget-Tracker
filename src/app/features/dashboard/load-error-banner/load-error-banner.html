@@ -1,0 +1,13 @@
+@if (visible()) {
+  <div class="load-error-banner">
+    <span class="icon">⚠️</span>
+    <div class="body">
+      <div class="headline">Certaines données n'ont pas pu être chargées</div>
+      <div class="sub">
+        Échec sur : {{ labels() }}. Les valeurs affichées pour ces sections
+        peuvent être anciennes ou incomplètes — vérifie ta connexion et
+        recharge la page.
+      </div>
+    </div>
+  </div>
+}

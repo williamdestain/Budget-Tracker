@@ -39,7 +39,7 @@
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--card);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -129,7 +129,7 @@
   padding: 12px;
   border: 1px solid var(--accent);
   border-radius: 12px;
-  background: #f4f7ff;
+  background: var(--accent-soft);
 }
 .expense-edit-form .field label {
   font-size: 11px;
@@ -174,7 +174,7 @@
 
 /* Lignes de versement (transferts internes) */
 .expense.versement-row {
-  background: #fafbfd;
+  background: var(--surface-soft);
   border-style: dashed;
   border-color: #cdd6e4;
 }
@@ -217,7 +217,7 @@
 
 /* Ligne de réserve synthétique de provision */
 .expense.prov-reserve {
-  background: #f4f7ff;
+  background: var(--accent-soft);
   border-style: dashed;
   border-color: #bccbed;
 }

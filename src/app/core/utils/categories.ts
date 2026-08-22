@@ -54,3 +54,13 @@ export const OWNERS_SHORT: Record<string, string> = {
   moi: 'Moi',
   madame: 'Mme',
 };
+
+// Tri alphabétique (fr) pour l'affichage dans les listes déroulantes —
+// ne touche jamais à CATEGORIES lui-même, dont l'ORDRE détermine
+// l'assignation des couleurs dans COLOR_MAP (voir ci-dessus). Trier
+// CATEGORIES directement changerait la couleur de chaque catégorie
+// existante dans toute l'app ; on trie donc uniquement une copie, à
+// l'endroit où la liste est affichée dans un <select>.
+export function sortedAlpha(list: string[]): string[] {
+  return [...list].sort((a, b) => a.localeCompare(b, 'fr'));
+}

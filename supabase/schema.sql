@@ -127,6 +127,15 @@ create table if not exists rollovers (
   primary key (owner, ym)
 );
 
+-- Clôture de mois : verrou global (pas par profil). Un mois présent ici
+-- bloque toute opération datée dans ce mois côté application (dépenses,
+-- revenus ponctuels, ajustements de provisions, contributions d'épargne,
+-- budgets par catégorie, report). Voir migration-007-closed-months.sql.
+create table if not exists closed_months (
+  ym text primary key, -- "YYYY-MM"
+  closed_at timestamptz not null default now()
+);
+
 -- Row Level Security : accès réservé aux utilisateurs connectés
 -- (compte partagé unique pour Moi + Madame).
 alter table expenses enable row level security;
@@ -139,6 +148,7 @@ alter table savings_goal_contributions enable row level security;
 alter table budgets enable row level security;
 alter table category_budgets enable row level security;
 alter table rollovers enable row level security;
+alter table closed_months enable row level security;
 
 create policy "authenticated_all_expenses" on expenses
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
@@ -159,4 +169,6 @@ create policy "authenticated_all_budgets" on budgets
 create policy "authenticated_all_category_budgets" on category_budgets
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_rollovers" on rollovers
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_closed_months" on closed_months
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

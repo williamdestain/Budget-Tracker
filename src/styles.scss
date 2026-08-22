@@ -9,17 +9,63 @@
   --line: #e5e9f0;
   --accent: #4f7cff;
   --accent-soft: #eaf0ff;
+  --accent-soft-border: #d5def2;
+  --surface-soft: #f7f9fc;
   --green: #16a34a;
   --green-soft: #dcfce7;
+  --green-soft-border: #b8e6c4;
   --red: #dc2626;
   --red-soft: #fee2e2;
+  --red-soft-border: #f5b8b8;
   --amber: #d97706;
+  --amber-soft: #fef3c7;
+  --amber-soft-border: #f5d896;
   --pink: #d6457d;
   --pink-soft: #fde4ef;
   --teal: #0f9d8f;
   --radius: 16px;
   --shadow: 0 6px 24px rgba(20, 30, 60, 0.07);
   --shadow-sm: 0 2px 8px rgba(20, 30, 60, 0.05);
+
+  color-scheme: light;
+}
+
+// Mode sombre : appliqué via l'attribut data-theme sur <html>, posé par
+// ThemeService (core/services/theme.service.ts) selon le choix de
+// l'utilisateur (persisté en localStorage) ou, par défaut, la préférence
+// système (prefers-color-scheme). Volontairement une redéfinition complète
+// des mêmes noms de variables plutôt que des couleurs séparées : tout le
+// reste de l'app (composants, graphiques, cartes d'alerte) est déjà écrit
+// avec var(--xxx), donc le mode sombre se propage automatiquement partout
+// sans toucher au CSS de chaque composant — à condition qu'aucune couleur
+// de surface ne soit codée en dur (voir les correctifs #fff -> var(--card)
+// appliqués dans les composants concernés).
+:root[data-theme='dark'] {
+  --bg: #10141c;
+  --card: #1a2030;
+  --ink: #e8ecf4;
+  --ink-soft: #9aa4bd;
+  --line: #2b3346;
+  --accent: #6f95ff;
+  --accent-soft: #263259;
+  --accent-soft-border: #37456e;
+  --surface-soft: #212a3d;
+  --green: #4ade80;
+  --green-soft: #163524;
+  --green-soft-border: #245638;
+  --red: #f87171;
+  --red-soft: #3a1c22;
+  --red-soft-border: #5c2a30;
+  --amber: #fbbf24;
+  --amber-soft: #3a2f14;
+  --amber-soft-border: #5c4a1e;
+  --pink: #f472b6;
+  --pink-soft: #3a1f30;
+  --teal: #2dd4bf;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+
+  color-scheme: dark;
 }
 
 * {
@@ -35,6 +81,9 @@ body {
   color: var(--ink);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 input,
@@ -63,7 +112,7 @@ select:focus {
 
 .seg {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   padding: 8px 14px;
   border-radius: 9px;
   font-size: 13px;
@@ -118,7 +167,7 @@ select {
   font-size: 14px;
   font-family: inherit;
   color: var(--ink);
-  background: #fff;
+  background: var(--card);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -169,7 +218,7 @@ select {
   border: 1px solid var(--line);
   border-radius: 10px;
   height: 42px;
-  background: #fff;
+  background: var(--card);
   transition:
     border-color 0.15s ease,
     background 0.15s ease;

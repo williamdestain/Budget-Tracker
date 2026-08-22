@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { COLOR_MAP } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
-import { isoOfDate } from '../../../core/utils/date.utils';
+import { isoOfDate, fmtDate } from '../../../core/utils/date.utils';
 import { provisionPot, effectiveProvisionAmount } from '../../../core/utils/provision.utils';
 
 function round2(n: number): number {
@@ -11,6 +11,7 @@ function round2(n: number): number {
 }
 
 type SplitMethod = 'percent' | 'equal' | 'proportional' | 'manual';
+type SourceMode = 'new' | 'existing';
 
 @Component({
   selector: 'app-versement-splitter',
@@ -22,6 +23,8 @@ export class VersementSplitter {
   readonly open = signal(false);
   readonly saving = signal(false);
 
+  sourceMode: SourceMode = 'new';
+  existingExpenseId: string | null = null;
   totalAmount: number | null = null;
   date = isoOfDate(new Date());
   splitMethod: SplitMethod = 'percent';
@@ -37,6 +40,37 @@ export class VersementSplitter {
 
   get senderLabel(): string {
     return this.store.activeOwner() === 'moi' ? 'Madame' : 'Moi';
+  }
+
+  get existingVersements() {
+    return this.store.unsplitVersements();
+  }
+
+  fmtDate(iso: string): string {
+    return fmtDate(iso);
+  }
+
+  // Choisir "Versement existant" : préremplit montant + date depuis la
+  // dépense sélectionnée, et les verrouille (c'est cette dépense-là qu'on
+  // répartit, pas un nouveau montant).
+  selectExisting(id: string): void {
+    this.existingExpenseId = id;
+    const e = this.existingVersements.find((v) => v.id === id);
+    if (e) {
+      this.totalAmount = e.amount;
+      this.date = e.date;
+    }
+  }
+
+  setSourceMode(mode: SourceMode): void {
+    this.sourceMode = mode;
+    if (mode === 'new') {
+      this.existingExpenseId = null;
+      this.totalAmount = null;
+      this.date = isoOfDate(new Date());
+    } else if (this.existingVersements.length > 0) {
+      this.selectExisting(this.existingVersements[0].id);
+    }
   }
 
   // Provisions candidates : celles qui manquent encore d'argent, ET celles
@@ -78,13 +112,19 @@ export class VersementSplitter {
   toggle(): void {
     this.open.update((v) => !v);
     if (this.open()) {
-      this.totalAmount = null;
       this.manualAmounts = {};
       this.keepRemainderInBudget = false;
       this.selected = new Set(this.candidates().map((c) => c.provision.id));
       // Si au moins une provision a une part définie, on part de ce mode
       // (le plus pratique au quotidien) ; sinon, égal par défaut.
       this.splitMethod = this.hasPercentDefined ? 'percent' : 'equal';
+      // Un versement déjà enregistré (mais pas encore réparti) existe :
+      // on part de là par défaut, pour éviter de le recompter par erreur.
+      if (this.existingVersements.length > 0) {
+        this.setSourceMode('existing');
+      } else {
+        this.setSourceMode('new');
+      }
     }
   }
 
@@ -150,6 +190,7 @@ export class VersementSplitter {
     if (!this.totalAmount || this.totalAmount <= 0 || !this.date || this.selectedRows.length === 0) {
       return false;
     }
+    if (this.sourceMode === 'existing' && !this.existingExpenseId) return false;
     // Dépassement (plus assigné que le montant reçu) : jamais permis.
     if (this.remaining < -0.01) return false;
     // Reste non assigné : permis seulement si l'option est cochée — il
@@ -167,20 +208,34 @@ export class VersementSplitter {
       const rows = this.selectedRows;
       // Arrondit chaque part à 2 décimales, puis corrige la dernière pour
       // que la somme corresponde exactement au montant total (évite les
-      // écarts de centimes dus aux arrondis).
+      // écarts de centimes dus aux arrondis) — MAIS seulement quand le
+      // montant complet est censé être réparti. Bug corrigé : cette
+      // correction s'appliquait auparavant sans condition, donc quand
+      // "Laisser le reste dans le budget" était coché, le reste
+      // volontairement laissé de côté (pas juste quelques centimes) était
+      // traité comme un écart d'arrondi et empilé sur la dernière
+      // provision sélectionnée — au lieu de rester dans le budget comme
+      // annoncé.
       const allocations = rows.map((r) => ({
         provisionId: r.provision.id,
         amount: round2(this.allocationFor(r.provision.id, r.missing, r.percent)),
       }));
-      const sum = allocations.reduce((s, a) => s + a.amount, 0);
-      const drift = round2(this.totalAmount - sum);
-      if (allocations.length > 0 && drift !== 0) {
-        allocations[allocations.length - 1].amount = round2(
-          allocations[allocations.length - 1].amount + drift,
-        );
+      if (!this.keepRemainderInBudget) {
+        const sum = allocations.reduce((s, a) => s + a.amount, 0);
+        const drift = round2(this.totalAmount - sum);
+        if (allocations.length > 0 && drift !== 0) {
+          allocations[allocations.length - 1].amount = round2(
+            allocations[allocations.length - 1].amount + drift,
+          );
+        }
       }
 
-      await this.store.splitVersementIntoProvisions(this.totalAmount, this.date, allocations);
+      await this.store.splitVersementIntoProvisions(
+        this.totalAmount,
+        this.date,
+        allocations,
+        this.sourceMode === 'existing' ? (this.existingExpenseId ?? undefined) : undefined,
+      );
       this.open.set(false);
     } finally {
       this.saving.set(false);
