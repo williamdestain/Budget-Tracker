@@ -17,7 +17,26 @@
         {{ provision().name }}
       </div>
       <div class="prov-meta">
-        {{ stats().metaLine }}{{ stats().rollingLabel }} ·
+        {{ fmt(stats().targetForNext) }} à économiser tous les
+        @if (everyNEditOpen()) {
+          <span class="prov-percent-edit">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              [(ngModel)]="editEveryN"
+              (keyup.enter)="saveEditEveryN()"
+            />
+            {{ stats().unitLabel }}
+            <button class="prov-percent-btn" (click)="saveEditEveryN()" [disabled]="saving()">✓</button>
+            <button class="prov-percent-btn" (click)="cancelEditEveryN()">✕</button>
+          </span>
+        } @else {
+          <span class="prov-percent" (click)="startEditEveryN()" title="Modifier le nombre de jours/mois du cycle">
+            ~{{ provision().everyN }} {{ stats().unitLabel }} ✏️
+          </span>
+        }
+        {{ stats().rollingLabel }} ·
         catégorie <strong>{{ provision().category }}</strong>
         ·
         @if (percentOpen()) {
@@ -121,7 +140,37 @@
         title="Modifier la date d'ancrage du cycle (déplace aussi la prochaine échéance)"
       >
         {{ stats().startFieldLabel }} : {{ stats().startLabel }} ✏️
-        {{ provision().autoRecalibrate === false ? '· recalage manuel' : '' }}
+      </span>
+      <span
+        class="prov-recalibrate-toggle"
+        (click)="toggleAutoRecalibrate()"
+        [title]="provision().autoRecalibrate
+          ? 'Un paiement réel dans cette catégorie recale automatiquement le prochain cycle — cliquer pour désactiver'
+          : 'Recalage manuel : la prochaine échéance ne bouge que si tu la modifies toi-même — cliquer pour réactiver le recalage automatique'"
+      >
+        · {{ provision().autoRecalibrate ? 'recalage auto' : 'recalage manuel' }} ✏️
+      </span>
+    }
+  </div>
+  <div class="prov-foot" style="margin-top: 4px">
+    @if (reminderEditOpen()) {
+      <span class="prov-percent-edit">
+        Ma contribution mensuelle :
+        <input type="number" min="0" step="0.01" [(ngModel)]="editReminder" (keyup.enter)="saveEditReminder()" placeholder="0" />
+        <button class="prov-percent-btn" (click)="saveEditReminder()" [disabled]="saving()">✓</button>
+        <button class="prov-percent-btn" (click)="cancelEditReminder()">✕</button>
+      </span>
+    } @else {
+      <span
+        class="prov-percent"
+        (click)="startEditReminder()"
+        title="Montant que tu t'engages à ajouter toi-même chaque mois — affiché dans 'Mes contributions du mois', séparé de tout versement reçu"
+      >
+        @if (provision().monthlyReminder) {
+          Ma contribution mensuelle : {{ fmt(provision().monthlyReminder!) }} ✏️
+        } @else {
+          + Définir ma contribution mensuelle
+        }
       </span>
     }
   </div>

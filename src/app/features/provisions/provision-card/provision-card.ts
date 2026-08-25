@@ -41,6 +41,20 @@ export class ProvisionCard {
   editStartYM = '';
   editStartDate = '';
 
+  // Édition du nombre de jours/mois du cycle (everyN) — jusqu'ici cette
+  // valeur n'était modifiable nulle part après la création de la
+  // provision. Contrairement à la date d'ancrage, everyN n'est JAMAIS
+  // touché par le recalage automatique (voir syncProvisionsFromExpense) :
+  // seule cette édition manuelle peut le changer.
+  readonly everyNEditOpen = signal(false);
+  editEveryN: number | null = null;
+
+  // Édition du rappel de contribution mensuelle personnelle (voir
+  // Provision.monthlyReminder) — le montant que l'utilisateur s'engage à
+  // ajouter lui-même chaque mois, affiché dans "Mes contributions du mois".
+  readonly reminderEditOpen = signal(false);
+  editReminder: number | null = null;
+
   constructor(public store: BudgetStore) {}
 
   readonly stats = computed(() => {
@@ -49,7 +63,7 @@ export class ProvisionCard {
     const ym = this.store.current();
 
     const pot = PU.provisionPot(p, ym, expenses);
-    const nextLabel = PU.formatProvisionNextHit(p, ym);
+    const nextLabel = PU.formatProvisionUpcomingHit(p, ym);
     const isHit = PU.isHitMonth(p, ym);
     const startLabel = PU.formatProvisionStart(p);
     const startFieldLabel =
@@ -94,8 +108,8 @@ export class ProvisionCard {
         : pot >= 0
           ? 100
           : 0;
-    const metaLine = PU.provisionMetaLine(p, expenses);
     const rollingLabel = PU.provisionRollingLabel(p, expenses);
+    const unitLabel = PU.provisionUnit(p) === 'days' ? 'j' : 'mois';
 
     const adjustmentsUpTo = PU.provisionAdjustmentsUpTo(p, ym).sort(
       (a, b) =>
@@ -121,7 +135,7 @@ export class ProvisionCard {
       barClass,
       statusText,
       fillPct,
-      metaLine,
+      unitLabel,
       rollingLabel,
       adjustmentsUpTo,
       adjustmentTotal,
@@ -245,6 +259,62 @@ export class ProvisionCard {
         await this.store.updateProvision(p.id, { startYM: this.editStartYM });
       }
       this.startEditOpen.set(false);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // Bascule le recalage automatique d'une provision existante — jusqu'ici
+  // ce réglage était figé à `true` à la création et jamais modifiable
+  // ensuite, même si l'utilisateur ne voulait pas qu'un paiement réel
+  // redémarre silencieusement un nouveau cycle.
+  async toggleAutoRecalibrate(): Promise<void> {
+    const p = this.provision();
+    this.saving.set(true);
+    try {
+      await this.store.updateProvision(p.id, { autoRecalibrate: !p.autoRecalibrate });
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  startEditEveryN(): void {
+    this.editEveryN = this.provision().everyN;
+    this.everyNEditOpen.set(true);
+  }
+
+  cancelEditEveryN(): void {
+    this.everyNEditOpen.set(false);
+  }
+
+  async saveEditEveryN(): Promise<void> {
+    if (!this.editEveryN || this.editEveryN <= 0) return;
+    this.saving.set(true);
+    try {
+      await this.store.updateProvision(this.provision().id, { everyN: this.editEveryN });
+      this.everyNEditOpen.set(false);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  startEditReminder(): void {
+    this.editReminder = this.provision().monthlyReminder;
+    this.reminderEditOpen.set(true);
+  }
+
+  cancelEditReminder(): void {
+    this.reminderEditOpen.set(false);
+  }
+
+  async saveEditReminder(): Promise<void> {
+    this.saving.set(true);
+    try {
+      // 0 ou vide = pas de rappel (retire la ligne de "Mes contributions
+      // du mois" plutôt que de la garder à 0 $, qui n'aurait pas de sens).
+      const value = this.editReminder && this.editReminder > 0 ? this.editReminder : null;
+      await this.store.updateProvision(this.provision().id, { monthlyReminder: value });
+      this.reminderEditOpen.set(false);
     } finally {
       this.saving.set(false);
     }

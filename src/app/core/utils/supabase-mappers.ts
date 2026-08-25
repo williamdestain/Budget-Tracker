@@ -157,6 +157,9 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
     autoRecalibrate: row.auto_recalibrate,
     allocationPercent: Number(row.allocation_percent ?? 0),
     rollingCount: row.rolling_count,
+    // Rétrocompatibilité : colonne absente sur les lignes créées avant
+    // la migration-011.
+    monthlyReminder: row.monthly_reminder != null ? Number(row.monthly_reminder) : null,
     adjustments: adjustmentRows
       .filter((a) => a.provision_id === row.id)
       .map(rowToProvisionAdjustment),
@@ -176,6 +179,7 @@ export function provisionToRow(p: Omit<Provision, 'id' | 'adjustments'>): any {
     auto_recalibrate: p.autoRecalibrate,
     allocation_percent: p.allocationPercent,
     rolling_count: p.rollingCount,
+    monthly_reminder: p.monthlyReminder ?? null,
   };
 }
 

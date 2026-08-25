@@ -14,6 +14,7 @@ import { ExpenseList } from '../expenses/expense-list/expense-list';
 import { ProvisionForm } from '../provisions/provision-form/provision-form';
 import { ProvisionList } from '../provisions/provision-list/provision-list';
 import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
+import { MonthlyReminders } from '../provisions/monthly-reminders/monthly-reminders';
 import { VersementSplitter } from '../provisions/versement-splitter/versement-splitter';
 import { SavingsGoalList } from '../savings/savings-goal-list/savings-goal-list';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
@@ -41,6 +42,7 @@ import { DataManagement } from '../data-management/data-management/data-manageme
     ProvisionForm,
     ProvisionList,
     UpcomingProvisions,
+    MonthlyReminders,
     VersementSplitter,
     SavingsGoalList,
     CreditCard,

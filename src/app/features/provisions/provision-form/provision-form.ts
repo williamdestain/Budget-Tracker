@@ -36,6 +36,12 @@ export class ProvisionForm {
   startMonth = new Date().getMonth() + 1;
   startYear = new Date().getFullYear();
   startDate = isoOfDate(new Date());
+  // Par défaut activé (comportement d'origine inchangé), mais maintenant
+  // décoché possible : certains utilisateurs ne veulent pas qu'une
+  // provision redémarre automatiquement un nouveau cycle dès qu'un
+  // paiement réel est enregistré dans sa catégorie — ils préfèrent gérer
+  // la date de la prochaine échéance eux-mêmes (voir provision-card).
+  autoRecalibrate = true;
 
   constructor(private store: BudgetStore) {}
 
@@ -71,13 +77,15 @@ export class ProvisionForm {
         startYM: this.intervalUnit === 'months' ? startYM : this.startDate.slice(0, 7),
         startDate: this.intervalUnit === 'days' ? this.startDate : '',
         owner,
-        autoRecalibrate: true,
+        autoRecalibrate: this.autoRecalibrate,
         allocationPercent: 0,
         rollingCount: 0,
+        monthlyReminder: null,
       });
       this.name = '';
       this.amount = null;
       this.everyN = null;
+      this.autoRecalibrate = true;
       this.open.set(false);
     } finally {
       this.saving.set(false);

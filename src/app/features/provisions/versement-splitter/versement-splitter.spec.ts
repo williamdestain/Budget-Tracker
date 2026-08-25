@@ -23,6 +23,7 @@ function makeProvision(overrides: Partial<Provision> = {}): Provision {
     autoRecalibrate: true,
     allocationPercent: 0,
     rollingCount: 0,
+    monthlyReminder: null,
     adjustments: [],
     ...overrides,
   };

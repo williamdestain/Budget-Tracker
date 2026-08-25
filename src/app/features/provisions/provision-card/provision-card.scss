@@ -66,6 +66,15 @@
 .prov-percent:hover {
   text-decoration: underline;
 }
+.prov-recalibrate-toggle {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.prov-recalibrate-toggle:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
 .prov-percent-edit {
   display: inline-flex;
   align-items: center;

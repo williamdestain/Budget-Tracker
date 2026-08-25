@@ -8,12 +8,13 @@ import {
   Owner,
   OwnerOrGlobal,
   Provision,
+  ProvisionAdjustment,
   RecurringExpense,
   SavingsGoal,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
-import { ymOf, prevYM, monthLabel, monthShortLabel, fmtDate } from '../utils/date.utils';
+import { ymOf, prevYM, monthLabel, monthShortLabel, fmtDate, isoOfDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import {
   provisionUnit,
@@ -25,8 +26,8 @@ import {
   provisionPot,
   effectiveProvisionAmount,
   provisionDueAlert,
-  formatProvisionNextHit,
-  provisionAdjustmentsForMonth,
+  formatProvisionUpcomingHit,
+  provisionAdjustmentsUpTo,
 } from '../utils/provision.utils';
 import {
   rowToExpense,
@@ -80,9 +81,121 @@ export interface RemainingBudget {
   provisionsRemaining: number;
 }
 
+// Validation en profondeur du fichier importé (audit BUG-014) — au-delà
+// de la simple présence des tableaux (déjà vérifiée dans importData()),
+// chaque élément est ici vérifié individuellement : types corrects,
+// montants numériques positifs, dates au format YYYY-MM-DD, profil parmi
+// ('moi'|'madame'). Collecte TOUTES les erreurs plutôt que de s'arrêter à
+// la première, pour que l'utilisateur voie d'un coup tout ce qui cloche
+// dans son fichier plutôt que de corriger un problème à la fois par
+// tentatives successives.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const YM_RE = /^\d{4}-\d{2}$/;
+const VALID_OWNERS = ['moi', 'madame'];
+const VALID_RECURRING_INTERVALS = ['once', 'monthly', 'weekly', 'biweekly', 'semimonthly'];
+const VALID_PROVISION_INTERVAL_UNITS = ['days', 'months'];
+const VALID_RECURRING_EXPENSE_INTERVALS = ['monthly', 'weekly', 'biweekly', 'semimonthly'];
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
+function validateImportPayload(data: any): string[] {
+  const errors: string[] = [];
+
+  (data.expenses as unknown[]).forEach((raw, i) => {
+    const e = raw as any;
+    const label = `expenses[${i}]`;
+    if (!isFiniteNumber(e?.amount) || e.amount <= 0) errors.push(`${label} : montant invalide (${e?.amount})`);
+    if (!isNonEmptyString(e?.category)) errors.push(`${label} : catégorie manquante`);
+    if (!isNonEmptyString(e?.date) || !DATE_RE.test(e.date)) errors.push(`${label} : date invalide (${e?.date})`);
+    if (!VALID_OWNERS.includes(e?.owner)) errors.push(`${label} : profil invalide (${e?.owner})`);
+  });
+
+  (data.incomes as unknown[]).forEach((raw, i) => {
+    const inc = raw as any;
+    const label = `incomes[${i}]`;
+    if (!isFiniteNumber(inc?.amount) || inc.amount <= 0) errors.push(`${label} : montant invalide (${inc?.amount})`);
+    if (!isNonEmptyString(inc?.type)) errors.push(`${label} : type manquant`);
+    if (!isNonEmptyString(inc?.date) || !DATE_RE.test(inc.date)) errors.push(`${label} : date invalide (${inc?.date})`);
+    if (!VALID_OWNERS.includes(inc?.owner)) errors.push(`${label} : profil invalide (${inc?.owner})`);
+    if (inc?.recurring && !VALID_RECURRING_INTERVALS.includes(inc?.recurringInterval)) {
+      errors.push(`${label} : fréquence de récurrence invalide (${inc?.recurringInterval})`);
+    }
+  });
+
+  (data.provisions as unknown[]).forEach((raw, i) => {
+    const p = raw as any;
+    const label = `provisions[${i}]`;
+    if (!isFiniteNumber(p?.amount) || p.amount <= 0) errors.push(`${label} : montant invalide (${p?.amount})`);
+    if (!isFiniteNumber(p?.everyN) || p.everyN <= 0) errors.push(`${label} : cycle invalide (${p?.everyN})`);
+    if (!VALID_PROVISION_INTERVAL_UNITS.includes(p?.intervalUnit)) {
+      errors.push(`${label} : unité de cycle invalide (${p?.intervalUnit})`);
+    }
+    if (!isNonEmptyString(p?.startYM) || !YM_RE.test(p.startYM)) {
+      errors.push(`${label} : mois de départ invalide (${p?.startYM})`);
+    }
+    if (!isNonEmptyString(p?.category)) errors.push(`${label} : catégorie manquante`);
+    if (!VALID_OWNERS.includes(p?.owner)) errors.push(`${label} : profil invalide (${p?.owner})`);
+    if (
+      p?.allocationPercent != null &&
+      (!isFiniteNumber(p.allocationPercent) || p.allocationPercent < 0 || p.allocationPercent > 100)
+    ) {
+      errors.push(`${label} : pourcentage d'allocation invalide (${p.allocationPercent})`);
+    }
+    (p?.adjustments || []).forEach((raw2: unknown, j: number) => {
+      const a = raw2 as any;
+      const label2 = `${label}.adjustments[${j}]`;
+      if (!isFiniteNumber(a?.amount) || a.amount <= 0) errors.push(`${label2} : montant invalide (${a?.amount})`);
+      if (!isNonEmptyString(a?.date) || !DATE_RE.test(a.date)) errors.push(`${label2} : date invalide (${a?.date})`);
+    });
+  });
+
+  if (Array.isArray(data.recurringExpenses)) {
+    (data.recurringExpenses as unknown[]).forEach((raw, i) => {
+      const r = raw as any;
+      const label = `recurringExpenses[${i}]`;
+      if (!isFiniteNumber(r?.amount) || r.amount <= 0) errors.push(`${label} : montant invalide (${r?.amount})`);
+      if (!isNonEmptyString(r?.category)) errors.push(`${label} : catégorie manquante`);
+      if (!VALID_OWNERS.includes(r?.owner)) errors.push(`${label} : profil invalide (${r?.owner})`);
+      if (r?.interval != null && !VALID_RECURRING_EXPENSE_INTERVALS.includes(r.interval)) {
+        errors.push(`${label} : fréquence invalide (${r.interval})`);
+      }
+    });
+  }
+
+  if (Array.isArray(data.savingsGoals)) {
+    (data.savingsGoals as unknown[]).forEach((raw, i) => {
+      const g = raw as any;
+      const label = `savingsGoals[${i}]`;
+      if (!isFiniteNumber(g?.targetAmount) || g.targetAmount <= 0) {
+        errors.push(`${label} : montant cible invalide (${g?.targetAmount})`);
+      }
+      if (!isNonEmptyString(g?.name)) errors.push(`${label} : nom manquant`);
+      if (!VALID_OWNERS.includes(g?.owner)) errors.push(`${label} : profil invalide (${g?.owner})`);
+      (g?.contributions || []).forEach((raw2: unknown, j: number) => {
+        const c = raw2 as any;
+        const label2 = `${label}.contributions[${j}]`;
+        if (!isFiniteNumber(c?.amount) || c.amount <= 0) errors.push(`${label2} : montant invalide (${c?.amount})`);
+        if (!isNonEmptyString(c?.date) || !DATE_RE.test(c.date)) errors.push(`${label2} : date invalide (${c?.date})`);
+      });
+    });
+  }
+
+  return errors;
+}
+
 // Store central : équivalent de l'ancien objet `state` + `renderAll()`.
 // Toute vue qui lit ces signals se met à jour automatiquement — pas besoin
 // d'appeler manuellement un "render" comme dans l'ancienne app.
+// Note dédiée pour identifier les ajustements confirmés depuis "Mes
+// contributions du mois" — permet de les distinguer d'un versement reçu
+// ou d'un ajout manuel générique (voir monthlyContributionReminders).
+const MONTHLY_REMINDER_NOTE = 'Contribution mensuelle (rappel)';
+
 @Injectable({ providedIn: 'root' })
 export class BudgetStore {
   readonly expenses = signal<Expense[]>([]);
@@ -410,11 +523,42 @@ export class BudgetStore {
           dueThisMonth,
           dueAlert,
           status,
-          nextLabel: formatProvisionNextHit(p, ym),
+          nextLabel: formatProvisionUpcomingHit(p, ym),
         };
       })
       .filter((row) => row.dueThisMonth || row.daysUntil <= 30 || row.status === 'deficit')
       .sort((a, b) => a.daysUntil - b.daysUntil);
+  });
+
+  // Provisions ayant un rappel de contribution mensuelle configuré
+  // (voir Provision.monthlyReminder) et pas encore ajouté ce mois-ci.
+  // "Pas encore ajouté" est vérifié via une note dédiée (MONTHLY_REMINDER_NOTE)
+  // plutôt que "n'importe quel ajustement ce mois-ci" : un versement reçu
+  // (ex. la part de Madame) crée AUSSI un ajustement ce mois-ci, mais ce
+  // n'est pas la même contribution que ce rappel — les deux doivent
+  // pouvoir coexister sans se masquer l'un l'autre. Ce n'est qu'un
+  // pense-bête : rien n'est jamais ajouté automatiquement, l'utilisateur
+  // confirme lui-même.
+  readonly monthlyContributionReminders = computed(() => {
+    const ym = this.current();
+    return this.visibleProvisions()
+      .filter((p) => p.monthlyReminder != null && p.monthlyReminder > 0)
+      .filter(
+        (p) => !p.adjustments.some((a) => a.date.startsWith(ym) && a.note === MONTHLY_REMINDER_NOTE),
+      )
+      .map((p) => ({ provision: p, amount: p.monthlyReminder as number }));
+  });
+
+  // Provisions à afficher dans la liste principale, une fois celles déjà
+  // montrées dans "À payer bientôt" retirées. Bug rapporté par
+  // l'utilisateur : sans cette exclusion, une provision due apparaissait
+  // deux fois sur le même tableau de bord (une fois dans "À payer
+  // bientôt", une fois dans "Provisions" juste en dessous) — avec la même
+  // carte identique et les mêmes boutons, ce qui donnait l'impression
+  // qu'une deuxième provision venait d'être créée automatiquement.
+  readonly otherProvisions = computed(() => {
+    const upcomingIds = new Set(this.upcomingProvisions().map((row) => row.provision.id));
+    return this.visibleProvisions().filter((p) => !upcomingIds.has(p.id));
   });
 
   // Dépenses "comptées" pour le budget/solde/graphique : dépenses réelles des
@@ -449,7 +593,14 @@ export class BudgetStore {
 
     const relevantProvisions =
       owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
-    const provisionCategories = new Set(relevantProvisions.map((p) => p.category));
+    // Même correctif que provisionedCategories()/countedExpenses() dans
+    // provision.utils.ts (audit BUG-008/BUG-017) : clé owner+catégorie,
+    // pas la catégorie seule — sinon en vue Global, la dépense réelle de
+    // Madame dans une catégorie où seul Moi a une provision serait à tort
+    // comptée comme "provision payée".
+    const provisionCategories = new Set(
+      relevantProvisions.map((p) => `${p.owner}|${p.category}`),
+    );
 
     const months = Array.from({ length: 12 }, (_, i) => {
       const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
@@ -473,14 +624,23 @@ export class BudgetStore {
       const budget = revenus + rollover;
       const soldeNet = budget - spent;
 
+      // Même correctif que countedExpenses() (audit BUG-009) : borné par
+      // le début du cycle en cours (provisionAdjustmentsUpTo), pas
+      // seulement par le mois calendaire — un ajout fait avant un
+      // recalage (ancien cycle déjà réglé) ne doit pas gonfler
+      // l'accumulation affichée pour ce mois.
       const provisionsAccumulated = relevantProvisions.reduce(
-        (s, p) => s + provisionAdjustmentsForMonth(p, ym).reduce((s2, a) => s2 + a.amount, 0),
+        (s, p) =>
+          s +
+          provisionAdjustmentsUpTo(p, ym)
+            .filter((a) => a.date.startsWith(ym))
+            .reduce((s2, a) => s2 + a.amount, 0),
         0,
       );
       const provisionsPaid = expenses
         .filter(
           (e) =>
-            provisionCategories.has(e.category) &&
+            provisionCategories.has(`${e.owner}|${e.category}`) &&
             e.date.startsWith(ym) &&
             (owner === 'global' || e.owner === owner),
         )
@@ -910,6 +1070,13 @@ export class BudgetStore {
     amount: number,
   ): Promise<void> {
     this.assertMonthOpen(ym);
+    // Défense en profondeur (audit BUG-013) : les formulaires empêchent
+    // déjà les montants négatifs, mais ces méthodes du store restent
+    // directement appelables (import, futur appel API...). 0 reste permis
+    // ici (catégorie volontairement gelée, voir le correctif précédent).
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error(`Montant de budget invalide : ${amount}. Doit être un nombre ≥ 0.`);
+    }
     const { error } = await this.supabase.client
       .from('category_budgets')
       .upsert({ owner, ym, category, amount }, { onConflict: 'owner,ym,category' });
@@ -949,6 +1116,10 @@ export class BudgetStore {
   // attendu, ce qui serait un état incohérent silencieux.
   async addExpense(expense: Omit<Expense, 'id'>): Promise<Expense> {
     this.assertMonthOpen(expense.date.slice(0, 7));
+    // Défense en profondeur (audit BUG-013) — voir setCategoryBudget().
+    if (!Number.isFinite(expense.amount) || expense.amount <= 0) {
+      throw new Error(`Montant de dépense invalide : ${expense.amount}. Doit être un nombre > 0.`);
+    }
     const { data, error } = await this.supabase.client
       .from('expenses')
       .insert(expenseToRow(expense))
@@ -987,6 +1158,16 @@ export class BudgetStore {
       .eq('id', id);
     if (error) throw error;
     this.expenses.update((list) => list.filter((e) => e.id !== id));
+    // Recale (ou pas) les provisions concernées par la dépense supprimée
+    // — voir recalibrateProvisionCycleFromHistory ci-dessous (BUG-006).
+    // Volontairement non bloquant : si ce recalage rétroactif échoue, la
+    // suppression de la dépense elle-même reste acquise (elle a déjà
+    // réussi juste au-dessus) — seule la provision garde temporairement
+    // son ancienne ancre, ce qui est un état bien moins grave qu'annuler
+    // une suppression déjà effectuée en base.
+    if (existing) {
+      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.owner);
+    }
   }
 
   // Édite une dépense existante. Recalcule automatiquement tout ce qui en
@@ -1007,6 +1188,13 @@ export class BudgetStore {
     this.assertMonthOpen(existing.date.slice(0, 7));
     if (changes.date !== undefined) {
       this.assertMonthOpen(changes.date.slice(0, 7));
+    }
+    // Défense en profondeur (audit BUG-013).
+    if (
+      changes.amount !== undefined &&
+      (!Number.isFinite(changes.amount) || changes.amount <= 0)
+    ) {
+      throw new Error(`Montant de dépense invalide : ${changes.amount}. Doit être un nombre > 0.`);
     }
 
     const row: Record<string, unknown> = {};
@@ -1050,6 +1238,19 @@ export class BudgetStore {
       throw new Error(
         `Le recalage des provisions a échoué : ${(err as Error).message ?? err}. La modification a été annulée automatiquement.`,
       );
+    }
+
+    // BUG-006 : si la catégorie ou le profil a changé, une provision qui
+    // matchait l'ANCIENNE combinaison catégorie/profil peut être restée
+    // recalée sur cette dépense alors qu'elle n'en fait plus partie.
+    // syncProvisionsFromExpense() ci-dessus ne s'occupe que de la NOUVELLE
+    // combinaison — on redérive donc aussi l'ancienne, depuis l'historique
+    // réel restant (voir recalibrateProvisionCycleFromHistory).
+    // Volontairement non bloquant (comme pour removeExpense) : l'édition
+    // elle-même a déjà réussi, seule une provision annexe pourrait garder
+    // temporairement une ancre obsolète en cas d'échec ici.
+    if (existing.category !== updated.category || existing.owner !== updated.owner) {
+      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.owner);
     }
   }
 
@@ -1177,6 +1378,16 @@ export class BudgetStore {
     );
     if (matches.length === 0) return;
 
+    // Valeurs d'avant recalage, conservées pour pouvoir compenser un échec
+    // partiel (audit BUG-007) : sans transaction SQL disponible côté
+    // client, on ne peut pas garantir que les N UPDATE réussissent ou
+    // échouent tous ensemble. Si l'un d'eux échoue après que d'autres ont
+    // déjà réussi, on les remet explicitement à leur valeur d'origine
+    // avant de remonter l'erreur — sinon addExpense()/updateExpense()
+    // annulerait la dépense déclenchante en laissant certaines provisions
+    // recalées sur une dépense qui n'existe plus.
+    const previousValues = new Map(matches.map((p) => [p.id, { startYM: p.startYM, startDate: p.startDate }]));
+
     const results = await Promise.all(
       matches.map((p) => {
         const updates: any = { start_ym: expense.date.slice(0, 7) };
@@ -1184,16 +1395,31 @@ export class BudgetStore {
         return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
       }),
     );
-    // Bug corrigé : ces erreurs n'étaient auparavant jamais vérifiées —
-    // un échec de mise à jour d'une provision passait totalement
-    // inaperçu, laissant croire à un recalage réussi alors que la
-    // provision gardait sa date d'origine. On remonte l'erreur au lieu
-    // de continuer, pour qu'addExpense()/updateExpense() puisse
-    // déclencher leur rollback de compensation.
     const failed = results.filter((r) => r.error);
+    const succeededProvisions = matches.filter((_, i) => !results[i].error);
+
     if (failed.length) {
+      if (succeededProvisions.length) {
+        const compensations = await Promise.all(
+          succeededProvisions.map((p) => {
+            const prev = previousValues.get(p.id)!;
+            const updates: any = { start_ym: prev.startYM };
+            if (provisionUnit(p) === 'days') updates.start_date = prev.startDate;
+            return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
+          }),
+        );
+        const compensationFailed = compensations.filter((r) => r.error);
+        if (compensationFailed.length) {
+          throw new Error(
+            `Échec du recalage de ${failed.length} provision(s) (${failed[0].error?.message}), et la compensation ` +
+              `des provisions déjà mises à jour a elle-même échoué. Vérifie manuellement les provisions concernées ` +
+              `dans Supabase — leur date de cycle peut être incohérente.`,
+          );
+        }
+      }
       throw new Error(
-        `Échec de mise à jour de ${failed.length} provision(s) : ${failed[0].error?.message}`,
+        `Échec de mise à jour de ${failed.length} provision(s) : ${failed[0].error?.message}. ` +
+          `Les autres provisions concernées ont été remises à leur état précédent.`,
       );
     }
 
@@ -1211,7 +1437,74 @@ export class BudgetStore {
     );
   }
 
+  // Bug rapporté par l'audit (BUG-006) : addExpense()/updateExpense()
+  // recalent une provision quand une dépense réelle matche sa catégorie/
+  // profil, mais rien ne faisait l'inverse quand cette dépense était
+  // supprimée, ou déplacée hors de cette catégorie/profil (removeExpense
+  // ne touchait à aucune provision ; updateExpense ne gérait que la
+  // NOUVELLE catégorie via syncProvisionsFromExpense, jamais l'ancienne).
+  // Résultat concret : une provision pouvait rester recalée sur la date
+  // d'une dépense qui n'existe plus.
+  //
+  // Correctif : après une suppression/un changement de catégorie/profil,
+  // on redérive l'ancre depuis la dépense réelle la plus RÉCENTE encore
+  // présente dans cette catégorie/profil (pas depuis une "date d'origine"
+  // qui n'est plus stockée nulle part une fois qu'un recalage a eu lieu).
+  // S'il n'en reste aucune, on laisse l'ancre actuelle inchangée plutôt
+  // que de deviner une valeur — un recul silencieux vers une date
+  // arbitraire serait pire qu'une ancre légèrement obsolète mais connue.
+  private async recalibrateProvisionCycleFromHistory(
+    category: string,
+    owner: Owner,
+  ): Promise<void> {
+    if (category === 'Revenu' || category === 'Versement') return;
+    const matches = this.provisions().filter(
+      (p) => p.category === category && p.owner === owner && p.autoRecalibrate,
+    );
+    if (matches.length === 0) return;
+
+    const remaining = this.expenses()
+      .filter((e) => e.category === category && e.owner === owner && e.amount > 0)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const lastExpense = remaining[0];
+    if (!lastExpense) return;
+
+    const results = await Promise.all(
+      matches.map((p) => {
+        const updates: any = { start_ym: lastExpense.date.slice(0, 7) };
+        if (provisionUnit(p) === 'days') updates.start_date = lastExpense.date;
+        return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
+      }),
+    );
+    const failed = results.filter((r) => r.error);
+    if (failed.length) {
+      throw new Error(
+        `Échec du recalage rétroactif de ${failed.length} provision(s) : ${failed[0].error?.message}`,
+      );
+    }
+
+    const matchIds = new Set(matches.map((p) => p.id));
+    this.provisions.update((list) =>
+      list.map((p) =>
+        matchIds.has(p.id)
+          ? {
+              ...p,
+              startYM: lastExpense.date.slice(0, 7),
+              startDate: provisionUnit(p) === 'days' ? lastExpense.date : p.startDate,
+            }
+          : p,
+      ),
+    );
+  }
+
   async addProvision(provision: Omit<Provision, 'id' | 'adjustments'>): Promise<void> {
+    // Défense en profondeur (audit BUG-013).
+    if (!Number.isFinite(provision.amount) || provision.amount <= 0) {
+      throw new Error(`Montant de provision invalide : ${provision.amount}. Doit être un nombre > 0.`);
+    }
+    if (!Number.isFinite(provision.everyN) || provision.everyN <= 0) {
+      throw new Error(`Cycle invalide : ${provision.everyN}. Doit être un nombre > 0.`);
+    }
     const { data, error } = await this.supabase.client
       .from('provisions')
       .insert(provisionToRow(provision))
@@ -1301,6 +1594,39 @@ export class BudgetStore {
     id: string,
     changes: Partial<Omit<Provision, 'id' | 'adjustments'>>,
   ): Promise<void> {
+    // Défense en profondeur (audit BUG-013) : ces méthodes restent
+    // directement appelables (import, futur appel API...) même si les
+    // formulaires empêchent déjà les valeurs incohérentes en pratique.
+    if (
+      changes.amount !== undefined &&
+      (!Number.isFinite(changes.amount) || changes.amount <= 0)
+    ) {
+      throw new Error(`Montant de provision invalide : ${changes.amount}. Doit être un nombre > 0.`);
+    }
+    if (changes.everyN !== undefined && (!Number.isFinite(changes.everyN) || changes.everyN <= 0)) {
+      throw new Error(`Cycle invalide : ${changes.everyN}. Doit être un nombre > 0.`);
+    }
+    if (
+      changes.allocationPercent !== undefined &&
+      (!Number.isFinite(changes.allocationPercent) ||
+        changes.allocationPercent < 0 ||
+        changes.allocationPercent > 100)
+    ) {
+      throw new Error(`Pourcentage invalide : ${changes.allocationPercent}. Doit être entre 0 et 100.`);
+    }
+    if (
+      changes.rollingCount !== undefined &&
+      (!Number.isFinite(changes.rollingCount) || changes.rollingCount < 0)
+    ) {
+      throw new Error(`Nombre de factures à moyenner invalide : ${changes.rollingCount}. Doit être ≥ 0.`);
+    }
+    if (
+      changes.monthlyReminder != null &&
+      (!Number.isFinite(changes.monthlyReminder) || changes.monthlyReminder < 0)
+    ) {
+      throw new Error(`Rappel mensuel invalide : ${changes.monthlyReminder}. Doit être ≥ 0.`);
+    }
+
     const row: Record<string, unknown> = {};
     if (changes.name !== undefined) row['name'] = changes.name;
     if (changes.amount !== undefined) row['amount'] = changes.amount;
@@ -1313,6 +1639,7 @@ export class BudgetStore {
     if (changes.autoRecalibrate !== undefined) row['auto_recalibrate'] = changes.autoRecalibrate;
     if (changes.allocationPercent !== undefined) row['allocation_percent'] = changes.allocationPercent;
     if (changes.rollingCount !== undefined) row['rolling_count'] = changes.rollingCount;
+    if (changes.monthlyReminder !== undefined) row['monthly_reminder'] = changes.monthlyReminder;
 
     const { data, error } = await this.supabase.client
       .from('provisions')
@@ -1322,12 +1649,20 @@ export class BudgetStore {
       .single();
     if (error) throw error;
     const existing = this.provisions().find((p) => p.id === id);
+    // Bug corrigé (audit BUG-012) : la reconstruction oubliait
+    // versement_expense_id, donc le lien "cet ajout vient de tel
+    // versement" disparaissait du state en mémoire (mais pas de la base)
+    // dès qu'on modifiait N'IMPORTE QUOI sur la provision — y compris via
+    // les boutons d'édition (%, date d'ancrage, recalage auto, jours du
+    // cycle). Le versement pouvait alors réapparaître à tort comme "non
+    // réparti", jusqu'au prochain rechargement complet.
     const updated = rowToProvision(data, existing ? existing.adjustments.map((a) => ({
       id: a.id,
       provision_id: id,
       amount: a.amount,
       date: a.date,
       note: a.note,
+      versement_expense_id: a.versementExpenseId ?? null,
     })) : []);
     this.provisions.update((list) => list.map((p) => (p.id === id ? updated : p)));
   }
@@ -1378,6 +1713,11 @@ export class BudgetStore {
     const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
     const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
 
+    // Utilisé pour la compensation en cas d'échec partiel : on ne
+    // supprime le versement que si CET appel l'a créé — un versement déjà
+    // existant (existingExpenseId fourni) n'est pas notre responsabilité.
+    const createdVersementHere = !existingExpenseId;
+
     let versementExpenseId: string;
     if (existingExpenseId) {
       const existing = this.expenses().find((e) => e.id === existingExpenseId);
@@ -1394,16 +1734,54 @@ export class BudgetStore {
       versementExpenseId = versementExpense.id;
     }
 
-    for (const a of allocations) {
-      if (a.amount > 0) {
-        await this.addProvisionAdjustment(
-          a.provisionId,
-          a.amount,
-          date,
-          `Versement de ${senderLabel}`,
-          versementExpenseId,
+    // Bug corrigé (audit BUG-010) : chaque répartition est un INSERT
+    // indépendant — si l'une d'elles échoue après que d'autres ont déjà
+    // réussi, l'opération restait auparavant partiellement appliquée
+    // (versement créé, certaines provisions déjà réparties, d'autres
+    // non, sans qu'aucun message ne le signale clairement). On garde la
+    // trace de ce qui a été inséré pour tout annuler en cas d'échec —
+    // équivalent applicatif d'une transaction, faute de RPC SQL dédiée.
+    const inserted: { provisionId: string; adjustmentId: string }[] = [];
+    try {
+      for (const a of allocations) {
+        if (a.amount > 0) {
+          const adjustment = await this.addProvisionAdjustment(
+            a.provisionId,
+            a.amount,
+            date,
+            `Versement de ${senderLabel}`,
+            versementExpenseId,
+          );
+          inserted.push({ provisionId: a.provisionId, adjustmentId: adjustment.id });
+        }
+      }
+    } catch (err) {
+      const rollbackErrors: string[] = [];
+      for (const { provisionId, adjustmentId } of inserted) {
+        try {
+          await this.removeProvisionAdjustment(provisionId, adjustmentId);
+        } catch (rollbackErr) {
+          rollbackErrors.push((rollbackErr as Error).message ?? String(rollbackErr));
+        }
+      }
+      if (createdVersementHere) {
+        try {
+          await this.removeExpense(versementExpenseId);
+        } catch (rollbackErr) {
+          rollbackErrors.push((rollbackErr as Error).message ?? String(rollbackErr));
+        }
+      }
+      if (rollbackErrors.length) {
+        throw new Error(
+          `Échec de la répartition du versement (${(err as Error).message ?? err}), et l'annulation automatique ` +
+            `n'a pas pu tout défaire (${rollbackErrors.join('; ')}). Vérifie manuellement les provisions et le ` +
+            `versement dans Supabase.`,
         );
       }
+      throw new Error(
+        `Échec de la répartition du versement : ${(err as Error).message ?? err}. Tout a été annulé` +
+          `${createdVersementHere ? ' (y compris le versement lui-même)' : ''}, tu peux réessayer.`,
+      );
     }
   }
 
@@ -1467,8 +1845,14 @@ export class BudgetStore {
     date: string,
     note: string,
     versementExpenseId?: string,
-  ): Promise<void> {
+  ): Promise<ProvisionAdjustment> {
     this.assertMonthOpen(date.slice(0, 7));
+    // Défense en profondeur (audit BUG-013) : c'est précisément l'exemple
+    // cité dans l'audit (addProvisionAdjustment(id, -500, ...) serait
+    // accepté sans cette garde).
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Montant d'ajout de provision invalide : ${amount}. Doit être un nombre > 0.`);
+    }
     const { data, error } = await this.supabase.client
       .from('provision_adjustments')
       .insert(adjustmentToRow(provisionId, { amount, date, note, versementExpenseId }))
@@ -1482,6 +1866,20 @@ export class BudgetStore {
           ? { ...p, adjustments: [...p.adjustments, adjustment] }
           : p,
       ),
+    );
+    return adjustment;
+  }
+
+  // Confirme un rappel de contribution mensuelle (voir
+  // monthlyContributionReminders) : ajoute le montant configuré à la
+  // cagnotte, daté d'aujourd'hui, avec la note dédiée qui permet de
+  // reconnaître que CE rappel précis est fait pour le mois en cours.
+  async confirmMonthlyReminder(provisionId: string, amount: number): Promise<void> {
+    await this.addProvisionAdjustment(
+      provisionId,
+      amount,
+      isoOfDate(new Date()),
+      MONTHLY_REMINDER_NOTE,
     );
   }
 
@@ -1513,6 +1911,10 @@ export class BudgetStore {
     // bloquée par la clôture du mois de sa date de référence. Seuls les
     // revenus ponctuels sont de vraies transactions datées.
     if (!income.recurring) this.assertMonthOpen(income.date.slice(0, 7));
+    // Défense en profondeur (audit BUG-013).
+    if (!Number.isFinite(income.amount) || income.amount <= 0) {
+      throw new Error(`Montant de revenu invalide : ${income.amount}. Doit être un nombre > 0.`);
+    }
     const { data, error } = await this.supabase.client
       .from('incomes')
       .insert(incomeToRow(income))
@@ -1538,7 +1940,7 @@ export class BudgetStore {
   async removeRollover(owner: OwnerOrGlobal, ym: string): Promise<void> {
     this.assertMonthOpen(ym);
     const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
-    await Promise.all(
+    const results = await Promise.all(
       owners.map((o) =>
         this.supabase.client
           .from('rollovers')
@@ -1547,14 +1949,30 @@ export class BudgetStore {
           .eq('ym', ym),
       ),
     );
+    // Bug corrigé (audit BUG-011) : les erreurs n'étaient jamais
+    // vérifiées, donc le signal local pouvait supprimer le report des
+    // deux profils (vue Global) même si un seul des deux DELETE avait
+    // réellement réussi en base — UI et base divergeaient silencieusement.
+    // On ne retire du signal que les profils dont la suppression a
+    // réellement réussi.
+    const succeededOwners = owners.filter((_, i) => !results[i].error);
+    const failed = results.filter((r) => r.error);
+
     this.rollovers.update((map) => {
       const copy: MonthlyAmountMap = {
         moi: { ...map.moi },
         madame: { ...map.madame },
       };
-      owners.forEach((o) => delete copy[o][ym]);
+      succeededOwners.forEach((o) => delete copy[o][ym]);
       return copy;
     });
+
+    if (failed.length) {
+      throw new Error(
+        `Échec de la suppression du report pour ${failed.length} profil(s) : ${failed[0].error?.message}. ` +
+          `${succeededOwners.length ? `Le report de ${succeededOwners.join(', ')} a bien été retiré.` : ''}`,
+      );
+    }
   }
 
   // Écrit (ou remplace) le report d'un profil pour un mois donné.
@@ -1672,6 +2090,25 @@ export class BudgetStore {
       !Array.isArray(data.provisions)
     ) {
       throw new Error('Format de fichier non reconnu.');
+    }
+
+    // Bug corrigé (audit BUG-014) : la validation ne vérifiait auparavant
+    // que la PRÉSENCE des tableaux (Array.isArray), pas le contenu de
+    // chaque élément — un JSON syntaxiquement valide mais avec
+    // amount:"bonjour" ou date:"pas-une-date" passait ce garde-fou et
+    // n'échouait qu'au moment de l'insertion en base, APRÈS que
+    // resetEverything() ait déjà vidé les données existantes. On valide
+    // maintenant le contenu en profondeur AVANT tout reset, pour qu'un
+    // fichier invalide échoue sans avoir touché à quoi que ce soit.
+    const validationErrors = validateImportPayload(data);
+    if (validationErrors.length) {
+      const shown = validationErrors.slice(0, 10);
+      const more = validationErrors.length > shown.length ? ` (et ${validationErrors.length - shown.length} autre(s))` : '';
+      throw new Error(
+        `Fichier invalide, import annulé — aucune donnée n'a été touchée :\n` +
+          shown.map((e) => `• ${e}`).join('\n') +
+          more,
+      );
     }
 
     await this.resetEverything();

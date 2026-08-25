@@ -1,0 +1,28 @@
+@if (store.monthlyContributionReminders().length > 0) {
+  <div class="card reminders-card">
+    <div class="card-title">💰 Mes contributions du mois</div>
+    <p class="reminders-hint">
+      Ce que tu t'es engagé à ajouter toi-même chaque mois — séparé de tout
+      versement reçu.
+    </p>
+    <div class="reminders-list">
+      @for (item of store.monthlyContributionReminders(); track item.provision.id) {
+        <div class="reminder-row">
+          <span class="cat-dot" [style.background]="colorFor(item.provision.category)"></span>
+          <span class="reminder-name">
+            {{ item.provision.name }}
+            <span class="reminder-meta">{{ item.provision.category }}</span>
+          </span>
+          <span class="reminder-amount">{{ fmt(item.amount) }}</span>
+          <button
+            class="btn-primary confirm-btn"
+            [disabled]="confirming().has(item.provision.id)"
+            (click)="confirm(item.provision.id, item.amount)"
+          >
+            ✓ Ajouter
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+}

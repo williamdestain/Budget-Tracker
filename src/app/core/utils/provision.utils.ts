@@ -1,6 +1,6 @@
 import { Expense, Owner, OwnerOrGlobal, Provision, ProvisionAdjustment } from '../models/budget.models';
 import { fmt } from './currency.utils';
-import { fmtDate, monthLabel, monthsBetween, addMonths, daysBetween, isoOfDate, parseISODate, ymOf } from './date.utils';
+import { fmtDate, monthLabel, monthsBetween, addMonths, daysBetween, isoOfDate, parseISODate, ymOf, prevYM } from './date.utils';
 
 // ============================================================
 // Provisions : calcul de la cagnotte, statut, prochain paiement
@@ -115,9 +115,34 @@ export function effectiveProvisionAmount(p: Provision, expenses: Expense[]): num
   return recent.reduce((s, e) => s + e.amount, 0) / recent.length;
 }
 
+// Bug corrigé : cette fonction ne bornait auparavant que par le HAUT (date
+// <= fin du mois consulté), sans jamais exclure les ajouts antérieurs au
+// début du CYCLE EN COURS. Résultat concret rapporté par un utilisateur :
+// après avoir payé une provision à recalage automatique, celle-ci
+// redémarre un nouveau cycle (voir syncProvisionsFromExpense) — mais sa
+// cagnotte affichait encore l'argent ajouté pendant l'ANCIEN cycle, comme
+// si une "autre provision" venait d'apparaître déjà partiellement
+// remplie. provisionSpent() (juste en dessous) borne déjà correctement
+// par le bas avec provisionStart(p) — cette fonction doit faire pareil.
 export function provisionAdjustmentsUpTo(p: Provision, currentYM: string): ProvisionAdjustment[] {
+  const start = provisionStart(p);
   const end = lastDayOfMonthYM(currentYM);
-  return (p.adjustments || []).filter((a) => a.date <= end);
+  // Cas particulier : l'ancre représente encore une échéance FUTURE (pas
+  // encore atteinte par rapport au mois affiché). Ça veut dire qu'aucun
+  // paiement réel n'a encore recalé cette provision — on est dans la
+  // toute première période d'accumulation, AVANT la première échéance.
+  // Il n'y a donc pas d'"ancien cycle" à exclure : tout ce qui a déjà été
+  // ajouté doit compter, même si sa date est antérieure à l'ancre (ex.
+  // provision créée le 10 juillet avec 1re échéance au 10 septembre —
+  // l'argent ajouté en juillet/août doit bien compter pour le 10
+  // septembre, pas être ignoré comme si c'était un "vieux cycle").
+  // Dès que l'ancre est atteinte ou dépassée (config d'origine passée, ou
+  // date d'un vrai paiement après un recalage), on revient à la borne
+  // stricte habituelle.
+  if (start > end) {
+    return (p.adjustments || []).filter((a) => a.date <= end);
+  }
+  return (p.adjustments || []).filter((a) => a.date >= start && a.date <= end);
 }
 
 export function provisionAdjustmentsForMonth(p: Provision, ym: string): ProvisionAdjustment[] {
@@ -163,6 +188,45 @@ export function provisionNextHit(p: Provision, currentYM: string): string {
 
 export function formatProvisionNextHit(p: Provision, currentYM: string): string {
   const next = provisionNextHit(p, currentYM);
+  return provisionUnit(p) === 'days' ? fmtDate(next) : monthLabel(next);
+}
+
+// Bug rapporté par un utilisateur (capture d'écran) : la carte affichait
+// à la fois "Échéance ce mois — X $ restant à payer" (basé sur
+// isHitMonth(), qui détecte correctement l'échéance DANS le mois/la
+// période affichée) ET "Prochaine échéance : [date d'un cycle plus tard]"
+// (basé sur provisionNextHit(), qui saute TOUJOURS par-dessus l'échéance
+// en cours par conception — voir son test dédié). Les deux venaient de la
+// même provision mais parlaient de deux échéances différentes, l'une
+// contredisant l'autre sur la même carte. Le même saut faussait aussi
+// provisionDaysUntilNext()/provisionDueAlert() : une échéance de ce mois
+// restée impayée ne déclenchait jamais l'alerte "en retard", puisque le
+// nombre de jours était calculé par rapport au cycle SUIVANT (donc
+// toujours positif et grand), pas par rapport à l'échéance impayée
+// elle-même.
+//
+// provisionUpcomingHit() corrige ça : si le mois/la période affichée est
+// elle-même une échéance (isHitMonth), on renvoie CETTE date-là (pas la
+// suivante). provisionNextHit() reste inchangée et disponible séparément
+// pour un usage de planification pure ("après celle-ci, la suivante sera
+// quand ?"), mais provisionUpcomingHit() est ce qu'il faut utiliser
+// partout où on affiche/alerte sur "la prochaine échéance à surveiller".
+export function provisionUpcomingHit(p: Provision, currentYM: string): string {
+  if (!isHitMonth(p, currentYM)) return provisionNextHit(p, currentYM);
+  if (provisionUnit(p) !== 'days') return currentYM;
+  // Même logique de grille que isHitMonth (jours) : retrouve le point
+  // précis DANS ce mois plutôt que de renvoyer tout le mois.
+  const start = provisionStart(p);
+  const monthStart = currentYM + '-01';
+  let hitDate = start;
+  while (hitDate < monthStart) {
+    hitDate = addDays(hitDate, p.everyN);
+  }
+  return hitDate;
+}
+
+export function formatProvisionUpcomingHit(p: Provision, currentYM: string): string {
+  const next = provisionUpcomingHit(p, currentYM);
   return provisionUnit(p) === 'days' ? fmtDate(next) : monthLabel(next);
 }
 
@@ -218,7 +282,7 @@ function provisionReferenceDate(currentYM: string): string {
 }
 
 function provisionNextHitAsDate(p: Provision, currentYM: string): string {
-  const hit = provisionNextHit(p, currentYM);
+  const hit = provisionUpcomingHit(p, currentYM);
   return provisionUnit(p) === 'days' ? hit : hit + '-01';
 }
 
@@ -250,10 +314,25 @@ export function provisionDueAlert(
   return null;
 }
 
-// Catégories couvertes par une provision, pour un profil donné.
-export function provisionedCategories(provisions: Provision[], owner: OwnerOrGlobal): Set<string> {
+// Catégories couvertes par une provision, pour un profil donné — utilisé
+// pour exclure les dépenses réelles déjà représentées par la cagnotte
+// d'une provision (countedExpenses ci-dessous).
+//
+// Bug corrigé (audit BUG-008) : la clé était auparavant la catégorie
+// SEULE, sans le profil. En vue Global, si Moi a une provision
+// "Assurance" et que Madame a une VRAIE dépense "Assurance" (sans
+// provision de son côté), cette dépense de Madame était à tort exclue du
+// budget Global — traitée comme "couverte" par une provision qui ne lui
+// appartient pourtant pas. Résultat concret : le budget Global
+// sous-comptait les dépenses, gonflant artificiellement le solde
+// disponible. La clé est maintenant "owner|category", jamais la
+// catégorie seule.
+export function provisionedCategories(
+  provisions: Provision[],
+  owner: OwnerOrGlobal,
+): Set<string> {
   const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
-  return new Set(relevant.map((p) => p.category));
+  return new Set(relevant.map((p) => `${p.owner}|${p.category}`));
 }
 
 export interface CountedExpense {
@@ -277,6 +356,28 @@ export interface CountedExpense {
 // catégories provisionnées pour éviter le double comptage — la provision
 // absorbe déjà ces paiements dans sa cagnotte (voir provisionPot). Aucun
 // prélèvement automatique n'est ajouté : seuls les ajouts manuels comptent.
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Bug rapporté par un utilisateur : payer une vraie facture (ex.
+// Électricité en juillet) alors qu'AUCUN argent n'a jamais été mis dans
+// la provision correspondante faisait purement et simplement disparaître
+// cette dépense du budget/du graphique — traitée comme "déjà couverte"
+// simplement parce qu'une provision existe dans cette catégorie, sans
+// vérifier si elle contient réellement de quoi la couvrir. À juste titre
+// jugé incorrect : de l'argent est vraiment sorti de la poche, sans
+// aucune épargne préalable pour l'absorber.
+//
+// Corrigé : chaque dépense réelle d'une catégorie provisionnée est
+// maintenant comparée à la cagnotte RÉELLEMENT disponible au moment où
+// elle survient (pas juste "une provision existe"). Seule la partie
+// couverte par de l'épargne déjà accumulée est exclue du budget ; toute
+// partie non couverte (cagnotte insuffisante ou à 0) compte comme une
+// vraie dépense de ce mois — exactement le même "Déficit de X $ (payé
+// avant d'avoir assez économisé)" déjà affiché sur la carte de la
+// provision, mais qui ne se répercutait auparavant nulle part dans le
+// calcul du budget lui-même.
 export function countedExpenses(
   expenses: Expense[],
   provisions: Provision[],
@@ -286,34 +387,67 @@ export function countedExpenses(
   const visible = expenses
     .filter((e) => owner === 'global' || e.owner === owner)
     .filter((e) => e.date.startsWith(currentYM));
-  const covered = provisionedCategories(provisions, owner);
+  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
+  const provisionedKeys = new Set(relevant.map((p) => `${p.owner}|${p.category}`));
 
-  const counted: CountedExpense[] = visible.filter((e) => {
-    if (owner === 'global' && e.category === 'Versement') return false;
-    if (e.category === 'Revenu') return false;
-    if (covered.has(e.category)) return false;
-    return true;
+  const counted: CountedExpense[] = [];
+
+  // 1) Dépenses de catégories NON provisionnées : comptent intégralement,
+  // comme avant — rien ne change ici.
+  visible.forEach((e) => {
+    if (owner === 'global' && e.category === 'Versement') return;
+    if (e.category === 'Revenu') return;
+    if (provisionedKeys.has(`${e.owner}|${e.category}`)) return; // traitées ci-dessous
+    counted.push({ id: e.id, amount: e.amount, category: e.category, date: e.date, owner: e.owner, cc: e.cc });
   });
 
-  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
+  // 2) Pour chaque provision : ne déduire que la part de ses dépenses
+  // réelles du mois réellement couverte par la cagnotte disponible, dans
+  // l'ordre chronologique (une cagnotte qui s'épuise ne peut pas couvrir
+  // deux fois le même dollar).
   relevant.forEach((p) => {
-    provisionAdjustmentsForMonth(p, currentYM).forEach((a) => {
-      if (!(a.amount > 0)) return;
-      counted.push({
-        id: 'prov-adjust-' + p.id + '-' + a.id,
-        amount: a.amount,
-        category: p.category,
-        date: a.date,
-        owner: p.owner,
-        cc: false,
-        provision: true,
-        provisionAdjustment: true,
-        provisionId: p.id,
-        adjustmentId: a.id,
-        provisionName: p.name,
-        note: a.note,
+    let runningPot = provisionPot(p, prevYM(currentYM), expenses);
+
+    visible
+      .filter((e) => e.category === p.category && e.owner === p.owner && e.amount > 0)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+      .forEach((e) => {
+        const covered = Math.min(e.amount, Math.max(runningPot, 0));
+        const uncovered = round2(e.amount - covered);
+        runningPot -= e.amount;
+        if (uncovered > 0) {
+          counted.push({
+            id: e.id,
+            amount: uncovered,
+            category: e.category,
+            date: e.date,
+            owner: e.owner,
+            cc: e.cc,
+          });
+        }
       });
-    });
+
+    // Ajustements manuels (contributions à la cagnotte) du mois — bornés
+    // par le cycle en cours (audit BUG-009), inchangé.
+    provisionAdjustmentsUpTo(p, currentYM)
+      .filter((a) => a.date.startsWith(currentYM))
+      .forEach((a) => {
+        if (!(a.amount > 0)) return;
+        counted.push({
+          id: 'prov-adjust-' + p.id + '-' + a.id,
+          amount: a.amount,
+          category: p.category,
+          date: a.date,
+          owner: p.owner,
+          cc: false,
+          provision: true,
+          provisionAdjustment: true,
+          provisionId: p.id,
+          adjustmentId: a.id,
+          provisionName: p.name,
+          note: a.note,
+        });
+      });
   });
 
   return counted;

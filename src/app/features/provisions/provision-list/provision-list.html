@@ -8,9 +8,14 @@
       Créez-en une pour lisser une dépense irrégulière (électricité ~60 j, taxes,
       assurance…).
     </div>
+  } @else if (store.otherProvisions().length === 0) {
+    <div class="prov-empty">
+      Toutes tes provisions sont déjà affichées ci-dessus, dans
+      "📅 À payer bientôt".
+    </div>
   } @else {
     <div class="prov-list">
-      @for (p of store.visibleProvisions(); track p.id) {
+      @for (p of store.otherProvisions(); track p.id) {
         <app-provision-card [provision]="p" />
       }
     </div>

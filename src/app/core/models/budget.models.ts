@@ -86,6 +86,14 @@ export interface Provision {
   // l'outil "Répartir un versement" (0 = pas de préremplissage automatique).
   allocationPercent: number;
   rollingCount: number;
+  // Montant que l'utilisateur s'engage à ajouter lui-même chaque mois,
+  // séparément de tout versement reçu (ex. sa propre moitié dans un
+  // partage 50/50 avec le conjoint). null/0 = pas de rappel configuré.
+  // Contrairement au versement (de l'argent qui transite réellement d'un
+  // profil à l'autre), c'est juste un pense-bête : rien n'est ajouté
+  // automatiquement, l'utilisateur confirme lui-même chaque mois via la
+  // carte "Mes contributions du mois".
+  monthlyReminder: number | null;
   adjustments: ProvisionAdjustment[];
 }
 

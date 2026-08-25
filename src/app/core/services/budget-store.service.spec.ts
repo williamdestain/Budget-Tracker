@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { BudgetStore } from './budget-store.service';
 import { SupabaseService } from './supabase.service';
 import { FakeSupabaseClient } from '../testing/fake-supabase-client';
-import { ymOf } from '../utils/date.utils';
+import { ymOf, nextYM } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 
 // Tests d'intégration : BudgetStore + mappers + faux client Supabase en
@@ -113,6 +113,86 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     });
   });
 
+  // Audit BUG-013 : les formulaires empêchent les montants négatifs, mais
+  // les méthodes du store restent directement appelables (import, futur
+  // appel API...) — défense en profondeur ajoutée sur les points d'entrée
+  // financiers les plus sensibles.
+  describe('BUG-013 — validation des montants au niveau du store (défense en profondeur)', () => {
+    it('addExpense() refuse un montant négatif ou nul', async () => {
+      await store.loadAll();
+      await expect(
+        store.addExpense({ amount: -50, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false }),
+      ).rejects.toThrow(/invalide/);
+      await expect(
+        store.addExpense({ amount: 0, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false }),
+      ).rejects.toThrow(/invalide/);
+      expect(store.expenses()).toHaveLength(0);
+    });
+
+    it('addProvisionAdjustment() refuse un montant négatif (exemple exact cité par l’audit)', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 300, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      await expect(
+        store.addProvisionAdjustment('p1', -500, '2026-07-10', ''),
+      ).rejects.toThrow(/invalide/);
+    });
+
+    it('addProvision() refuse un montant ou un cycle invalide', async () => {
+      await store.loadAll();
+      await expect(
+        store.addProvision({
+          name: 'Test', amount: -100, everyN: 3, intervalUnit: 'months', startYM: '2026-01',
+          startDate: '', category: 'Autre', owner: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
+        }),
+      ).rejects.toThrow(/invalide/);
+      await expect(
+        store.addProvision({
+          name: 'Test', amount: 100, everyN: 0, intervalUnit: 'months', startYM: '2026-01',
+          startDate: '', category: 'Autre', owner: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
+        }),
+      ).rejects.toThrow(/invalide/);
+    });
+
+    it('updateProvision() refuse un pourcentage hors de 0-100', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 300, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      await expect(
+        store.updateProvision('p1', { allocationPercent: 150 }),
+      ).rejects.toThrow(/invalide/);
+      await expect(
+        store.updateProvision('p1', { allocationPercent: -10 }),
+      ).rejects.toThrow(/invalide/);
+    });
+
+    it('addIncome() refuse un montant négatif ou nul', async () => {
+      await store.loadAll();
+      await expect(
+        store.addIncome({
+          amount: -1, type: 'Salaire', date: '2026-07-01', owner: 'moi', note: '',
+          recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
+        }),
+      ).rejects.toThrow(/invalide/);
+    });
+
+    it('setCategoryBudget() accepte toujours 0 (gel volontaire) mais refuse un montant négatif', async () => {
+      await store.loadAll();
+      await expect(store.setCategoryBudget('moi', '2026-07', 'Loisirs', 0)).resolves.not.toThrow();
+      await expect(store.setCategoryBudget('moi', '2026-07', 'Loisirs', -50)).rejects.toThrow(/invalide/);
+    });
+  });
+
   describe('addExpense() / removeExpense()', () => {
     it('insère une dépense, la renvoie mappée, et met à jour le signal', async () => {
       const created = await store.addExpense({
@@ -207,6 +287,87 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       const stillThere = store.expenses().find((e) => e.id === created.id);
       expect(stillThere?.category).toBe('Courses');
       expect(fakeClient.tables['expenses'].find((r: any) => r.id === created.id)?.['category']).toBe('Courses');
+    });
+
+    // Audit BUG-006 : addExpense()/updateExpense() recalent une provision
+    // quand une dépense réelle matche sa catégorie/profil, mais rien ne
+    // faisait l'inverse quand cette dépense était supprimée ou déplacée
+    // hors de cette catégorie/profil — la provision restait recalée sur
+    // une dépense qui n'existe plus.
+    it("removeExpense() : supprimer LA dépense qui avait recalé une provision la re-recale sur la dépense précédente restante", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 200, every_n: 2, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+
+      // Deux paiements réels successifs : le premier (mars) recale la
+      // provision, puis le second (mai) la recale encore plus tard.
+      const e1 = await store.addExpense({
+        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+      });
+      const e2 = await store.addExpense({
+        amount: 200, category: 'Électricité', date: '2026-05-12', owner: 'moi', cc: false,
+      });
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-05');
+
+      // On supprime le paiement le plus récent (mai) : la provision doit
+      // revenir recalée sur le paiement de mars, pas rester bloquée sur
+      // mai (qui n'existe plus).
+      await store.removeExpense(e2.id);
+
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-03');
+      void e1;
+    });
+
+    it("removeExpense() : supprimer la SEULE dépense qui avait recalé une provision laisse l'ancre inchangée (pas de date à deviner)", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 200, every_n: 2, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      const e1 = await store.addExpense({
+        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+      });
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-03');
+
+      await store.removeExpense(e1.id);
+
+      // Aucune dépense réelle ne reste dans cette catégorie/profil : on
+      // laisse l'ancre telle quelle (mars) plutôt que de deviner un
+      // retour à la config d'origine (janvier), qui n'est plus stockée
+      // nulle part une fois qu'un recalage a eu lieu.
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-03');
+    });
+
+    it("updateExpense() : changer la catégorie d'une dépense hors du champ d'une provision la re-recale aussi sur l'historique restant", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 200, every_n: 2, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      await store.addExpense({
+        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+      });
+      const e2 = await store.addExpense({
+        amount: 200, category: 'Électricité', date: '2026-05-12', owner: 'moi', cc: false,
+      });
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-05');
+
+      // On change la catégorie de la dépense de mai : elle ne concerne
+      // plus "Électricité" -> la provision doit revenir sur mars.
+      await store.updateExpense(e2.id, { category: 'Courses' });
+
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-03');
     });
   });
 
@@ -317,6 +478,73 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
   });
 
   describe('importData()', () => {
+    // Audit BUG-014 : exemple exact cité — un JSON syntaxiquement valide
+    // (Array.isArray passe) mais avec un contenu métier invalide
+    // (amount:"bonjour", date:"pas-une-date"...) devait être rejeté AVANT
+    // tout reset, pas seulement échouer à mi-parcours de l'insertion.
+    it("rejette un fichier avec des valeurs métier invalides, SANS toucher aux données existantes", async () => {
+      fakeClient.seed('expenses', [
+        { id: 'old', amount: 50, category: 'Courses', date: '2026-06-01', owner: 'moi', cc: false },
+      ]);
+      await store.loadAll();
+
+      await expect(
+        store.importData({
+          expenses: [{ amount: 'bonjour', category: 'Courses', date: 'pas-une-date', owner: 'xxx', cc: false }],
+          incomes: [],
+          provisions: [],
+        }),
+      ).rejects.toThrow(/invalide/);
+
+      // Rien n'a été touché : ni reset, ni import partiel — les données
+      // existantes doivent être exactement comme avant l'appel.
+      expect(store.expenses()).toHaveLength(1);
+      expect(store.expenses()[0].id).toBe('old');
+      expect(fakeClient.tables['expenses']).toHaveLength(1);
+    });
+
+    it('rejette un montant négatif ou nul dans une dépense importée', async () => {
+      await expect(
+        store.importData({
+          expenses: [{ amount: -10, category: 'Courses', date: '2026-07-01', owner: 'moi', cc: false }],
+          incomes: [],
+          provisions: [],
+        }),
+      ).rejects.toThrow(/montant invalide/);
+    });
+
+    it('rejette une provision avec un pourcentage d’allocation hors de 0-100', async () => {
+      await expect(
+        store.importData({
+          expenses: [],
+          incomes: [],
+          provisions: [
+            {
+              id: 'p1', name: 'Assurance', amount: 300, everyN: 3, intervalUnit: 'months',
+              startYM: '2026-01', category: 'Assurance', owner: 'moi', autoRecalibrate: true,
+              allocationPercent: 250, rollingCount: 0, adjustments: [],
+            },
+          ],
+        }),
+      ).rejects.toThrow(/pourcentage/);
+    });
+
+    it('accepte un fichier valide sans erreur (pas de faux positifs)', async () => {
+      await expect(
+        store.importData({
+          expenses: [{ amount: 50, category: 'Courses', date: '2026-07-01', owner: 'moi', cc: false }],
+          incomes: [{ amount: 3000, type: 'Salaire', date: '2026-07-01', owner: 'moi', recurring: false }],
+          provisions: [
+            {
+              id: 'p1', name: 'Assurance', amount: 300, everyN: 3, intervalUnit: 'months',
+              startYM: '2026-01', category: 'Assurance', owner: 'moi', autoRecalibrate: true,
+              allocationPercent: 50, rollingCount: 0, adjustments: [],
+            },
+          ],
+        }),
+      ).resolves.not.toThrow();
+    });
+
     it('restaure recurringExpenses depuis un export récent', async () => {
       fakeClient.seed('recurring_expenses', [
         { id: 'r1', name: 'Loyer', amount: 1000, category: 'Loyer', owner: 'moi', day_of_month: 1, cc: false, active: true },
@@ -762,6 +990,250 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     });
   });
 
+  // Bug rapporté par l'utilisateur : après avoir payé une provision, une
+  // "autre provision" semblait apparaître automatiquement — en réalité la
+  // même provision était affichée deux fois sur le tableau de bord (une
+  // fois dans "À payer bientôt", une fois dans la liste principale, sans
+  // aucune indication que c'était la même).
+  // Fonctionnalité demandée : rappel de contribution mensuelle personnelle
+  // (ex. sa propre moitié dans un partage 50/50 avec le conjoint),
+  // distincte de tout versement reçu — les deux ne doivent pas se masquer
+  // l'un l'autre.
+  describe('monthlyContributionReminders (computed) / confirmMonthlyReminder()', () => {
+    it('une provision sans monthlyReminder configuré ne montre aucun rappel', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 62, interval_unit: 'days',
+          start_ym: '2026-01', start_date: '2026-01-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0, monthly_reminder: null,
+        },
+      ]);
+      await store.loadAll();
+      expect(store.monthlyContributionReminders()).toHaveLength(0);
+    });
+
+    it('une provision avec monthlyReminder configuré et rien ajouté ce mois-ci apparaît comme rappel en attente', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 62, interval_unit: 'days',
+          start_ym: '2026-01', start_date: '2026-01-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0, monthly_reminder: 87.67,
+        },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-07');
+
+      const reminders = store.monthlyContributionReminders();
+      expect(reminders).toHaveLength(1);
+      expect(reminders[0].provision.id).toBe('p1');
+      expect(reminders[0].amount).toBe(87.67);
+    });
+
+    it('confirmMonthlyReminder() ajoute le montant à la cagnotte et fait disparaître le rappel', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 62, interval_unit: 'days',
+          start_ym: '2026-01', start_date: '2026-01-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0, monthly_reminder: 87.67,
+        },
+      ]);
+      await store.loadAll();
+      const currentYm = ymOf(new Date());
+      store.current.set(currentYm);
+
+      expect(store.monthlyContributionReminders()).toHaveLength(1);
+
+      await store.confirmMonthlyReminder('p1', 87.67);
+
+      expect(store.monthlyContributionReminders()).toHaveLength(0);
+      const provision = store.provisions().find((p) => p.id === 'p1');
+      expect(provision?.adjustments.some((a) => a.amount === 87.67)).toBe(true);
+    });
+
+    it("un versement reçu (part de Madame) ce mois-ci NE masque PAS le rappel de contribution personnelle", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 62, interval_unit: 'days',
+          start_ym: '2026-01', start_date: '2026-01-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0, monthly_reminder: 87.67,
+        },
+      ]);
+      await store.loadAll();
+      const currentYm = ymOf(new Date());
+      store.current.set(currentYm);
+      store.activeOwner.set('moi');
+
+      // Madame envoie sa part, répartie automatiquement vers cette
+      // provision — un ajustement existe donc déjà ce mois-ci, mais ce
+      // n'est PAS la contribution personnelle du rappel.
+      await store.splitVersementIntoProvisions(87.67, `${currentYm}-01`, [
+        { provisionId: 'p1', amount: 87.67 },
+      ]);
+
+      // Le rappel doit rester visible : la part de Madame ne compte pas
+      // comme "ma" contribution personnelle.
+      expect(store.monthlyContributionReminders()).toHaveLength(1);
+
+      await store.confirmMonthlyReminder('p1', 87.67);
+      expect(store.monthlyContributionReminders()).toHaveLength(0);
+    });
+
+    it("un rappel déjà confirmé un mois ne reste pas masqué le mois suivant", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 62, interval_unit: 'days',
+          start_ym: '2026-01', start_date: '2026-01-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0, monthly_reminder: 87.67,
+        },
+      ]);
+      await store.loadAll();
+      // confirmMonthlyReminder() date toujours l'ajustement avec la vraie
+      // date du jour (isoOfDate(new Date())) — il faut donc afficher le
+      // vrai mois en cours pour que la confirmation soit détectée.
+      const currentYm = ymOf(new Date());
+      store.current.set(currentYm);
+      await store.confirmMonthlyReminder('p1', 87.67);
+      expect(store.monthlyContributionReminders()).toHaveLength(0);
+
+      store.current.set(nextYM(currentYm));
+      expect(store.monthlyContributionReminders()).toHaveLength(1);
+    });
+  });
+
+  describe('otherProvisions (computed) — pas de doublon avec upcomingProvisions', () => {
+    it('une provision due ce mois-ci apparaît dans upcomingProvisions et PAS dans otherProvisions', async () => {
+      const todayYm = ymOf(new Date());
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 300, every_n: 1, interval_unit: 'months',
+          start_ym: todayYm, start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set(todayYm);
+
+      expect(store.upcomingProvisions().map((r) => r.provision.id)).toContain('p1');
+      expect(store.otherProvisions().map((p) => p.id)).not.toContain('p1');
+    });
+
+    it("une provision qui n'est ni due ni en déficit apparaît dans otherProvisions, pas dans upcomingProvisions", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Taxes municipales', amount: 1200, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Taxes', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2026-02'); // échéance dans ~11 mois, largement hors des 30 jours
+
+      expect(store.upcomingProvisions().map((r) => r.provision.id)).not.toContain('p1');
+      expect(store.otherProvisions().map((p) => p.id)).toContain('p1');
+    });
+
+    it('la somme des deux listes couvre toutes les provisions visibles, sans doublon', async () => {
+      const todayYm = ymOf(new Date());
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 300, every_n: 1, interval_unit: 'months',
+          start_ym: todayYm, start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+        {
+          id: 'p2', name: 'Taxes municipales', amount: 1200, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Taxes', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set(todayYm);
+
+      const upcomingIds = store.upcomingProvisions().map((r) => r.provision.id);
+      const otherIds = store.otherProvisions().map((p) => p.id);
+      const combined = new Set([...upcomingIds, ...otherIds]);
+
+      expect(combined.size).toBe(upcomingIds.length + otherIds.length); // pas de recoupement
+      expect(combined.size).toBe(store.visibleProvisions().length); // rien de perdu non plus
+    });
+  });
+
+  // Audit BUG-012 : updateProvision() reconstruisait les ajustements en
+  // mémoire sans reporter versementExpenseId — ce lien restait correct en
+  // base, mais disparaissait du signal local dès qu'on modifiait
+  // n'importe quoi sur la provision (y compris via les boutons d'édition
+  // %, date d'ancrage, recalage auto, jours du cycle).
+  describe("updateProvision() — conserve versementExpenseId sur les ajustements existants", () => {
+    it("le lien versementExpenseId d'un ajustement survit à une modification quelconque de la provision", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 600, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        {
+          id: 'a1', provision_id: 'p1', amount: 200, date: '2026-07-01', note: 'Versement de Madame',
+          versement_expense_id: 'v1',
+        },
+      ]);
+      await store.loadAll();
+      expect(store.provisions()[0].adjustments[0].versementExpenseId).toBe('v1');
+
+      // N'importe quelle édition (ici le pourcentage d'allocation) ne
+      // doit pas faire disparaître le lien du state en mémoire.
+      await store.updateProvision('p1', { allocationPercent: 50 });
+
+      const adjustment = store.provisions().find((p) => p.id === 'p1')?.adjustments[0];
+      expect(adjustment?.versementExpenseId).toBe('v1');
+    });
+  });
+
+  // Audit BUG-007 : si plusieurs provisions correspondent à la même
+  // catégorie/profil et que le recalage de l'une échoue APRÈS que
+  // d'autres ont déjà réussi, celles déjà réussies restaient recalées
+  // même quand la dépense déclenchante elle-même était annulée par le
+  // rollback de compensation d'addExpense().
+  describe("syncProvisionsFromExpense() — compensation si le recalage échoue sur UNE provision parmi plusieurs", () => {
+    it("si 2 provisions matchent et que la 2e échoue, la 1re (déjà recalée) est remise à son état précédent, pas laissée recalée dans le vide", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance auto', amount: 300, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+        {
+          id: 'p2', name: 'Assurance habitation', amount: 400, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+
+      // simulateErrorOnce ne fait échouer que le PREMIER appel .from('provisions')
+      // qui suit — dans l'ordre de matches.map(), c'est p1 qui échoue,
+      // p2 réussit d'abord puis doit être compensée.
+      fakeClient.simulateErrorOnce('provisions');
+
+      await expect(
+        store.addExpense({
+          amount: 100, category: 'Assurance', date: '2026-07-15', owner: 'moi', cc: false,
+        }),
+      ).rejects.toThrow();
+
+      // La dépense déclenchante a été annulée (rollback d'addExpense).
+      expect(store.expenses()).toHaveLength(0);
+      // Les DEUX provisions doivent être revenues à janvier — y compris
+      // celle qui avait initialement réussi son recalage.
+      expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-01');
+      expect(store.provisions().find((p) => p.id === 'p2')?.startYM).toBe('2026-01');
+    });
+  });
+
   describe('smartAlerts — chevauchement provision / dépense récurrente (info)', () => {
     it('11. même catégorie, provision + récurrent actif : alerte info', async () => {
       fakeClient.seed('provisions', [
@@ -1060,7 +1532,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         store.addProvision({
           name: 'Nouvelle provision', amount: 500, everyN: 12, intervalUnit: 'months',
           startYM: '2026-07', startDate: '', category: 'Divers', owner: 'moi',
-          autoRecalibrate: false, allocationPercent: 0, rollingCount: 0,
+          autoRecalibrate: false, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
         }),
       ).resolves.not.toThrow();
     });

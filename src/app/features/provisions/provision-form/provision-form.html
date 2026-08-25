@@ -63,6 +63,19 @@
           </div>
         }
 
+        <div class="field field-recalibrate">
+          <label class="check-label" title="Quand une vraie dépense de cette catégorie est enregistrée, la provision redémarre automatiquement son prochain cycle à partir de cette date">
+            <input type="checkbox" name="autoRecalibrate" [(ngModel)]="autoRecalibrate" />
+            <span>Recaler automatiquement sur les paiements réels</span>
+          </label>
+          @if (!autoRecalibrate) {
+            <p class="field-hint">
+              Décoché : la prochaine échéance restera fixe tant que tu ne la
+              modifies pas toi-même (✏️ sur la carte de la provision).
+            </p>
+          }
+        </div>
+
         <div class="field-actions">
           <button type="submit" class="btn-primary" [disabled]="saving()">Créer</button>
         </div>
