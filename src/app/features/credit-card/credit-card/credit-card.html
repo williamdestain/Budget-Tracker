@@ -1,9 +1,17 @@
 <div class="card cc-card">
   <div class="cc-head">
     <div class="card-title">{{ title }}</div>
-    <div class="cc-total">
-      <span>Chargé ce mois</span>
-      <span>{{ fmt(breakdown().total) }}</span>
+    <div class="cc-totals">
+      <div class="cc-total">
+        <span>Chargé ce mois</span>
+        <span>{{ fmt(breakdown().total) }}</span>
+      </div>
+      @if (showCombinedTotal) {
+        <div class="cc-total cc-total-combined">
+          <span title="Moi + Madame, charges et remboursements combinés">Total toutes les cartes</span>
+          <span>{{ fmt(totalAllOwners()) }}</span>
+        </div>
+      }
     </div>
   </div>
 

@@ -14,7 +14,10 @@ import { CountedExpense } from '../../../core/utils/provision.utils';
   styleUrl: './expense-list.scss',
 })
 export class ExpenseList {
-  readonly categories = sortedAlpha(CATEGORIES.filter((c) => c !== 'Revenu'));
+  // Même exclusion que le formulaire d'ajout — voir expense-form.ts.
+  readonly categories = sortedAlpha(
+    CATEGORIES.filter((c) => c !== 'Revenu' && c !== 'Remboursement Carte Crédit'),
+  );
 
   readonly editingId = signal<string | null>(null);
   readonly savingEdit = signal(false);

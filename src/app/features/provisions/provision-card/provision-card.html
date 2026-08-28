@@ -62,7 +62,15 @@
     <div class="prov-actions">
       <button title="Marquer comme payé" class="pay-prov" (click)="togglePay()">💳</button>
       <button title="Ajouter un montant" class="add-prov-adjust" (click)="toggleAdjust()">+$</button>
-      <button title="Supprimer" class="del-prov" (click)="remove()">✕</button>
+      <button
+        title="Terminer cette provision (une seule fois) : reverse le solde restant dans ton budget avant de la supprimer"
+        class="close-prov"
+        [disabled]="saving()"
+        (click)="close()"
+      >
+        🏁
+      </button>
+      <button title="Supprimer directement, sans reverser le solde" class="del-prov" (click)="remove()">✕</button>
     </div>
   </div>
 
@@ -82,6 +90,15 @@
         <label class="check-label">
           <input type="checkbox" name="payCc" [(ngModel)]="payCc" />
           <span class="check-text"><span class="check-icon">💳</span> Carte de crédit</span>
+        </label>
+      </div>
+      <div class="field field-check">
+        <label
+          class="check-label"
+          title="Reverse automatiquement tout solde restant dans ton budget, puis supprime la provision — pour une dépense ponctuelle (ex. un voyage) dont tu n'auras plus besoin après ce paiement"
+        >
+          <input type="checkbox" name="payIsFinal" [(ngModel)]="payIsFinal" />
+          <span class="check-text">🏁 C'est le dernier paiement (terminer et reverser le solde)</span>
         </label>
       </div>
       <div class="field-actions">

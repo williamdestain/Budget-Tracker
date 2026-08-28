@@ -5,6 +5,7 @@ import { SupabaseService } from './supabase.service';
 import { FakeSupabaseClient } from '../testing/fake-supabase-client';
 import { ymOf, nextYM } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
+import { provisionPot } from '../utils/provision.utils';
 
 // Tests d'intégration : BudgetStore + mappers + faux client Supabase en
 // mémoire, sans réseau. L'objectif est de vérifier que les différentes
@@ -190,6 +191,275 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.loadAll();
       await expect(store.setCategoryBudget('moi', '2026-07', 'Loisirs', 0)).resolves.not.toThrow();
       await expect(store.setCategoryBudget('moi', '2026-07', 'Loisirs', -50)).rejects.toThrow(/invalide/);
+    });
+  });
+
+  // Bug rapporté par un utilisateur : payer moins que ce qu'il y avait
+  // dans la cagnotte (ex. cagnotte à 300 $, vraie facture de 176 $) faisait
+  // disparaître le surplus (124 $) au lieu de le reporter dans le nouveau
+  // cycle — le recalage déplaçait l'ancre à la date du paiement, rendant
+  // l'ancien ajout orphelin (exclu par le correctif anti-pollution d'un
+  // ancien cycle). Pire, la cagnotte affichait un faux déficit juste
+  // après un paiement qui aurait dû laisser un surplus positif.
+  describe('syncProvisionsFromExpense() — report du surplus lors d’un recalage (pas de perte)', () => {
+    it("paiement inférieur à la cagnotte : le surplus est reporté dans le nouveau cycle, pas perdu", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 300, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2026-06');
+
+      await store.payProvision('p1', 176, '2026-06-10', false);
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      // L'ancre a bien avancé...
+      expect(p.startDate).toBe('2026-06-10');
+      // ...et un ajustement de report a été ajouté, daté du nouveau
+      // départ. Son montant est celui d'AVANT ce paiement précis (300 $,
+      // pas le net de 124 $) : une fois recalé, le nouveau cycle va lui-
+      // même soustraire ce même paiement (176 $) via son propre calcul —
+      // reporter le net referait cette soustraction une seconde fois (voir
+      // le test suivant, qui vérifie que le résultat final net est bien 124 $).
+      const surplus = p.adjustments.find((a) => a.note === 'Surplus reporté du cycle précédent');
+      expect(surplus).toBeDefined();
+      expect(surplus?.amount).toBe(300);
+      expect(surplus?.date).toBe('2026-06-10');
+    });
+
+    it("la cagnotte du nouveau cycle reflète bien le surplus reporté (pas de faux déficit)", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 300, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2026-06');
+
+      await store.payProvision('p1', 176, '2026-06-10', false);
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(provisionPot(p, '2026-06', store.expenses())).toBe(124);
+    });
+
+    it("paiement SUPÉRIEUR à la cagnotte (déficit réel) : aucun surplus n'est reporté, comportement inchangé", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 100, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2026-06');
+
+      await store.payProvision('p1', 250, '2026-06-10', false);
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(p.adjustments.some((a) => a.note === 'Surplus reporté du cycle précédent')).toBe(false);
+    });
+
+    it("paiement qui vide exactement la cagnotte : aucun surplus (0 $) n'est reporté inutilement", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 250, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2026-06');
+
+      await store.payProvision('p1', 250, '2026-06-10', false);
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(p.adjustments.some((a) => a.note === 'Surplus reporté du cycle précédent')).toBe(false);
+    });
+  });
+
+  // Question de suivi de l'utilisateur : le correctif ci-dessus ne
+  // s'applique qu'au recalage AUTOMATIQUE (syncProvisionsFromExpense) —
+  // déplacer la date d'ancrage MANUELLEMENT (bouton ✏️, via
+  // updateProvision) présente exactement le même risque d'orpheliner un
+  // ajout antérieur, que la provision soit en recalage auto ou manuel.
+  describe('updateProvision() — report du surplus lors d’une modification MANUELLE de l’ancre', () => {
+    it("déplacer manuellement la date d'ancrage reporte le surplus existant, pas de perte", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 300, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-06'); // aucune dépense réelle ici, juste une édition manuelle
+
+      await store.updateProvision('p1', { startDate: '2026-07-01' });
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(p.startDate).toBe('2026-07-01');
+      const surplus = p.adjustments.find((a) => a.note === 'Surplus reporté du cycle précédent');
+      expect(surplus).toBeDefined();
+      expect(surplus?.amount).toBe(300);
+      expect(surplus?.date).toBe('2026-07-01');
+      // La cagnotte du nouveau cycle reflète bien les 300 $ reportés.
+      expect(provisionPot(p, '2026-07', store.expenses())).toBe(300);
+    });
+
+    it("s'applique même en mode recalage AUTOMATIQUE (le trou touchait les deux modes)", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 300, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Assurance', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 150, date: '2026-01-10', note: '' },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-02');
+
+      await store.updateProvision('p1', { startYM: '2026-03' });
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      const surplus = p.adjustments.find((a) => a.note === 'Surplus reporté du cycle précédent');
+      expect(surplus?.amount).toBe(150);
+    });
+
+    it("ne reporte rien si l'ancre change mais qu'il n'y a aucun surplus (cagnotte vide ou déjà en déficit)", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-06');
+
+      await store.updateProvision('p1', { startDate: '2026-07-01' });
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(p.adjustments.some((a) => a.note === 'Surplus reporté du cycle précédent')).toBe(false);
+    });
+
+    it("ne déclenche rien si on modifie autre chose que l'ancre (ex. le pourcentage)", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 250, every_n: 60, interval_unit: 'days',
+          start_ym: '2026-04', start_date: '2026-04-01', category: 'Électricité', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 300, date: '2026-04-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+
+      await store.updateProvision('p1', { allocationPercent: 50 });
+
+      const p = store.provisions().find((x) => x.id === 'p1')!;
+      expect(p.adjustments.some((a) => a.note === 'Surplus reporté du cycle précédent')).toBe(false);
+      expect(p.startDate).toBe('2026-04-01'); // inchangée
+    });
+  });
+
+  // Question posée par un utilisateur : pour une provision "une seule
+  // fois" (ex. un voyage), le solde restant après le dernier paiement
+  // doit revenir dans le budget, pas disparaître silencieusement avec la
+  // suppression de la provision (comportement de removeProvision() seule).
+  describe('closeProvision() — reverse le solde restant dans le budget avant de supprimer', () => {
+    it('cagnotte positive : crée un revenu ponctuel du montant exact, puis supprime la provision', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Voyage', amount: 1000, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Voyage', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 850, date: '2026-01-05', note: 'Ajout au fonds' },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-06');
+
+      const returned = await store.closeProvision('p1');
+
+      expect(returned).toBe(850);
+      expect(store.provisions().find((p) => p.id === 'p1')).toBeUndefined();
+      const income = store.incomes().find((i) => i.type === 'Solde de provision terminée');
+      expect(income).toBeDefined();
+      expect(income?.amount).toBe(850);
+      expect(income?.owner).toBe('moi');
+      expect(income?.note).toContain('Voyage');
+    });
+
+    it('cagnotte à 0 ou négative : rien créé, la provision est simplement supprimée', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Voyage', amount: 1000, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Voyage', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-06');
+
+      const returned = await store.closeProvision('p1');
+
+      expect(returned).toBe(0);
+      expect(store.incomes().find((i) => i.type === 'Solde de provision terminée')).toBeUndefined();
+      expect(store.provisions().find((p) => p.id === 'p1')).toBeUndefined();
+    });
+
+    it("le revenu créé s'ajoute bien au budget disponible du mois", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Voyage', amount: 1000, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Voyage', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'a1', provision_id: 'p1', amount: 200, date: '2026-06-01', note: '' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      // closeProvision() date le revenu avec la vraie date du jour — il
+      // faut afficher ce même mois pour que revenueBase() le reflète.
+      const todayYm = ymOf(new Date());
+      store.current.set(todayYm);
+
+      const budgetAvant = store.budgetSummary().budget;
+      await store.closeProvision('p1');
+      const budgetApres = store.budgetSummary().budget;
+
+      expect(budgetApres - budgetAvant).toBe(200);
     });
   });
 

@@ -24,6 +24,8 @@ import {
   provisionDaysUntilNext,
   isHitMonth,
   provisionPot,
+  round2,
+  provisionStart,
   effectiveProvisionAmount,
   provisionDueAlert,
   formatProvisionUpcomingHit,
@@ -195,6 +197,12 @@ function validateImportPayload(data: any): string[] {
 // contributions du mois" — permet de les distinguer d'un versement reçu
 // ou d'un ajout manuel générique (voir monthlyContributionReminders).
 const MONTHLY_REMINDER_NOTE = 'Contribution mensuelle (rappel)';
+
+// Note dédiée pour identifier un report automatique de surplus lors d'un
+// recalage (voir syncProvisionsFromExpense) — distingue ce report d'un
+// ajout manuel classique, pour qu'on puisse comprendre d'où il vient en
+// le consultant dans l'historique de la provision.
+const SURPLUS_CARRY_NOTE = 'Surplus reporté du cycle précédent';
 
 @Injectable({ providedIn: 'root' })
 export class BudgetStore {
@@ -1059,6 +1067,12 @@ export class BudgetStore {
         );
         return { category, budget, spent, remaining: budget - spent, pct, hasExplicitEntryThisMonth };
       })
+      // "Remboursement Carte Crédit" n'apparaît déjà plus via
+      // countedExpensesList() (exclue de countedExpenses() pour éviter un
+      // double comptage) — cette exclusion explicite couvre en plus le
+      // cas d'un budget de catégorie déjà enregistré dessus avant ce
+      // changement, pour qu'elle ne réapparaisse pas via cette voie-là.
+      .filter((r) => r.category !== 'Remboursement Carte Crédit')
       .filter((r) => r.budget > 0 || r.spent > 0 || r.hasExplicitEntryThisMonth)
       .sort((a, b) => b.spent - a.spent || b.budget - a.budget);
   });
@@ -1378,6 +1392,8 @@ export class BudgetStore {
     );
     if (matches.length === 0) return;
 
+    const currentYM = expense.date.slice(0, 7);
+
     // Valeurs d'avant recalage, conservées pour pouvoir compenser un échec
     // partiel (audit BUG-007) : sans transaction SQL disponible côté
     // client, on ne peut pas garantir que les N UPDATE réussissent ou
@@ -1388,9 +1404,35 @@ export class BudgetStore {
     // recalées sur une dépense qui n'existe plus.
     const previousValues = new Map(matches.map((p) => [p.id, { startYM: p.startYM, startDate: p.startDate }]));
 
+    // Bug rapporté par un utilisateur : si la cagnotte contenait plus que
+    // le montant réellement payé (ex. 300 $ de côté, facture de 176 $),
+    // le surplus (124 $) disparaissait purement et simplement — le
+    // recalage déplace l'ancre du cycle à la date du paiement, et tout
+    // ajustement antérieur à cette nouvelle ancre devient orphelin (exclu
+    // du nouveau cycle par le correctif anti-pollution d'un ancien cycle,
+    // voir provisionAdjustmentsUpTo). Pire : la cagnotte affichait un faux
+    // déficit juste après un paiement qui aurait dû laisser un surplus.
+    //
+    // On calcule le surplus RÉEL (net, après ce paiement précis) pour
+    // décider SI un report est nécessaire — mais on reporte le montant
+    // D'AVANT ce paiement (pas le net) : une fois l'ancre déplacée sur la
+    // date de ce paiement, le nouveau cycle va lui-même soustraire ce
+    // même paiement via son propre calcul de "dépensé depuis le début du
+    // cycle" (puisqu'il tombe pile sur la nouvelle ancre). Reporter le
+    // montant net referait cette soustraction une seconde fois.
+    const expensesExcludingThis = this.expenses().filter((e) => e.id !== expense.id);
+    const surplusByProvisionId = new Map<string, number>();
+    matches.forEach((p) => {
+      const potAfterThisPayment = provisionPot(p, currentYM, this.expenses());
+      if (potAfterThisPayment > 0.004) {
+        const potBeforeThisPayment = provisionPot(p, currentYM, expensesExcludingThis);
+        surplusByProvisionId.set(p.id, round2(potBeforeThisPayment));
+      }
+    });
+
     const results = await Promise.all(
       matches.map((p) => {
-        const updates: any = { start_ym: expense.date.slice(0, 7) };
+        const updates: any = { start_ym: currentYM };
         if (provisionUnit(p) === 'days') updates.start_date = expense.date;
         return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
       }),
@@ -1398,16 +1440,19 @@ export class BudgetStore {
     const failed = results.filter((r) => r.error);
     const succeededProvisions = matches.filter((_, i) => !results[i].error);
 
+    const revertRecalibration = (): Promise<{ error: any }[]> =>
+      Promise.all(
+        succeededProvisions.map((p) => {
+          const prev = previousValues.get(p.id)!;
+          const updates: any = { start_ym: prev.startYM };
+          if (provisionUnit(p) === 'days') updates.start_date = prev.startDate;
+          return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
+        }),
+      );
+
     if (failed.length) {
       if (succeededProvisions.length) {
-        const compensations = await Promise.all(
-          succeededProvisions.map((p) => {
-            const prev = previousValues.get(p.id)!;
-            const updates: any = { start_ym: prev.startYM };
-            if (provisionUnit(p) === 'days') updates.start_date = prev.startDate;
-            return this.supabase.client.from('provisions').update(updates).eq('id', p.id);
-          }),
-        );
+        const compensations = await revertRecalibration();
         const compensationFailed = compensations.filter((r) => r.error);
         if (compensationFailed.length) {
           throw new Error(
@@ -1429,12 +1474,53 @@ export class BudgetStore {
         matchIds.has(p.id)
           ? {
               ...p,
-              startYM: expense.date.slice(0, 7),
+              startYM: currentYM,
               startDate: provisionUnit(p) === 'days' ? expense.date : p.startDate,
             }
           : p,
       ),
     );
+
+    // Reporte le surplus calculé plus haut, une fois le recalage acquis.
+    const insertedSurplus: { provisionId: string; adjustmentId: string }[] = [];
+    try {
+      for (const p of matches) {
+        const surplus = surplusByProvisionId.get(p.id);
+        if (surplus && surplus > 0) {
+          const adjustment = await this.addProvisionAdjustment(
+            p.id,
+            surplus,
+            expense.date,
+            SURPLUS_CARRY_NOTE,
+          );
+          insertedSurplus.push({ provisionId: p.id, adjustmentId: adjustment.id });
+        }
+      }
+    } catch (err) {
+      // Le report du surplus a échoué après que le recalage a réussi —
+      // on annule tout (les reports déjà insérés, puis le recalage
+      // lui-même) plutôt que de laisser une provision recalée sans son
+      // surplus reporté, ce qui reproduirait exactement le bug corrigé.
+      const rollbackErrors: string[] = [];
+      for (const { provisionId, adjustmentId } of insertedSurplus) {
+        try {
+          await this.removeProvisionAdjustment(provisionId, adjustmentId);
+        } catch (rollbackErr) {
+          rollbackErrors.push((rollbackErr as Error).message ?? String(rollbackErr));
+        }
+      }
+      const revertResults = await revertRecalibration();
+      revertResults.filter((r) => r.error).forEach((r) => rollbackErrors.push(r.error.message));
+      if (rollbackErrors.length) {
+        throw new Error(
+          `Échec du report du surplus (${(err as Error).message ?? err}), et l'annulation automatique n'a pas ` +
+            `pu tout défaire (${rollbackErrors.join('; ')}). Vérifie manuellement les provisions concernées dans Supabase.`,
+        );
+      }
+      throw new Error(
+        `Échec du report du surplus vers le nouveau cycle : ${(err as Error).message ?? err}. Le recalage a été annulé.`,
+      );
+    }
   }
 
   // Bug rapporté par l'audit (BUG-006) : addExpense()/updateExpense()
@@ -1521,6 +1607,40 @@ export class BudgetStore {
       .eq('id', id);
     if (error) throw error;
     this.provisions.update((list) => list.filter((p) => p.id !== id));
+  }
+
+  // Question posée par un utilisateur : "si je crée une provision pour
+  // une seule fois, le reste de l'argent mis retourne-t-il dans le
+  // budget ?" — vérifié : non, pas avec removeProvision() seule. Les
+  // ajustements sont supprimés en cascade avec la provision (schema.sql,
+  // on delete cascade), et rien ne recrédite jamais ce montant nulle
+  // part — il disparaît simplement de la comptabilité, sans jamais
+  // redevenir de l'argent disponible.
+  //
+  // closeProvision() comble ce manque : si la cagnotte est positive au
+  // moment de la clôture, on crée un revenu ponctuel clairement étiqueté
+  // ("Solde de provision terminée") pour ce montant, avant de supprimer
+  // la provision — l'argent redevient donc réellement disponible dans le
+  // budget du mois, au lieu de s'évaporer silencieusement. Un déficit
+  // (cagnotte négative ou nulle) ne crée rien : il n'y a rien à rendre.
+  async closeProvision(id: string): Promise<number> {
+    const p = this.provisions().find((x) => x.id === id);
+    if (!p) throw new Error('Provision introuvable.');
+    const surplus = round2(provisionPot(p, this.current(), this.expenses()));
+    if (surplus > 0.004) {
+      await this.addIncome({
+        amount: surplus,
+        type: 'Solde de provision terminée',
+        date: isoOfDate(new Date()),
+        owner: p.owner,
+        note: `Provision "${p.name}" terminée — solde reversé au budget`,
+        recurring: false,
+        recurringInterval: 'once',
+        recurringStartMonth: this.current(),
+      });
+    }
+    await this.removeProvision(id);
+    return surplus > 0.004 ? surplus : 0;
   }
 
   // --- Objectifs d'épargne (roadmap #10) ---------------------------------
@@ -1641,6 +1761,22 @@ export class BudgetStore {
     if (changes.rollingCount !== undefined) row['rolling_count'] = changes.rollingCount;
     if (changes.monthlyReminder !== undefined) row['monthly_reminder'] = changes.monthlyReminder;
 
+    // Même bug que syncProvisionsFromExpense (recalage automatique),
+    // mais côté modification MANUELLE de l'ancre (bouton ✏️ sur "Dernier
+    // prélèvement") : déplacer la date de départ orpheline tout ajout
+    // antérieur à cette nouvelle date, quel que soit le réglage de
+    // recalage automatique — cette protection s'applique donc dans les
+    // deux cas, pas seulement au paiement automatique. On calcule le
+    // surplus AVANT la modification, avec l'ancre actuelle (this.current(),
+    // le mois affiché au moment de l'édition).
+    const before = this.provisions().find((p) => p.id === id);
+    const movingAnchor = !!before && (changes.startYM !== undefined || changes.startDate !== undefined);
+    let surplusToCarry = 0;
+    if (movingAnchor) {
+      const potBefore = provisionPot(before!, this.current(), this.expenses());
+      if (potBefore > 0.004) surplusToCarry = round2(potBefore);
+    }
+
     const { data, error } = await this.supabase.client
       .from('provisions')
       .update(row)
@@ -1665,6 +1801,21 @@ export class BudgetStore {
       versement_expense_id: a.versementExpenseId ?? null,
     })) : []);
     this.provisions.update((list) => list.map((p) => (p.id === id ? updated : p)));
+
+    // Reporte le surplus calculé plus haut, une fois la nouvelle ancre
+    // acquise — même logique que syncProvisionsFromExpense(), datée sur
+    // le nouveau départ pour rester dans les bornes du nouveau cycle.
+    if (surplusToCarry > 0) {
+      const newAnchorDate = provisionStart(updated);
+      try {
+        await this.addProvisionAdjustment(id, surplusToCarry, newAnchorDate, SURPLUS_CARRY_NOTE);
+      } catch (err) {
+        throw new Error(
+          `La date a bien été modifiée, mais le report automatique du surplus (${fmt(surplusToCarry)}) a échoué : ` +
+            `${(err as Error).message ?? err}. Ajoute-le manuellement via "+$" si besoin.`,
+        );
+      }
+    }
   }
 
   // Marque une provision comme payée : crée la dépense réelle correspondante.

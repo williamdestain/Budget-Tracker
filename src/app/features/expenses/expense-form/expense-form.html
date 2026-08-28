@@ -15,14 +15,16 @@
       />
     </div>
 
-    <div class="field field-category">
-      <label for="exp-category">Catégorie</label>
-      <select id="exp-category" name="category" [(ngModel)]="category">
-        @for (c of categories; track c) {
-          <option [value]="c">{{ c }}</option>
-        }
-      </select>
-    </div>
+    @if (!isReimbursement) {
+      <div class="field field-category">
+        <label for="exp-category">Catégorie</label>
+        <select id="exp-category" name="category" [(ngModel)]="category">
+          @for (c of categories; track c) {
+            <option [value]="c">{{ c }}</option>
+          }
+        </select>
+      </div>
+    }
 
     <div class="field">
       <label for="exp-date">Date</label>
@@ -37,9 +39,19 @@
       </select>
     </div>
 
-    <label class="check-label">
-      <input type="checkbox" name="cc" [(ngModel)]="cc" />
-      <span>💳 Carte de crédit</span>
+    @if (!isReimbursement) {
+      <label class="check-label">
+        <input type="checkbox" name="cc" [(ngModel)]="cc" />
+        <span>💳 Carte de crédit</span>
+      </label>
+    }
+
+    <label
+      class="check-label"
+      title="Remplace le choix de catégorie : assigne automatiquement 'Remboursement Carte Crédit' et exclut ce montant du calcul du budget (déjà compté au moment de l'achat)"
+    >
+      <input type="checkbox" name="isReimbursement" [(ngModel)]="isReimbursement" />
+      <span>💳↩️ Remboursement de carte de crédit</span>
     </label>
   </div>
 

@@ -136,6 +136,11 @@
   color: var(--green);
   border-color: var(--green-soft-border);
 }
+.prov-actions .close-prov:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft-border);
+}
 
 .prov-adjust-form,
 .prov-pay-form {

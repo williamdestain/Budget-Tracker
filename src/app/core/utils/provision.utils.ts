@@ -356,7 +356,7 @@ export interface CountedExpense {
 // catégories provisionnées pour éviter le double comptage — la provision
 // absorbe déjà ces paiements dans sa cagnotte (voir provisionPot). Aucun
 // prélèvement automatique n'est ajouté : seuls les ajouts manuels comptent.
-function round2(n: number): number {
+export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
@@ -397,6 +397,15 @@ export function countedExpenses(
   visible.forEach((e) => {
     if (owner === 'global' && e.category === 'Versement') return;
     if (e.category === 'Revenu') return;
+    // Bug rapporté par un utilisateur : un remboursement de carte de
+    // crédit était compté une deuxième fois contre le budget — une
+    // première fois au moment de l'achat (la dépense réelle, chargée à
+    // la carte), une deuxième fois au moment de payer la facture de
+    // carte (catégorie "Remboursement Carte Crédit"). Le remboursement
+    // règle une dépense déjà comptée à l'achat ; il ne doit pas être
+    // compté une seconde fois, exactement comme un versement entre
+    // profils n'est pas une vraie dépense du foyer.
+    if (e.category === 'Remboursement Carte Crédit') return;
     if (provisionedKeys.has(`${e.owner}|${e.category}`)) return; // traitées ci-dessous
     counted.push({ id: e.id, amount: e.amount, category: e.category, date: e.date, owner: e.owner, cc: e.cc });
   });

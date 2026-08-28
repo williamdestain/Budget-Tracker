@@ -31,11 +31,15 @@
           </div>
           <div class="field field-category">
             <label>Catégorie</label>
-            <select name="editCategory" [(ngModel)]="editCategory">
-              @for (c of categories; track c) {
-                <option [value]="c">{{ c }}</option>
-              }
-            </select>
+            @if (editCategory === 'Remboursement Carte Crédit') {
+              <input type="text" value="💳↩️ Remboursement Carte Crédit" disabled />
+            } @else {
+              <select name="editCategory" [(ngModel)]="editCategory">
+                @for (c of categories; track c) {
+                  <option [value]="c">{{ c }}</option>
+                }
+              </select>
+            }
           </div>
           <div class="field">
             <label>Date</label>

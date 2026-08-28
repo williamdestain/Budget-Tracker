@@ -6,6 +6,7 @@ import { fmt } from '../../../core/utils/currency.utils';
 import { fmtDate, isoOfDate } from '../../../core/utils/date.utils';
 import { COLOR_MAP } from '../../../core/utils/categories';
 import * as PU from '../../../core/utils/provision.utils';
+import { ToastService } from '../../../core/services/toast.service';
 
 @Component({
   selector: 'app-provision-card',
@@ -23,6 +24,13 @@ export class ProvisionCard {
   payAmount: number | null = null;
   payDate = isoOfDate(new Date());
   payCc = false;
+  // Case "C'est le dernier paiement" — quand cochée, tout solde restant
+  // dans la cagnotte après ce paiement est automatiquement reversé au
+  // budget (comme "Terminer cette provision"), au lieu de rester une
+  // action séparée à penser plus tard. Pensé pour les provisions "une
+  // seule fois" (ex. un voyage) : payer la dernière fois libère
+  // directement ce qui n'a pas été dépensé.
+  payIsFinal = false;
 
   adjustAmount: number | null = null;
   adjustDate = isoOfDate(new Date());
@@ -55,7 +63,10 @@ export class ProvisionCard {
   readonly reminderEditOpen = signal(false);
   editReminder: number | null = null;
 
-  constructor(public store: BudgetStore) {}
+  constructor(
+    public store: BudgetStore,
+    private toast: ToastService,
+  ) {}
 
   readonly stats = computed(() => {
     const p = this.provision();
@@ -163,7 +174,11 @@ export class ProvisionCard {
     const opening = !this.payOpen();
     this.payOpen.set(opening);
     this.adjustOpen.set(false);
-    if (opening) this.payAmount = this.stats().targetForNext;
+    if (opening) {
+      this.payAmount = this.stats().targetForNext;
+    } else {
+      this.payIsFinal = false;
+    }
   }
 
   toggleAdjust(): void {
@@ -173,19 +188,48 @@ export class ProvisionCard {
 
   async submitPay(): Promise<void> {
     if (!this.payAmount || this.payAmount <= 0 || !this.payDate) return;
+    const wasFinal = this.payIsFinal;
+    const provisionId = this.provision().id;
+    const provisionName = this.provision().name;
     this.saving.set(true);
     try {
-      await this.store.payProvision(
-        this.provision().id,
-        this.payAmount,
-        this.payDate,
-        this.payCc,
-      );
-      this.payOpen.set(false);
-      this.payAmount = null;
-      this.payCc = false;
+      await this.store.payProvision(provisionId, this.payAmount, this.payDate, this.payCc);
     } finally {
       this.saving.set(false);
+    }
+    // Le paiement a réussi — on réinitialise le formulaire avant de
+    // tenter la fermeture automatique, pour ne pas le laisser ouvert sur
+    // un montant déjà payé si l'étape suivante échoue.
+    this.payOpen.set(false);
+    this.payAmount = null;
+    this.payCc = false;
+    this.payIsFinal = false;
+
+    if (wasFinal) {
+      // "C'est le dernier paiement" : reverse le solde restant (s'il y en
+      // a) dans le budget, puis supprime la provision — même mécanisme
+      // que le bouton 🏁, déclenché automatiquement ici pour ne pas avoir
+      // à y repenser séparément après avoir payé une provision "une
+      // seule fois" (ex. un voyage).
+      this.saving.set(true);
+      try {
+        const returned = await this.store.closeProvision(provisionId);
+        this.toast.show(
+          returned > 0
+            ? `✅ "${provisionName}" terminée après ce paiement — ${this.fmt(returned)} ajoutés à ton budget.`
+            : `✅ "${provisionName}" terminée après ce paiement.`,
+        );
+      } catch (err) {
+        // Le paiement lui-même est acquis — seule la fermeture
+        // automatique a échoué. On le dit clairement plutôt que de
+        // laisser croire que le paiement a échoué.
+        this.toast.show(
+          `⚠️ Paiement enregistré, mais la fermeture automatique a échoué : ${(err as Error).message ?? err}. ` +
+            `Utilise le bouton 🏁 pour réessayer.`,
+        );
+      } finally {
+        this.saving.set(false);
+      }
     }
   }
 
@@ -213,6 +257,36 @@ export class ProvisionCard {
 
   remove(): void {
     this.store.removeProvision(this.provision().id);
+  }
+
+  // Distinct de remove() : pour une provision qu'on sait ne plus jamais
+  // reconduire (ex. dépense ponctuelle réglée une fois pour toutes), ce
+  // bouton reverse d'abord tout solde restant dans le budget avant de
+  // supprimer la provision — remove() seule ne le fait pas (voir
+  // closeProvision() dans le store), l'argent y disparaîtrait
+  // silencieusement.
+  async close(): Promise<void> {
+    const p = this.provision();
+    const pot = PU.provisionPot(p, this.store.current(), this.store.expenses());
+    const msg =
+      pot > 0.004
+        ? `Terminer "${p.name}" ? Le solde restant (${this.fmt(pot)}) sera ajouté à ton budget de ce mois-ci ` +
+          `comme un revenu ponctuel, puis la provision sera supprimée.`
+        : `Terminer "${p.name}" ? La cagnotte est à ${this.fmt(Math.max(pot, 0))} — rien à reverser, la provision ` +
+          `sera simplement supprimée.`;
+    if (!confirm(msg)) return;
+
+    this.saving.set(true);
+    try {
+      const returned = await this.store.closeProvision(p.id);
+      this.toast.show(
+        returned > 0
+          ? `✅ "${p.name}" terminée — ${this.fmt(returned)} ajoutés à ton budget.`
+          : `✅ "${p.name}" terminée.`,
+      );
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   startEditPercent(): void {

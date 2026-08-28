@@ -23,6 +23,38 @@ export class CreditCard {
     return '💳 Carte de crédit — ' + OWNERS[this.store.activeOwner()];
   }
 
+  // Total combiné (Moi + Madame), affiché en plus du récap du profil
+  // actif — demandé par un utilisateur pour voir le total de toutes les
+  // cartes sans devoir basculer sur l'onglet Global (qui remplacerait la
+  // vue par profil au lieu de s'y ajouter). Indépendant de activeOwner().
+  //
+  // Additionne les CHARGES (achats mis sur la carte, cc=true, hors
+  // Versement/Remboursement) ET les REMBOURSEMENTS (catégorie dédiée) —
+  // pas seulement les charges. Un utilisateur a signalé, avec des
+  // chiffres précis (207,88 $ de charges + 24,45 $ de remboursement =
+  // 232,33 $ attendus), que ce total doit refléter TOUT ce qui a
+  // transité par une carte ce mois-ci, remboursement compris — pas
+  // seulement les nouvelles charges pas encore remboursées.
+  readonly totalAllOwners = computed(() => {
+    const ym = this.store.current();
+    return this.store
+      .expenses()
+      .filter((e) => e.date.startsWith(ym))
+      .filter(
+        (e) =>
+          (e.cc && e.category !== 'Versement' && e.category !== 'Remboursement Carte Crédit') ||
+          e.category === 'Remboursement Carte Crédit',
+      )
+      .reduce((s, e) => s + e.amount, 0);
+  });
+
+  // Toujours affichée maintenant : contrairement à avant, ce total inclut
+  // les remboursements en plus des charges, donc il diffère de "Chargé ce
+  // mois" (qui ne montre que les charges) même en vue Global.
+  get showCombinedTotal(): boolean {
+    return true;
+  }
+
   // Dépenses passées par la carte (hors versements et remboursements),
   // classées par catégorie.
   readonly breakdown = computed(() => {

@@ -599,6 +599,31 @@ describe('provision.utils', () => {
       expect(countedExpenses(expenses, [], 'moi', '2026-01')).toHaveLength(1);
     });
 
+    // Bug rapporté par un utilisateur : un remboursement de carte de
+    // crédit ("Remboursement Carte Crédit") était compté une deuxième
+    // fois contre le budget — une fois à l'achat (chargé à la carte),
+    // une fois au paiement de la facture. Toujours exclu, peu importe le
+    // profil consulté (contrairement à "Versement", qui lui reste une
+    // vraie dépense en vue individuelle).
+    it('exclut "Remboursement Carte Crédit" du calcul du budget, dans tous les cas (pas de double comptage)', () => {
+      const expenses = [
+        makeExpense({ category: 'Remboursement Carte Crédit', date: '2026-01-10', amount: 200, owner: 'moi', cc: true }),
+      ];
+      expect(countedExpenses(expenses, [], 'moi', '2026-01')).toHaveLength(0);
+      expect(countedExpenses(expenses, [], 'global', '2026-01')).toHaveLength(0);
+    });
+
+    it("l'achat original chargé à la carte compte normalement, seul le remboursement est exclu", () => {
+      const expenses = [
+        makeExpense({ id: 'e1', category: 'Loisirs', date: '2026-01-05', amount: 90, owner: 'moi', cc: true }),
+        makeExpense({ id: 'e2', category: 'Remboursement Carte Crédit', date: '2026-01-20', amount: 90, owner: 'moi', cc: false }),
+      ];
+      const result = countedExpenses(expenses, [], 'moi', '2026-01');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('e1');
+      expect(result[0].amount).toBe(90); // pas 180 (achat + remboursement)
+    });
+
     it('exclut les dépenses réelles d’une catégorie provisionnée, si la cagnotte les couvre (remplacées par la cagnotte)', () => {
       const provisions = [
         makeProvision({

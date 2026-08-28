@@ -31,10 +31,16 @@ export class CategoryBudgets {
   }
 
   // Catégories pas encore suivies, disponibles pour "+ Ajouter".
+  // "Remboursement Carte Crédit" est exclue : ce n'est pas une catégorie
+  // de dépense discrétionnaire qu'on budgète (voir countedExpenses(), qui
+  // l'exclut aussi du calcul du budget pour éviter un double comptage
+  // avec l'achat déjà compté au moment de la charge sur la carte).
   readonly availableCategories = computed(() => {
     const used = new Set(this.store.categoryBudgetRows().map((r) => r.category));
     return sortedAlpha(
-      CATEGORIES.filter((c) => c !== 'Revenu' && c !== 'Versement' && !used.has(c)),
+      CATEGORIES.filter(
+        (c) => c !== 'Revenu' && c !== 'Versement' && c !== 'Remboursement Carte Crédit' && !used.has(c),
+      ),
     );
   });
 
