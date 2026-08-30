@@ -97,6 +97,19 @@ export interface Provision {
   adjustments: ProvisionAdjustment[];
 }
 
+// Paiement fait pour rembourser la carte de crédit — modèle indépendant
+// des provisions (pas de lien avec Provision/ProvisionAdjustment). Le
+// solde dû sur la carte se calcule comme :
+//   (somme des dépenses réelles marquées "carte") - (somme de ces paiements)
+// voir creditCardBalance() dans budget-store.service.ts.
+export interface CreditCardPayment {
+  id: string;
+  owner: Owner;
+  amount: number;
+  date: string; // "YYYY-MM-DD"
+  note: string;
+}
+
 // { owner: { "YYYY-MM": montant } }
 export type MonthlyAmountMap = Record<Owner, Record<string, number>>;
 

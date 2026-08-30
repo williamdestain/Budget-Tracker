@@ -463,6 +463,91 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     });
   });
 
+  // Nouveau modèle demandé par un utilisateur : le solde dû sur la carte
+  // de crédit, indépendant des provisions (CreditCardPayment,
+  // credit_card_payments) — remplace l'ancienne approche par catégorie
+  // spéciale ("Remboursement Carte Crédit" + case cc).
+  describe('creditCardBalance() / addCreditCardPayment() / removeCreditCardPayment()', () => {
+    it('solde = dépenses réelles marquées carte moins paiements enregistrés', async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-07-05', owner: 'moi', cc: true },
+        { id: 'e2', amount: 82.75, category: 'Transport', date: '2026-07-10', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+
+      expect(store.creditCardBalance('moi')).toBe(172.75);
+
+      await store.addCreditCardPayment('moi', 100, '2026-07-20', '');
+      expect(store.creditCardBalance('moi')).toBe(72.75);
+    });
+
+    it('un paiement supérieur au solde dû donne un solde négatif (crédit)', async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-07-05', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+
+      await store.addCreditCardPayment('moi', 150, '2026-07-20', '');
+      expect(store.creditCardBalance('moi')).toBe(-60);
+    });
+
+    it("exclut les dépenses non marquées carte (cc=false) et les versements", async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-07-05', owner: 'moi', cc: false },
+        { id: 'e2', amount: 50, category: 'Versement', date: '2026-07-05', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+      expect(store.creditCardBalance('moi')).toBe(0);
+    });
+
+    it("exclut l'ancienne catégorie 'Remboursement Carte Crédit' pour ne pas mélanger l'historique de l'ancien système", async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 24.45, category: 'Remboursement Carte Crédit', date: '2026-07-05', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+      expect(store.creditCardBalance('moi')).toBe(0);
+    });
+
+    it("le solde n'est PAS borné à un seul mois — une dette se reporte tant qu'elle n'est pas payée", async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-05-05', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+      store.current.set('2026-08'); // 3 mois plus tard, toujours pas payé
+      expect(store.creditCardBalance('moi')).toBe(90);
+    });
+
+    it('vue Global combine les deux profils', async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-07-05', owner: 'moi', cc: true },
+        { id: 'e2', amount: 60, category: 'Loisirs', date: '2026-07-05', owner: 'madame', cc: true },
+      ]);
+      await store.loadAll();
+      await store.addCreditCardPayment('moi', 90, '2026-07-20', '');
+      expect(store.creditCardBalance('moi')).toBe(0);
+      expect(store.creditCardBalance('madame')).toBe(60);
+      expect(store.creditCardBalance('global')).toBe(60);
+    });
+
+    it('addCreditCardPayment() refuse un montant négatif ou nul', async () => {
+      await store.loadAll();
+      await expect(store.addCreditCardPayment('moi', 0, '2026-07-20', '')).rejects.toThrow(/invalide/);
+      await expect(store.addCreditCardPayment('moi', -10, '2026-07-20', '')).rejects.toThrow(/invalide/);
+    });
+
+    it('removeCreditCardPayment() retire le paiement du signal, le solde remonte', async () => {
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 90, category: 'Loisirs', date: '2026-07-05', owner: 'moi', cc: true },
+      ]);
+      await store.loadAll();
+      const payment = await store.addCreditCardPayment('moi', 90, '2026-07-20', '');
+      expect(store.creditCardBalance('moi')).toBe(0);
+
+      await store.removeCreditCardPayment(payment.id);
+      expect(store.creditCardBalance('moi')).toBe(90);
+    });
+  });
+
   describe('addExpense() / removeExpense()', () => {
     it('insère une dépense, la renvoie mappée, et met à jour le signal', async () => {
       const created = await store.addExpense({

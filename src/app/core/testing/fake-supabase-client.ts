@@ -226,6 +226,7 @@ export class FakeSupabaseClient {
       'budgets',
       'category_budgets',
       'rollovers',
+      'credit_card_payments',
     ];
     const failing = resetTables.find((t) => this.erroringTables.has(t));
     if (failing) {

@@ -2,18 +2,46 @@
   <div class="cc-head">
     <div class="card-title">{{ title }}</div>
     <div class="cc-totals">
-      <div class="cc-total">
-        <span>Chargé ce mois</span>
-        <span>{{ fmt(breakdown().total) }}</span>
+      <div class="cc-balance" [class.cc-balance-credit]="balance() < 0">
+        <span>{{ balance() >= 0 ? 'Tu dois actuellement' : 'Crédit disponible' }}</span>
+        <span>{{ fmt(balance() < 0 ? -balance() : balance()) }}</span>
       </div>
-      @if (showCombinedTotal) {
-        <div class="cc-total cc-total-combined">
-          <span title="Moi + Madame, charges et remboursements combinés">Total toutes les cartes</span>
-          <span>{{ fmt(totalAllOwners()) }}</span>
+      @if (showCombinedBalance) {
+        <div class="cc-balance cc-balance-combined">
+          <span title="Moi + Madame combinés">Total du foyer</span>
+          <span>{{ fmt(balanceAllOwners()) }}</span>
         </div>
       }
     </div>
   </div>
+
+  <div class="cc-pay-row">
+    <button class="btn-primary btn-pay-cc" (click)="togglePay()">
+      {{ payOpen() ? 'Annuler' : '💳 Payer la carte' }}
+    </button>
+  </div>
+
+  @if (payOpen()) {
+    <form class="cc-pay-form" (ngSubmit)="submitPay()">
+      <div class="field">
+        <label>Montant</label>
+        <div class="input-money">
+          <input type="number" min="0" step="0.01" name="payAmount" [(ngModel)]="payAmount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="payDate" [(ngModel)]="payDate" required />
+      </div>
+      <div class="field field-note">
+        <label>Note (optionnel)</label>
+        <input type="text" name="payNote" [(ngModel)]="payNote" placeholder="ex. paiement complet" />
+      </div>
+      <div class="field-actions">
+        <button type="submit" class="btn-primary" [disabled]="saving()">Confirmer le paiement</button>
+      </div>
+    </form>
+  }
 
   @if (breakdown().entries.length === 0) {
     <div class="cc-empty">Aucune dépense par carte pour cette période.</div>
@@ -28,19 +56,20 @@
         </div>
       }
     </div>
-    <p class="cc-note">Dépenses passées par la carte, classées par catégorie.</p>
+    <p class="cc-note">Dépenses passées par la carte ce mois-ci, classées par catégorie.</p>
   }
 
   <div class="cc-reimb">
-    <div class="cc-reimb-title">Remboursements effectués</div>
-    @if (reimbursements().length === 0) {
-      <div class="cc-empty">Aucun remboursement effectué pour cette période.</div>
+    <div class="cc-reimb-title">Paiements effectués ce mois-ci</div>
+    @if (payments().length === 0) {
+      <div class="cc-empty">Aucun paiement enregistré pour cette période.</div>
     } @else {
       <div class="cc-reimb-list">
-        @for (e of reimbursements(); track e.id) {
+        @for (p of payments(); track p.id) {
           <div class="cc-reimb-row">
-            <span class="cc-reimb-date">{{ fmtDate(e.date) }}</span>
-            <span class="cc-reimb-amt">{{ fmt(e.amount) }}</span>
+            <span class="cc-reimb-date">{{ fmtDate(p.date) }}{{ p.note ? ' · ' + p.note : '' }}</span>
+            <span class="cc-reimb-amt">{{ fmt(p.amount) }}</span>
+            <button class="cc-reimb-del" title="Supprimer" (click)="removePayment(p.id)">✕</button>
           </div>
         }
       </div>

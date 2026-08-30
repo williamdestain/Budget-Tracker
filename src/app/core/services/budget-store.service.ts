@@ -11,6 +11,7 @@ import {
   ProvisionAdjustment,
   RecurringExpense,
   SavingsGoal,
+  CreditCardPayment,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
@@ -47,6 +48,8 @@ import {
   rowToSavingsGoal,
   savingsGoalToRow,
   savingsContributionToRow,
+  rowToCreditCardPayment,
+  creditCardPaymentToRow,
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
@@ -187,6 +190,16 @@ function validateImportPayload(data: any): string[] {
     });
   }
 
+  if (Array.isArray(data.creditCardPayments)) {
+    (data.creditCardPayments as unknown[]).forEach((raw, i) => {
+      const p = raw as any;
+      const label = `creditCardPayments[${i}]`;
+      if (!isFiniteNumber(p?.amount) || p.amount <= 0) errors.push(`${label} : montant invalide (${p?.amount})`);
+      if (!isNonEmptyString(p?.date) || !DATE_RE.test(p.date)) errors.push(`${label} : date invalide (${p?.date})`);
+      if (!VALID_OWNERS.includes(p?.owner)) errors.push(`${label} : profil invalide (${p?.owner})`);
+    });
+  }
+
   return errors;
 }
 
@@ -209,6 +222,9 @@ export class BudgetStore {
   readonly expenses = signal<Expense[]>([]);
   readonly incomes = signal<Income[]>([]);
   readonly provisions = signal<Provision[]>([]);
+  // Paiements faits pour rembourser la carte de crédit — volontairement
+  // indépendant des provisions (voir CreditCardPayment dans budget.models.ts).
+  readonly creditCardPayments = signal<CreditCardPayment[]>([]);
   readonly savingsGoals = signal<SavingsGoal[]>([]);
   readonly recurringExpenses = signal<RecurringExpense[]>([]);
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
@@ -250,6 +266,7 @@ export class BudgetStore {
       savingsGoalsRes,
       savingsContributionsRes,
       closedMonthsRes,
+      creditCardPaymentsRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
@@ -262,6 +279,7 @@ export class BudgetStore {
       client.from('savings_goals').select('*'),
       client.from('savings_goal_contributions').select('*'),
       client.from('closed_months').select('*'),
+      client.from('credit_card_payments').select('*').order('date'),
     ]);
 
     const failedTables = (
@@ -277,6 +295,7 @@ export class BudgetStore {
         ['savings_goals', savingsGoalsRes],
         ['savings_goal_contributions', savingsContributionsRes],
         ['closed_months', closedMonthsRes],
+        ['credit_card_payments', creditCardPaymentsRes],
       ] as const
     )
       .filter(([, res]) => res.error)
@@ -323,6 +342,9 @@ export class BudgetStore {
     }
     if (!closedMonthsRes.error) {
       this.closedMonths.set(new Set((closedMonthsRes.data ?? []).map((row: any) => row.ym as string)));
+    }
+    if (!creditCardPaymentsRes.error) {
+      this.creditCardPayments.set((creditCardPaymentsRes.data ?? []).map(rowToCreditCardPayment));
     }
     this.loading.set(false);
   }
@@ -2215,6 +2237,7 @@ export class BudgetStore {
     this.budgets.set(emptyMonthlyMap());
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
+    this.creditCardPayments.set([]);
   }
 
   // Restaure une sauvegarde .json exportée précédemment : remplace TOUTES
@@ -2373,6 +2396,17 @@ export class BudgetStore {
       if (error) throw error;
     }
 
+    // Optionnel : absent des sauvegardes exportées avant l'ajout du suivi
+    // de carte de crédit (migration-012).
+    if (Array.isArray(data.creditCardPayments) && data.creditCardPayments.length) {
+      const rows = data.creditCardPayments.map((p: CreditCardPayment) => ({
+        id: idFor(p.id),
+        ...creditCardPaymentToRow(p),
+      }));
+      const { error } = await this.supabase.client.from('credit_card_payments').insert(rows);
+      if (error) throw error;
+    }
+
     if (data.expenses.length) {
       const rows = data.expenses.map((e: Expense) => ({
         id: idFor(e.id),
@@ -2436,6 +2470,67 @@ export class BudgetStore {
     }
   }
 
+  // --- Carte de crédit (solde dû, indépendant des provisions) -------------
+  //
+  // Approche demandée par un utilisateur pour remplacer l'ancien système
+  // (catégorie spéciale "Remboursement Carte Crédit" + case cc) : le
+  // solde dû se calcule comme une dette qui s'accumule, symétrique à une
+  // provision qui s'épargne — mais avec son propre modèle de données
+  // (CreditCardPayment, table credit_card_payments), volontairement SANS
+  // aucun lien avec Provision/ProvisionAdjustment.
+  //
+  // Solde = (dépenses réelles marquées "carte", jamais bornées à un seul
+  // mois — une dette de carte se reporte tant qu'elle n'est pas payée)
+  // moins (paiements enregistrés). Exclut aussi l'ancienne catégorie
+  // "Remboursement Carte Crédit" pour ne pas mélanger l'historique de
+  // l'ancien système avec le nouveau solde.
+  creditCardBalance(owner: OwnerOrGlobal): number {
+    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const charged = this.expenses()
+      .filter(
+        (e) =>
+          owners.includes(e.owner) &&
+          e.cc &&
+          e.category !== 'Versement' &&
+          e.category !== 'Remboursement Carte Crédit',
+      )
+      .reduce((s, e) => s + e.amount, 0);
+    const paid = this.creditCardPayments()
+      .filter((p) => owners.includes(p.owner))
+      .reduce((s, p) => s + p.amount, 0);
+    return round2(charged - paid);
+  }
+
+  async addCreditCardPayment(
+    owner: Owner,
+    amount: number,
+    date: string,
+    note: string,
+  ): Promise<CreditCardPayment> {
+    // Défense en profondeur (audit BUG-013).
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Montant de paiement invalide : ${amount}. Doit être un nombre > 0.`);
+    }
+    const { data, error } = await this.supabase.client
+      .from('credit_card_payments')
+      .insert(creditCardPaymentToRow({ owner, amount, date, note }))
+      .select()
+      .single();
+    if (error) throw error;
+    const payment = rowToCreditCardPayment(data);
+    this.creditCardPayments.update((list) => [...list, payment]);
+    return payment;
+  }
+
+  async removeCreditCardPayment(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('credit_card_payments')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    this.creditCardPayments.update((list) => list.filter((p) => p.id !== id));
+  }
+
   // Sauvegarde complète en .json (téléchargement local), pour archive
   // manuelle ou avant une réinitialisation.
   exportData(): void {
@@ -2449,6 +2544,7 @@ export class BudgetStore {
       budgets: this.budgets(),
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),
+      creditCardPayments: this.creditCardPayments(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',

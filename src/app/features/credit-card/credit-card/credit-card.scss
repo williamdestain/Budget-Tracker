@@ -16,23 +16,54 @@
   align-items: flex-end;
   gap: 4px;
 }
-.cc-total {
+.cc-balance {
   font-size: 13px;
   color: var(--ink-soft);
 }
-.cc-total span:last-child {
+.cc-balance span:last-child {
   font-size: 20px;
   font-weight: 700;
   color: var(--ink);
   margin-left: 8px;
 }
-.cc-total-combined {
+// Solde négatif = crédit (tu as payé plus que ce que tu devais) — teinté
+// en vert plutôt qu'en couleur neutre, pour que ce soit visuellement
+// clair que c'est en ta faveur, pas une dette.
+.cc-balance-credit span:last-child {
+  color: var(--green);
+}
+.cc-balance-combined {
   font-size: 11.5px;
 }
-.cc-total-combined span:last-child {
+.cc-balance-combined span:last-child {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink-soft);
+}
+.cc-pay-row {
+  margin-bottom: 14px;
+}
+.btn-pay-cc {
+  width: 100%;
+}
+.cc-pay-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+}
+.cc-pay-form .field-note {
+  grid-column: 1 / -1;
+}
+.cc-pay-form .field-actions {
+  grid-column: 1 / -1;
+}
+.cc-pay-form .field-actions button {
+  width: 100%;
 }
 .cc-breakdown {
   display: flex;
@@ -115,4 +146,16 @@
 .cc-reimb-row .cc-reimb-amt {
   font-weight: 700;
   color: var(--green);
+}
+.cc-reimb-del {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+  padding: 2px 4px;
+}
+.cc-reimb-del:hover {
+  color: var(--red);
 }

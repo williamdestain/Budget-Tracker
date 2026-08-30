@@ -9,6 +9,7 @@ import {
   RecurringExpense,
   SavingsGoal,
   SavingsContribution,
+  CreditCardPayment,
 } from '../models/budget.models';
 
 export function rowToExpense(row: any): Expense {
@@ -125,6 +126,25 @@ export function rowToProvisionAdjustment(row: any): ProvisionAdjustment {
     date: row.date,
     note: row.note ?? '',
     versementExpenseId: row.versement_expense_id ?? undefined,
+  };
+}
+
+export function rowToCreditCardPayment(row: any): CreditCardPayment {
+  return {
+    id: row.id,
+    owner: row.owner,
+    amount: Number(row.amount),
+    date: row.date,
+    note: row.note ?? '',
+  };
+}
+
+export function creditCardPaymentToRow(p: Omit<CreditCardPayment, 'id'>): any {
+  return {
+    owner: p.owner,
+    amount: p.amount,
+    date: p.date,
+    note: p.note,
   };
 }
 
