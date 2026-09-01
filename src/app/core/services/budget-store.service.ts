@@ -10,12 +10,13 @@ import {
   Provision,
   ProvisionAdjustment,
   RecurringExpense,
+  RecurringIncome,
   SavingsGoal,
   CreditCardPayment,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
-import { ymOf, prevYM, monthLabel, monthShortLabel, fmtDate, isoOfDate } from '../utils/date.utils';
+import { ymOf, prevYM, nextYM, monthLabel, monthShortLabel, fmtDate, isoOfDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import {
   provisionUnit,
@@ -45,6 +46,8 @@ import {
   adjustmentToRow,
   rowToRecurringExpense,
   recurringExpenseToRow,
+  rowToRecurringIncome,
+  recurringIncomeToRow,
   rowToSavingsGoal,
   savingsGoalToRow,
   savingsContributionToRow,
@@ -172,6 +175,22 @@ function validateImportPayload(data: any): string[] {
     });
   }
 
+  if (Array.isArray(data.recurringIncomes)) {
+    (data.recurringIncomes as unknown[]).forEach((raw, i) => {
+      const r = raw as any;
+      const label = `recurringIncomes[${i}]`;
+      if (!isFiniteNumber(r?.amount) || r.amount <= 0) errors.push(`${label} : montant invalide (${r?.amount})`);
+      if (!isNonEmptyString(r?.type)) errors.push(`${label} : type manquant`);
+      if (!VALID_OWNERS.includes(r?.owner)) errors.push(`${label} : profil invalide (${r?.owner})`);
+      if (!isNonEmptyString(r?.startDate) || !DATE_RE.test(r.startDate)) {
+        errors.push(`${label} : date de départ invalide (${r?.startDate})`);
+      }
+      if (r?.interval != null && !VALID_RECURRING_EXPENSE_INTERVALS.includes(r.interval)) {
+        errors.push(`${label} : fréquence invalide (${r.interval})`);
+      }
+    });
+  }
+
   if (Array.isArray(data.savingsGoals)) {
     (data.savingsGoals as unknown[]).forEach((raw, i) => {
       const g = raw as any;
@@ -227,6 +246,11 @@ export class BudgetStore {
   readonly creditCardPayments = signal<CreditCardPayment[]>([]);
   readonly savingsGoals = signal<SavingsGoal[]>([]);
   readonly recurringExpenses = signal<RecurringExpense[]>([]);
+  // Modèles de revenus récurrents ("paies") — voir RecurringIncome dans
+  // budget.models.ts. Les occurrences réelles vivent dans `incomes`
+  // (Income.recurringSourceId), générées automatiquement par
+  // syncRecurringIncomes() à chaque chargement.
+  readonly recurringIncomes = signal<RecurringIncome[]>([]);
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
   readonly categoryBudgets = signal<CategoryBudgetMap>(emptyCategoryBudgetMap());
   readonly rollovers = signal<MonthlyAmountMap>(emptyMonthlyMap());
@@ -263,6 +287,7 @@ export class BudgetStore {
       provisionsRes,
       adjustmentsRes,
       recurringExpensesRes,
+      recurringIncomesRes,
       savingsGoalsRes,
       savingsContributionsRes,
       closedMonthsRes,
@@ -276,6 +301,7 @@ export class BudgetStore {
       client.from('provisions').select('*'),
       client.from('provision_adjustments').select('*'),
       client.from('recurring_expenses').select('*').order('day_of_month'),
+      client.from('recurring_incomes').select('*').order('day_of_month'),
       client.from('savings_goals').select('*'),
       client.from('savings_goal_contributions').select('*'),
       client.from('closed_months').select('*'),
@@ -292,6 +318,7 @@ export class BudgetStore {
         ['provisions', provisionsRes],
         ['provision_adjustments', adjustmentsRes],
         ['recurring_expenses', recurringExpensesRes],
+        ['recurring_incomes', recurringIncomesRes],
         ['savings_goals', savingsGoalsRes],
         ['savings_goal_contributions', savingsContributionsRes],
         ['closed_months', closedMonthsRes],
@@ -325,6 +352,9 @@ export class BudgetStore {
     if (!recurringExpensesRes.error) {
       this.recurringExpenses.set((recurringExpensesRes.data ?? []).map(rowToRecurringExpense));
     }
+    if (!recurringIncomesRes.error) {
+      this.recurringIncomes.set((recurringIncomesRes.data ?? []).map(rowToRecurringIncome));
+    }
     // provisions dépend aussi de adjustmentsRes : une erreur sur l'une ou
     // l'autre peut faire recalculer des pots de provision incomplets, donc
     // les deux gardent l'ancienne valeur en cas d'échec de l'une des deux.
@@ -347,6 +377,16 @@ export class BudgetStore {
       this.creditCardPayments.set((creditCardPaymentsRes.data ?? []).map(rowToCreditCardPayment));
     }
     this.loading.set(false);
+
+    // Génère les paies manquantes (aujourd'hui ou avant) pour tous les
+    // modèles de revenus récurrents actifs — voir syncRecurringIncomes().
+    // Seulement si les deux tables concernées ont bien chargé, pour ne pas
+    // insérer sur la base d'un état partiel/obsolète.
+    if (!incomesRes.error && !recurringIncomesRes.error) {
+      this.syncRecurringIncomes().catch((err) =>
+        console.error('syncRecurringIncomes() a échoué :', err),
+      );
+    }
   }
 
   // Le report Global n'est jamais stocké : toujours la somme de Moi + Madame
@@ -2079,11 +2119,11 @@ export class BudgetStore {
   }
 
   async addIncome(income: Omit<Income, 'id'>): Promise<void> {
-    // Un revenu récurrent est une entité structurelle (s'applique à tous
-    // les mois à partir de recurringStartMonth) — sa création n'est pas
-    // bloquée par la clôture du mois de sa date de référence. Seuls les
-    // revenus ponctuels sont de vraies transactions datées.
-    if (!income.recurring) this.assertMonthOpen(income.date.slice(0, 7));
+    // Chaque ligne `incomes` est désormais une vraie transaction datée —
+    // qu'elle soit ponctuelle ou générée par un modèle récurrent (voir
+    // RecurringIncome/syncRecurringIncomes) — donc toujours verrouillée par
+    // la clôture de son mois, comme une dépense.
+    this.assertMonthOpen(income.date.slice(0, 7));
     // Défense en profondeur (audit BUG-013).
     if (!Number.isFinite(income.amount) || income.amount <= 0) {
       throw new Error(`Montant de revenu invalide : ${income.amount}. Doit être un nombre > 0.`);
@@ -2097,15 +2137,158 @@ export class BudgetStore {
     this.incomes.update((list) => [...list, rowToIncome(data)]);
   }
 
+  // Modifie une occurrence de revenu existante (ex. ajuster le montant
+  // d'une paie générée automatiquement si le vrai montant diffère). Ne
+  // touche jamais le modèle récurrent d'origine ni les autres occurrences.
+  async updateIncome(id: string, changes: Partial<Omit<Income, 'id'>>): Promise<void> {
+    const existing = this.incomes().find((i) => i.id === id);
+    if (!existing) throw new Error('Revenu introuvable.');
+    this.assertMonthOpen(existing.date.slice(0, 7));
+    if (changes.date !== undefined) this.assertMonthOpen(changes.date.slice(0, 7));
+    if (changes.amount !== undefined && (!Number.isFinite(changes.amount) || changes.amount <= 0)) {
+      throw new Error(`Montant de revenu invalide : ${changes.amount}. Doit être un nombre > 0.`);
+    }
+    const row: Record<string, unknown> = {};
+    if (changes.amount !== undefined) row['amount'] = changes.amount;
+    if (changes.type !== undefined) row['type'] = changes.type;
+    if (changes.date !== undefined) row['date'] = changes.date;
+    if (changes.note !== undefined) row['note'] = changes.note;
+
+    const { data, error } = await this.supabase.client
+      .from('incomes')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    const updated = rowToIncome(data);
+    this.incomes.update((list) => list.map((i) => (i.id === id ? updated : i)));
+  }
+
+  // Supprime UNE occurrence de revenu (ponctuelle ou générée). Si elle
+  // vient d'un modèle récurrent, seule cette paie disparaît — le modèle
+  // continue de générer les suivantes (pour l'arrêter, voir
+  // removeRecurringIncome ci-dessous).
   async removeIncome(id: string): Promise<void> {
     const existing = this.incomes().find((i) => i.id === id);
-    if (existing && !existing.recurring) this.assertMonthOpen(existing.date.slice(0, 7));
+    if (existing) this.assertMonthOpen(existing.date.slice(0, 7));
     const { error } = await this.supabase.client
       .from('incomes')
       .delete()
       .eq('id', id);
     if (error) throw error;
     this.incomes.update((list) => list.filter((i) => i.id !== id));
+  }
+
+  // --- Revenus récurrents (modèles de paie) -------------------------------
+  //
+  // Même principe que RecurringExpense/Expense : un modèle décrit la
+  // fréquence, et de vraies occurrences (Income.recurringSourceId) sont
+  // générées automatiquement — voir syncRecurringIncomes(). Contrairement
+  // aux dépenses récurrentes (confirmation manuelle, pour éviter les
+  // doublons avec une facture qui varie), les revenus sont générés SANS
+  // confirmation : le montant est ensuite modifiable via updateIncome() si
+  // une paie précise diffère du modèle.
+
+  readonly visibleRecurringIncomes = computed(() => {
+    const owner = this.activeOwner();
+    return owner === 'global'
+      ? this.recurringIncomes()
+      : this.recurringIncomes().filter((r) => r.owner === owner);
+  });
+
+  async addRecurringIncome(r: Omit<RecurringIncome, 'id'>): Promise<RecurringIncome> {
+    const { data, error } = await this.supabase.client
+      .from('recurring_incomes')
+      .insert(recurringIncomeToRow(r))
+      .select()
+      .single();
+    if (error) throw error;
+    const created = rowToRecurringIncome(data);
+    this.recurringIncomes.update((list) => [...list, created]);
+    // Génère tout de suite la/les première(s) paie(s) déjà passées, sans
+    // attendre le prochain chargement complet de l'app.
+    await this.syncRecurringIncomes();
+    return created;
+  }
+
+  async updateRecurringIncome(
+    id: string,
+    changes: Partial<Omit<RecurringIncome, 'id'>>,
+  ): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (changes.amount !== undefined) row['amount'] = changes.amount;
+    if (changes.type !== undefined) row['type'] = changes.type;
+    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.note !== undefined) row['note'] = changes.note;
+    if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
+    if (changes.secondDayOfMonth !== undefined) row['second_day_of_month'] = changes.secondDayOfMonth;
+    if (changes.active !== undefined) row['active'] = changes.active;
+
+    const { data, error } = await this.supabase.client
+      .from('recurring_incomes')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    const updated = rowToRecurringIncome(data);
+    this.recurringIncomes.update((list) => list.map((r) => (r.id === id ? updated : r)));
+  }
+
+  // Arrête un revenu récurrent : supprime seulement le MODÈLE, jamais les
+  // paies déjà générées (elles restent des lignes `incomes` indépendantes,
+  // recurring_source_id passe juste à NULL via la contrainte "on delete set
+  // null" — voir migration-014). L'historique des mois passés ne change
+  // donc jamais après coup, seules les prochaines paies s'arrêtent.
+  async removeRecurringIncome(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('recurring_incomes')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    this.recurringIncomes.update((list) => list.filter((r) => r.id !== id));
+  }
+
+  // Génère les paies manquantes (dont la date est déjà arrivée) pour tous
+  // les modèles actifs, du mois de départ du modèle jusqu'au mois courant
+  // réel — jamais dans le futur, jamais dans un mois clôturé. Correspondance
+  // par COMPTE plutôt que par date exacte (même logique que
+  // expectedThisMonth() pour les dépenses) : si le modèle attend K
+  // occurrences ce mois-ci et que C existent déjà, seules les K-C
+  // manquantes sont créées — un montant ou une date ajustés manuellement
+  // via updateIncome() ne provoquent donc jamais de doublon.
+  async syncRecurringIncomes(): Promise<void> {
+    const todayISO = isoOfDate(new Date());
+    const todayYM = todayISO.slice(0, 7);
+
+    for (const template of this.recurringIncomes()) {
+      if (!template.active) continue;
+      let ym = template.startDate.slice(0, 7);
+      while (ym <= todayYM) {
+        if (!this.isMonthClosed(ym)) {
+          const occurrences = occurrencesInMonth(template, ym).filter((d) => d <= todayISO);
+          const confirmedCount = this.incomes().filter(
+            (i) => i.recurringSourceId === template.id && i.date.startsWith(ym),
+          ).length;
+          const missing = occurrences.slice(confirmedCount);
+          for (const date of missing) {
+            await this.addIncome({
+              amount: template.amount,
+              type: template.type,
+              date,
+              owner: template.owner,
+              note: template.note,
+              recurring: true,
+              recurringInterval: template.interval,
+              recurringStartMonth: template.startDate.slice(0, 7),
+              recurringSourceId: template.id,
+            });
+          }
+        }
+        ym = nextYM(ym);
+      }
+    }
   }
 
   // En vue Global, retire le report des DEUX profils pour ce mois (le report
@@ -2234,6 +2417,7 @@ export class BudgetStore {
     this.provisions.set([]);
     this.savingsGoals.set([]);
     this.recurringExpenses.set([]);
+    this.recurringIncomes.set([]);
     this.budgets.set(emptyMonthlyMap());
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
@@ -2396,6 +2580,17 @@ export class BudgetStore {
       if (error) throw error;
     }
 
+    // Doit être inséré AVANT incomes : incomes.recurring_source_id
+    // référence recurring_incomes(id).
+    if (Array.isArray(data.recurringIncomes) && data.recurringIncomes.length) {
+      const rows = data.recurringIncomes.map((r: RecurringIncome) => ({
+        id: idFor(r.id),
+        ...recurringIncomeToRow(r),
+      }));
+      const { error } = await this.supabase.client.from('recurring_incomes').insert(rows);
+      if (error) throw error;
+    }
+
     // Optionnel : absent des sauvegardes exportées avant l'ajout du suivi
     // de carte de crédit (migration-012).
     if (Array.isArray(data.creditCardPayments) && data.creditCardPayments.length) {
@@ -2541,6 +2736,7 @@ export class BudgetStore {
       provisions: this.provisions(),
       savingsGoals: this.savingsGoals(),
       recurringExpenses: this.recurringExpenses(),
+      recurringIncomes: this.recurringIncomes(),
       budgets: this.budgets(),
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),

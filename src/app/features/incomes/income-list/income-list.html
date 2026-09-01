@@ -21,8 +21,40 @@
           @if (i.recurring) {
             <span class="income-recurring">{{ intervalLabel(i.recurringInterval) }}</span>
           }
-          <span class="income-amount">{{ fmt(i.amount) }}</span>
-          <button class="del" title="Supprimer" (click)="remove(i.id)">✕</button>
+
+          @if (editingId() === i.id) {
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              class="edit-amount"
+              [(ngModel)]="editAmount"
+              (keydown.enter)="saveEdit(i.id)"
+              (keydown.escape)="cancelEdit()"
+              autofocus
+            />
+            <button class="ok" title="Enregistrer" (click)="saveEdit(i.id)">✓</button>
+            <button class="del" title="Annuler" (click)="cancelEdit()">✕</button>
+          } @else {
+            <span class="income-amount" title="Cliquer pour modifier" (click)="startEdit(i.id, i.amount)">
+              {{ fmt(i.amount) }} ✏️
+            </span>
+            <button class="del" title="Supprimer cette entrée" (click)="remove(i.id)">✕</button>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (store.visibleRecurringIncomes().length) {
+    <div class="recurring-incomes">
+      <div class="card-subtitle">🔁 Revenus récurrents actifs</div>
+      @for (r of store.visibleRecurringIncomes(); track r.id) {
+        <div class="recurring-item">
+          <span>{{ typeLabel(r.type) }} • {{ fmt(r.amount) }} • {{ intervalLabel(r.interval) }} • {{ ownerBadge(r.owner) }}</span>
+          <button class="del" title="Arrêter ce revenu récurrent" (click)="stopRecurring(r.id, r.type)">
+            Arrêter
+          </button>
         </div>
       }
     </div>

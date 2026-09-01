@@ -1,6 +1,15 @@
-import { RecurringExpense } from '../models/budget.models';
 import { addDays, clampDayToMonth, lastDayOfMonthYM } from './provision.utils';
 import { daysBetween } from './date.utils';
+
+// Forme minimale requise pour calculer des échéances — RecurringExpense et
+// RecurringIncome partagent tous les deux ces champs, donc occurrencesInMonth
+// fonctionne pour les deux sans dupliquer la logique.
+export interface Schedulable {
+  interval: 'monthly' | 'weekly' | 'biweekly' | 'semimonthly';
+  dayOfMonth: number;
+  secondDayOfMonth?: number | null;
+  startDate?: string | null;
+}
 
 export const RECURRING_EXPENSE_INTERVAL_LABELS: Record<string, string> = {
   monthly: 'Chaque mois',
@@ -24,7 +33,7 @@ export const RECURRING_EXPENSE_INTERVAL_LABELS: Record<string, string> = {
 //                    le mois — c'est le cas qui justifie que
 //                    expectedThisMonth() gère plusieurs suggestions pour
 //                    un même gabarit.
-export function occurrencesInMonth(r: RecurringExpense, ym: string): string[] {
+export function occurrencesInMonth(r: Schedulable, ym: string): string[] {
   switch (r.interval) {
     case 'semimonthly': {
       const d1 = clampDayToMonth(ym, r.dayOfMonth);

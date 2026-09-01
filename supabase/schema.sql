@@ -37,6 +37,22 @@ create table if not exists expenses (
 );
 
 -- Revenus
+create table if not exists recurring_incomes (
+  id uuid primary key default uuid_generate_v4(),
+  amount numeric(12,2) not null,
+  type text not null,
+  owner text not null check (owner in ('moi','madame')),
+  note text not null default '',
+  interval text not null default 'monthly'
+    check (interval in ('monthly', 'weekly', 'biweekly', 'semimonthly')),
+  day_of_month integer not null check (day_of_month between 1 and 31),
+  second_day_of_month integer
+    check (second_day_of_month is null or second_day_of_month between 1 and 31),
+  start_date date not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists incomes (
   id uuid primary key default uuid_generate_v4(),
   amount numeric(12,2) not null,
@@ -47,6 +63,7 @@ create table if not exists incomes (
   recurring boolean not null default false,
   recurring_interval text check (recurring_interval in ('once','monthly','weekly','biweekly','semimonthly')),
   recurring_start_month text, -- "YYYY-MM"
+  recurring_source_id uuid references recurring_incomes(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -141,6 +158,7 @@ create table if not exists closed_months (
 alter table expenses enable row level security;
 alter table recurring_expenses enable row level security;
 alter table incomes enable row level security;
+alter table recurring_incomes enable row level security;
 alter table provisions enable row level security;
 alter table provision_adjustments enable row level security;
 alter table savings_goals enable row level security;
@@ -155,6 +173,8 @@ create policy "authenticated_all_expenses" on expenses
 create policy "authenticated_all_recurring_expenses" on recurring_expenses
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_incomes" on incomes
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated_all_recurring_incomes" on recurring_incomes
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated_all_provisions" on provisions
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

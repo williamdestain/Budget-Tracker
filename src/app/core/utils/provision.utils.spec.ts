@@ -158,6 +158,8 @@ describe('provision.utils', () => {
   });
 
   describe('provisionPot', () => {
+    afterEach(() => vi.useRealTimers());
+
     it('= ajouts manuels − dépenses réelles (peut être négatif)', () => {
       const p = makeProvision({
         category: 'Électricité',
@@ -246,7 +248,9 @@ describe('provision.utils', () => {
       expect(provisionPot(p, '2026-08', [])).toBe(180);
     });
 
-    it("une fois arrivé dans le mois même de l'échéance, la borne stricte habituelle reprend (limite du correctif : granularité mensuelle, pas journalière)", () => {
+    it("tant que le jour réel de l'échéance n'est pas encore arrivé, la grâce continue même en consultant le mois de l'échéance", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 1)); // 1er septembre : avant le 10, jour réel de l'échéance
       const p = makeProvision({
         category: 'Électricité',
         owner: 'moi',
@@ -255,13 +259,26 @@ describe('provision.utils', () => {
         startDate: '2026-09-10',
         adjustments: [{ id: 'a1', amount: 100, date: '2026-07-15', note: '' }],
       });
-      // En consultant septembre (le mois de l'échéance elle-même), la
-      // "grâce" s'arrête : la fonction ne connaît que le MOIS affiché,
-      // pas le jour exact d'aujourd'hui, donc elle ne peut pas savoir si
-      // le 10 septembre est déjà passé ou non dans le mois en cours. Le
-      // correctif couvre le vrai besoin rapporté (accumuler PENDANT les
-      // mois qui précèdent l'échéance, ici juillet et août) ; ce cas
-      // limite (le mois de l'échéance pile) est un compromis assumé.
+      // Corrigé (bug rapporté par un utilisateur, capture d'écran) : la
+      // fonction se base maintenant sur la vraie date du jour quand elle
+      // est disponible, pas seulement sur le mois affiché — la "grâce"
+      // (l'argent accumulé avant l'échéance compte encore) dure donc
+      // jusqu'au jour réel de l'échéance, même si on consulte déjà le
+      // mois qui la contient.
+      expect(provisionPot(p, '2026-09', [])).toBe(100);
+    });
+
+    it("une fois le jour réel de l'échéance passé sans paiement, la borne stricte habituelle reprend (limite connue : pas de recalage tant qu'aucun vrai paiement n'a eu lieu)", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 15)); // 15 septembre : après le 10
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        intervalUnit: 'days',
+        everyN: 62,
+        startDate: '2026-09-10',
+        adjustments: [{ id: 'a1', amount: 100, date: '2026-07-15', note: '' }],
+      });
       expect(provisionPot(p, '2026-09', [])).toBe(0);
     });
   });
@@ -378,11 +395,28 @@ describe('provision.utils', () => {
       expect(provisionDaysUntilNext(p, '2026-06')).toBe(30);
     });
 
-    it('se base sur la fin du mois consulté si ce n’est pas le mois en cours', () => {
+    // Corrigé (bug rapporté par un utilisateur, capture d'écran) : ce test
+    // vérifiait auparavant que la référence "se base sur la fin du mois
+    // consulté" même pour un mois FUTUR — ce qui faisait croire qu'un
+    // mois pas encore arrivé s'était déjà entièrement écoulé, rendant "en
+    // retard" une échéance qui n'était pourtant pas encore due. Un mois
+    // futur (ou le mois en cours) n'a, par définition, encore rien
+    // d'écoulé : la référence doit y rester la vraie date du jour. Seul un
+    // mois entièrement PASSÉ utilise encore son dernier jour comme
+    // référence (voir le test suivant).
+    it('se base sur la vraie date du jour, même pour un mois futur simplement consulté', () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 0, 1)); // "aujourd'hui" = janvier, mais on consulte juin
+      vi.setSystemTime(new Date(2026, 0, 1)); // "aujourd'hui" = 1er janvier, mais on consulte juin (futur)
       const p = makeProvision({ startYM: '2026-01', everyN: 6 }); // échéance juillet
-      // Référence = fin juin (30 juin) ; échéance = 1er juillet => 1 jour
+      // Référence = 1er janvier (vraie date du jour) ; échéance = 1er juillet => 181 jours
+      expect(provisionDaysUntilNext(p, '2026-06')).toBe(181);
+    });
+
+    it('se base sur la fin du mois consulté si ce mois est entièrement dans le passé', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 1)); // "aujourd'hui" = 1er septembre ; juin est déjà passé
+      const p = makeProvision({ startYM: '2026-01', everyN: 6 }); // échéance juillet
+      // Référence = 30 juin (dernier jour du mois consulté, déjà écoulé) ; échéance = 1er juillet => 1 jour
       expect(provisionDaysUntilNext(p, '2026-06')).toBe(1);
     });
   });

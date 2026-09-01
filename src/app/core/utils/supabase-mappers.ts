@@ -7,6 +7,7 @@ import {
   Provision,
   ProvisionAdjustment,
   RecurringExpense,
+  RecurringIncome,
   SavingsGoal,
   SavingsContribution,
   CreditCardPayment,
@@ -82,6 +83,7 @@ export function rowToIncome(row: any): Income {
     recurring: row.recurring,
     recurringInterval: row.recurring_interval,
     recurringStartMonth: row.recurring_start_month,
+    recurringSourceId: row.recurring_source_id ?? null,
   };
 }
 
@@ -95,6 +97,38 @@ export function incomeToRow(i: Omit<Income, 'id'> | Income): any {
     recurring: i.recurring,
     recurring_interval: i.recurringInterval,
     recurring_start_month: i.recurringStartMonth,
+    recurring_source_id: i.recurringSourceId ?? null,
+  };
+}
+
+export function rowToRecurringIncome(row: any): RecurringIncome {
+  return {
+    id: row.id,
+    amount: Number(row.amount),
+    type: row.type,
+    owner: row.owner,
+    note: row.note ?? '',
+    interval: row.interval,
+    dayOfMonth: row.day_of_month,
+    secondDayOfMonth: row.second_day_of_month ?? null,
+    startDate: row.start_date,
+    active: row.active,
+  };
+}
+
+export function recurringIncomeToRow(
+  r: Omit<RecurringIncome, 'id'> | RecurringIncome,
+): any {
+  return {
+    amount: r.amount,
+    type: r.type,
+    owner: r.owner,
+    note: r.note,
+    interval: r.interval,
+    day_of_month: r.dayOfMonth,
+    second_day_of_month: r.secondDayOfMonth ?? null,
+    start_date: r.startDate,
+    active: r.active,
   };
 }
 

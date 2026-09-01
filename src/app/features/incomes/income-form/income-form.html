@@ -62,12 +62,36 @@
           id="income-interval"
           name="recurringInterval"
           [(ngModel)]="recurringInterval"
+          (ngModelChange)="onIntervalChange()"
         >
           @for (opt of intervalOptions; track opt[0]) {
             <option [value]="opt[0]">{{ opt[1] }}</option>
           }
         </select>
       </div>
+
+      @if (recurringInterval === 'semimonthly') {
+        <div class="field">
+          <label for="income-second-day">2e jour du mois</label>
+          <input
+            id="income-second-day"
+            type="number"
+            min="1"
+            max="31"
+            name="secondDayOfMonth"
+            [(ngModel)]="secondDayOfMonth"
+            required
+          />
+        </div>
+      }
+
+      <p class="hint">
+        💡 « Date » ci-dessus sert d'ancrage : premier jour de paie {{
+          recurringInterval === 'semimonthly' ? '(1er des deux)' : ''
+        }} et point de départ pour générer les paies suivantes automatiquement.
+        Chaque paie sera une vraie ligne modifiable — supprimer ce revenu
+        récurrent n'effacera jamais les paies déjà générées.
+      </p>
     }
   </div>
 

@@ -1833,7 +1833,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await expect(store.updateExpense('e1', { date: '2026-07-20' })).rejects.toThrow(/clôturé/);
     });
 
-    it("addIncome() ponctuel bloqué, mais un revenu récurrent n'est pas affecté (entité structurelle)", async () => {
+    it("addIncome() est bloqué pour un mois clôturé, que le revenu soit ponctuel ou une occurrence générée (chacune est une vraie transaction datée)", async () => {
       await store.loadAll();
       await store.closeMonth('2026-07');
 
@@ -1841,15 +1841,40 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         store.addIncome({
           amount: 100, type: 'Autre', date: '2026-07-05', owner: 'moi', note: '',
           recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
+          recurringSourceId: null,
         }),
       ).rejects.toThrow(/clôturé/);
 
-      // Un revenu récurrent démarrant ce même mois n'est PAS une
-      // transaction datée unique — sa création n'est pas bloquée.
+      // Depuis le passage aux revenus récurrents "façon dépenses
+      // récurrentes" (RecurringIncome + occurrences réelles), une paie
+      // générée EST une vraie transaction datée comme les autres — elle
+      // n'échappe donc plus au verrou de clôture, contrairement à
+      // l'ancien système où "recurring: true" désignait un modèle
+      // structurel sans date propre.
       await expect(
         store.addIncome({
           amount: 3000, type: 'Salaire', date: '2026-07-01', owner: 'moi', note: '',
           recurring: true, recurringInterval: 'monthly', recurringStartMonth: '2026-07',
+          recurringSourceId: 'rec-1',
+        }),
+      ).rejects.toThrow(/clôturé/);
+    });
+
+    it("addRecurringIncome() (le MODÈLE de paie) n'est pas bloqué par une clôture — c'est une entité structurelle sans date propre", async () => {
+      await store.loadAll();
+      await store.closeMonth('2026-07');
+
+      await expect(
+        store.addRecurringIncome({
+          amount: 3000,
+          type: 'Salaire',
+          owner: 'moi',
+          note: '',
+          interval: 'monthly',
+          dayOfMonth: 1,
+          secondDayOfMonth: null,
+          startDate: '2026-07-01',
+          active: true,
         }),
       ).resolves.not.toThrow();
     });

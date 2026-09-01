@@ -126,7 +126,12 @@ export function effectiveProvisionAmount(p: Provision, expenses: Expense[]): num
 // par le bas avec provisionStart(p) — cette fonction doit faire pareil.
 export function provisionAdjustmentsUpTo(p: Provision, currentYM: string): ProvisionAdjustment[] {
   const start = provisionStart(p);
-  const end = lastDayOfMonthYM(currentYM);
+  // Même référence que provisionReferenceDate (plus bas dans ce fichier) :
+  // le dernier jour du mois consulté s'il est déjà passé, sinon la vraie
+  // date du jour — pour qu'une simple PRÉVISUALISATION d'un mois futur ne
+  // fasse jamais sortir des bornes de calcul l'argent déjà mis de côté
+  // (voir le commentaire détaillé sur provisionReferenceDate ci-dessous).
+  const end = provisionReferenceDate(currentYM);
   // Cas particulier : l'ancre représente encore une échéance FUTURE (pas
   // encore atteinte par rapport au mois affiché). Ça veut dire qu'aucun
   // paiement réel n'a encore recalé cette provision — on est dans la
@@ -273,12 +278,26 @@ export interface ProvisionDueAlert {
   message: string;
 }
 
-// Référence "aujourd'hui" utilisée pour les alertes : la date réelle si le
-// mois consulté est le mois en cours, sinon le dernier jour de ce mois.
+// Référence "aujourd'hui" utilisée pour les alertes/cagnotte : le dernier
+// jour du mois consulté SEULEMENT si ce mois est entièrement dans le
+// passé (bilan figé d'un mois déjà terminé) ; sinon la vraie date du jour
+// — jamais une date qui n'est pas encore arrivée.
+//
+// Bug corrigé (capture d'écran utilisateur) : l'ancienne règle utilisait
+// le dernier jour du mois dès que le mois consulté n'était PAS le mois
+// réel en cours — y compris pour un mois FUTUR simplement prévisualisé
+// (ex. cliquer "mois suivant" fin août pour jeter un œil à septembre).
+// Résultat : l'app croyait septembre déjà terminé le 30, rendant "en
+// retard de 20 jours" une échéance du 10 qui n'était pourtant pas encore
+// arrivée, ET faisait sortir des bornes de calcul l'argent déjà mis de
+// côté (cagnotte retombée à 0$) — alors qu'aucun paiement réel n'avait eu
+// lieu. Un mois futur n'a, par définition, encore rien d'écoulé : la
+// référence doit y rester "aujourd'hui", exactement comme pour le mois en
+// cours.
 function provisionReferenceDate(currentYM: string): string {
-  const today = isoOfDate(new Date());
-  if (currentYM === ymOf(new Date())) return today;
-  return lastDayOfMonthYM(currentYM);
+  const now = new Date();
+  const today = isoOfDate(now);
+  return currentYM < ymOf(now) ? lastDayOfMonthYM(currentYM) : today;
 }
 
 function provisionNextHitAsDate(p: Provision, currentYM: string): string {

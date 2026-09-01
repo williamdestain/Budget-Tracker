@@ -53,9 +53,41 @@ export interface Income {
   date: string; // "YYYY-MM-DD"
   owner: Owner;
   note: string;
+  // Conservés pour affichage/rétrocompatibilité (badge de fréquence dans
+  // la liste) — la logique de calcul ne s'appuie plus dessus, voir
+  // RecurringIncome ci-dessous. `recurring: true` signifie ici "cette
+  // ligne est une occurrence générée par un modèle récurrent".
   recurring: boolean;
   recurringInterval: RecurringInterval;
   recurringStartMonth: string; // "YYYY-MM"
+  // Modèle récurrent à l'origine de cette occurrence (voir RecurringIncome) —
+  // même principe que Expense.recurringSourceId.
+  recurringSourceId?: string | null;
+}
+
+// Modèle de revenu récurrent ("paie"). Remplace l'ancienne approche où un
+// seul Income "récurrent" était compté en moyenne mensuelle dans chaque
+// mois (voir income.utils.ts, ancien incomeForMonth) : désormais chaque
+// paie est une vraie ligne Income datée, générée automatiquement (voir
+// syncRecurringIncomes() dans budget-store.service.ts), liée au modèle via
+// recurringSourceId — exactement comme RecurringExpense/Expense.
+//
+// Avantages : le solde/historique d'un mois ne change plus jamais après
+// coup, et supprimer le modèle n'efface pas les paies déjà générées —
+// seules les prochaines s'arrêtent.
+export type IncomeRecurringInterval = 'monthly' | 'weekly' | 'biweekly' | 'semimonthly';
+
+export interface RecurringIncome {
+  id: string;
+  amount: number; // montant d'UNE occurrence (pas une moyenne)
+  type: string;
+  owner: Owner;
+  note: string;
+  interval: IncomeRecurringInterval;
+  dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
+  secondDayOfMonth?: number | null; // 1-31 — utilisé seulement si interval 'semimonthly'
+  startDate: string; // "YYYY-MM-DD" — ancrage ; utilisé pour 'weekly'/'biweekly', et borne de départ pour tous
+  active: boolean;
 }
 
 export interface ProvisionAdjustment {
