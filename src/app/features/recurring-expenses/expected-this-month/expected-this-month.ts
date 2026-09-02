@@ -1,7 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 
 @Component({
@@ -28,7 +27,7 @@ export class ExpectedThisMonth {
   constructor(public store: BudgetStore) {}
 
   colorFor(category: string): string {
-    return COLOR_MAP[category] || '#94a3b8';
+    return this.store.colorFor(category);
   }
 
   fmt(n: number): string {

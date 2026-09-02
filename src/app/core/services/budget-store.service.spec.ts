@@ -1917,4 +1917,112 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       ).resolves.not.toThrow();
     });
   });
+
+  // Catégories gérées dynamiquement (voir migration-016-categories.sql),
+  // suite à la demande explicite : pouvoir ajouter/renommer/archiver des
+  // catégories SANS jamais toucher aux mois déjà clôturés.
+  describe('Catégories', () => {
+    it('addCategory() crée la catégorie et rejette un nom déjà pris (insensible à la casse)', async () => {
+      await store.loadAll();
+      const created = await store.addCategory('Loisirs');
+      expect(created.name).toBe('Loisirs');
+      expect(store.categories().some((c) => c.name === 'Loisirs')).toBe(true);
+
+      await expect(store.addCategory('loisirs')).rejects.toThrow(/existe déjà/);
+    });
+
+    it('renameCategory() met à jour le texte des dépenses dans les mois OUVERTS', async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Courses', color: '#000', archived: false, sort_order: 0 }]);
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 50, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false },
+      ]);
+      await store.loadAll();
+
+      await store.renameCategory('cat1', 'Épicerie');
+
+      expect(store.categories().find((c) => c.id === 'cat1')?.name).toBe('Épicerie');
+      expect(store.expenses().find((e) => e.id === 'e1')?.category).toBe('Épicerie');
+    });
+
+    it("renameCategory() NE touche PAS les dépenses d'un mois CLÔTURÉ — demande explicite de l'utilisateur", async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Courses', color: '#000', archived: false, sort_order: 0 }]);
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 50, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false },
+      ]);
+      await store.loadAll();
+      await store.closeMonth('2026-07');
+
+      await store.renameCategory('cat1', 'Épicerie');
+
+      // Le nom de la catégorie change bien pour l'avenir...
+      expect(store.categories().find((c) => c.id === 'cat1')?.name).toBe('Épicerie');
+      // ...mais la dépense du mois clôturé garde son texte d'origine intact.
+      expect(store.expenses().find((e) => e.id === 'e1')?.category).toBe('Courses');
+    });
+
+    it('renameCategory() met toujours à jour les provisions et dépenses récurrentes (entités structurelles, sans mois propre)', async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Électricité', color: '#000', archived: false, sort_order: 0 }]);
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Électricité', amount: 600, every_n: 3, interval_unit: 'months',
+          start_ym: '2026-01', start_date: null, category: 'Électricité', owner: 'moi',
+          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('recurring_expenses', [
+        { id: 'r1', name: 'Hydro', amount: 100, category: 'Électricité', owner: 'moi', day_of_month: 1, cc: false, active: true },
+      ]);
+      await store.loadAll();
+      await store.closeMonth('2026-07'); // même avec un mois clôturé...
+
+      await store.renameCategory('cat1', 'Hydro-Québec');
+
+      // ...les entités structurelles suivent toujours, elles n'appartiennent
+      // à aucun mois précis.
+      expect(store.provisions().find((p) => p.id === 'p1')?.category).toBe('Hydro-Québec');
+      expect(store.recurringExpenses().find((r) => r.id === 'r1')?.category).toBe('Hydro-Québec');
+    });
+
+    it('archiveCategory() la retire des catégories actives sans toucher aux données existantes', async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Sport', color: '#abc', archived: false, sort_order: 0 }]);
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 30, category: 'Sport', date: '2026-07-10', owner: 'moi', cc: false },
+      ]);
+      await store.loadAll();
+
+      await store.archiveCategory('cat1');
+
+      expect(store.activeCategoryNames()).not.toContain('Sport');
+      // La dépense existante et sa couleur restent intactes.
+      expect(store.expenses().find((e) => e.id === 'e1')?.category).toBe('Sport');
+      expect(store.colorFor('Sport')).toBe('#abc');
+
+      await store.unarchiveCategory('cat1');
+      expect(store.activeCategoryNames()).toContain('Sport');
+    });
+
+    it('deleteCategoryPermanently() est refusé si la catégorie est encore utilisée', async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Sport', color: '#abc', archived: false, sort_order: 0 }]);
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 30, category: 'Sport', date: '2026-07-10', owner: 'moi', cc: false },
+      ]);
+      await store.loadAll();
+
+      await expect(store.deleteCategoryPermanently('cat1')).rejects.toThrow(/encore utilisée/);
+      expect(store.categories().some((c) => c.id === 'cat1')).toBe(true);
+    });
+
+    it("deleteCategoryPermanently() réussit si la catégorie n'est utilisée nulle part", async () => {
+      fakeClient.seed('categories', [{ id: 'cat1', name: 'Inutilisée', color: '#abc', archived: false, sort_order: 0 }]);
+      await store.loadAll();
+
+      await store.deleteCategoryPermanently('cat1');
+      expect(store.categories().some((c) => c.id === 'cat1')).toBe(false);
+    });
+
+    it('colorFor() retombe sur un gris neutre pour un nom de catégorie inconnu (jamais d’erreur)', async () => {
+      await store.loadAll();
+      expect(store.colorFor('N’existe pas')).toBe('#94a3b8');
+    });
+  });
 });

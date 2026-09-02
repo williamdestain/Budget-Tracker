@@ -11,11 +11,13 @@ import {
   ProvisionAdjustment,
   RecurringExpense,
   RecurringIncome,
+  Category,
   SavingsGoal,
   CreditCardPayment,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
+import { nextCategoryColor, sortedAlpha } from '../utils/categories';
 import { ymOf, prevYM, nextYM, monthLabel, monthShortLabel, fmtDate, isoOfDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import {
@@ -48,6 +50,8 @@ import {
   recurringExpenseToRow,
   rowToRecurringIncome,
   recurringIncomeToRow,
+  rowToCategory,
+  categoryToRow,
   rowToSavingsGoal,
   savingsGoalToRow,
   savingsContributionToRow,
@@ -251,6 +255,9 @@ export class BudgetStore {
   // (Income.recurringSourceId), générées automatiquement par
   // syncRecurringIncomes() à chaque chargement.
   readonly recurringIncomes = signal<RecurringIncome[]>([]);
+  // Catégories gérées dynamiquement (voir migration-016-categories.sql) —
+  // pilotent les menus déroulants et couleurs dans toute l'app.
+  readonly categories = signal<Category[]>([]);
   readonly budgets = signal<MonthlyAmountMap>(emptyMonthlyMap());
   readonly categoryBudgets = signal<CategoryBudgetMap>(emptyCategoryBudgetMap());
   readonly rollovers = signal<MonthlyAmountMap>(emptyMonthlyMap());
@@ -288,6 +295,7 @@ export class BudgetStore {
       adjustmentsRes,
       recurringExpensesRes,
       recurringIncomesRes,
+      categoriesRes,
       savingsGoalsRes,
       savingsContributionsRes,
       closedMonthsRes,
@@ -302,6 +310,7 @@ export class BudgetStore {
       client.from('provision_adjustments').select('*'),
       client.from('recurring_expenses').select('*').order('day_of_month'),
       client.from('recurring_incomes').select('*').order('day_of_month'),
+      client.from('categories').select('*').order('sort_order'),
       client.from('savings_goals').select('*'),
       client.from('savings_goal_contributions').select('*'),
       client.from('closed_months').select('*'),
@@ -319,6 +328,7 @@ export class BudgetStore {
         ['provision_adjustments', adjustmentsRes],
         ['recurring_expenses', recurringExpensesRes],
         ['recurring_incomes', recurringIncomesRes],
+        ['categories', categoriesRes],
         ['savings_goals', savingsGoalsRes],
         ['savings_goal_contributions', savingsContributionsRes],
         ['closed_months', closedMonthsRes],
@@ -354,6 +364,9 @@ export class BudgetStore {
     }
     if (!recurringIncomesRes.error) {
       this.recurringIncomes.set((recurringIncomesRes.data ?? []).map(rowToRecurringIncome));
+    }
+    if (!categoriesRes.error) {
+      this.categories.set((categoriesRes.data ?? []).map(rowToCategory));
     }
     // provisions dépend aussi de adjustmentsRes : une erreur sur l'une ou
     // l'autre peut faire recalculer des pots de provision incomplets, donc
@@ -2291,6 +2304,209 @@ export class BudgetStore {
     }
   }
 
+  // --- Catégories -----------------------------------------------------------
+  //
+  // Gérées dynamiquement (voir migration-016-categories.sql) au lieu d'une
+  // liste codée en dur. Le texte `category` stocké sur chaque dépense/
+  // provision/etc. reste toujours du texte libre — cette table ne pilote
+  // que les menus déroulants et les couleurs.
+
+  readonly activeCategories = computed(() => this.categories().filter((c) => !c.archived));
+
+  // Remplace l'ancien `sortedAlpha(CATEGORIES)` codé en dur.
+  activeCategoryNames(): string[] {
+    return sortedAlpha(this.activeCategories().map((c) => c.name));
+  }
+
+  // Couleur d'une catégorie par son NOM (comme l'ancien COLOR_MAP). Marche
+  // aussi pour une catégorie archivée, ou pour un nom historique qui ne
+  // correspond plus à aucune catégorie actuelle (ex. après un import ou
+  // une modification manuelle en base) : dans ce cas, gris neutre — jamais
+  // d'erreur, jamais de "trou" visuel.
+  colorFor(name: string): string {
+    return this.categories().find((c) => c.name === name)?.color ?? '#94a3b8';
+  }
+
+  async addCategory(name: string): Promise<Category> {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('Le nom de la catégorie ne peut pas être vide.');
+    if (this.categories().some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new Error(`La catégorie "${trimmed}" existe déjà.`);
+    }
+    const sortOrder = this.categories().length;
+    const row: Omit<Category, 'id'> = {
+      name: trimmed,
+      color: nextCategoryColor(sortOrder),
+      archived: false,
+      sortOrder,
+    };
+    const { data, error } = await this.supabase.client
+      .from('categories')
+      .insert(categoryToRow(row))
+      .select()
+      .single();
+    if (error) throw error;
+    const created = rowToCategory(data);
+    this.categories.update((list) => [...list, created]);
+    return created;
+  }
+
+  // Renomme une catégorie : met à jour son nom dans la liste, ET propage le
+  // changement de texte partout où l'ANCIEN nom est utilisé — SAUF dans
+  // les mois clôturés, qui ne sont JAMAIS modifiés (demande explicite :
+  // "laisser celle des mois clôturés"). Les entités structurelles sans
+  // mois propre (provisions, modèles de dépenses récurrentes) sont, elles,
+  // toujours mises à jour — elles n'appartiennent à aucun mois précis.
+  async renameCategory(id: string, newName: string): Promise<void> {
+    const trimmed = newName.trim();
+    if (!trimmed) throw new Error('Le nom de la catégorie ne peut pas être vide.');
+    const cat = this.categories().find((c) => c.id === id);
+    if (!cat) throw new Error('Catégorie introuvable.');
+    if (cat.name === trimmed) return;
+    if (
+      this.categories().some((c) => c.id !== id && c.name.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      throw new Error(`La catégorie "${trimmed}" existe déjà.`);
+    }
+    const oldName = cat.name;
+
+    const { error } = await this.supabase.client
+      .from('categories')
+      .update({ name: trimmed })
+      .eq('id', id);
+    if (error) throw error;
+    this.categories.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, name: trimmed } : c)),
+    );
+
+    // Dépenses — mois ouverts uniquement.
+    const expenseIds = this.expenses()
+      .filter((e) => e.category === oldName && !this.isMonthClosed(e.date.slice(0, 7)))
+      .map((e) => e.id);
+    if (expenseIds.length) {
+      const { error: expErr } = await this.supabase.client
+        .from('expenses')
+        .update({ category: trimmed })
+        .in('id', expenseIds);
+      if (expErr) throw expErr;
+      this.expenses.update((list) =>
+        list.map((e) => (expenseIds.includes(e.id) ? { ...e, category: trimmed } : e)),
+      );
+    }
+
+    // Provisions — entités structurelles, toujours mises à jour.
+    const provisionIds = this.provisions()
+      .filter((p) => p.category === oldName)
+      .map((p) => p.id);
+    if (provisionIds.length) {
+      const { error: provErr } = await this.supabase.client
+        .from('provisions')
+        .update({ category: trimmed })
+        .in('id', provisionIds);
+      if (provErr) throw provErr;
+      this.provisions.update((list) =>
+        list.map((p) => (provisionIds.includes(p.id) ? { ...p, category: trimmed } : p)),
+      );
+    }
+
+    // Modèles de dépenses récurrentes — structurel, toujours mis à jour.
+    const recurringIds = this.recurringExpenses()
+      .filter((r) => r.category === oldName)
+      .map((r) => r.id);
+    if (recurringIds.length) {
+      const { error: recErr } = await this.supabase.client
+        .from('recurring_expenses')
+        .update({ category: trimmed })
+        .in('id', recurringIds);
+      if (recErr) throw recErr;
+      this.recurringExpenses.update((list) =>
+        list.map((r) => (recurringIds.includes(r.id) ? { ...r, category: trimmed } : r)),
+      );
+    }
+
+    // Budgets par catégorie — mois ouverts uniquement. Upsert la nouvelle
+    // clé AVANT de retirer l'ancienne, pour ne jamais perdre le montant si
+    // une des deux requêtes échoue en cours de route.
+    for (const owner of ['moi', 'madame'] as Owner[]) {
+      const budgetsForOwner = this.categoryBudgets()[owner];
+      const yms = Object.keys(budgetsForOwner).filter(
+        (ym) => !this.isMonthClosed(ym) && budgetsForOwner[ym]?.[oldName] !== undefined,
+      );
+      for (const ym of yms) {
+        const amount = budgetsForOwner[ym][oldName];
+        const { error: upErr } = await this.supabase.client
+          .from('category_budgets')
+          .upsert({ owner, ym, category: trimmed, amount }, { onConflict: 'owner,ym,category' });
+        if (upErr) throw upErr;
+        const { error: delErr } = await this.supabase.client
+          .from('category_budgets')
+          .delete()
+          .eq('owner', owner)
+          .eq('ym', ym)
+          .eq('category', oldName);
+        if (delErr) throw delErr;
+        this.categoryBudgets.update((map) => {
+          const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
+          const catMap = { ...copy[owner][ym] };
+          delete catMap[oldName];
+          catMap[trimmed] = amount;
+          copy[owner] = { ...copy[owner], [ym]: catMap };
+          return copy;
+        });
+      }
+    }
+  }
+
+  // Archive une catégorie : disparaît des menus déroulants pour les
+  // NOUVELLES entrées, mais AUCUNE donnée existante n'est jamais touchée —
+  // ni dans les mois ouverts, ni dans les mois clôturés. Réversible. C'est
+  // la façon recommandée de "supprimer" une catégorie déjà utilisée.
+  async archiveCategory(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('categories')
+      .update({ archived: true })
+      .eq('id', id);
+    if (error) throw error;
+    this.categories.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, archived: true } : c)),
+    );
+  }
+
+  async unarchiveCategory(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('categories')
+      .update({ archived: false })
+      .eq('id', id);
+    if (error) throw error;
+    this.categories.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, archived: false } : c)),
+    );
+  }
+
+  // Suppression définitive : uniquement si la catégorie n'est utilisée
+  // NULLE PART (aucun risque de casser un lien vers des données
+  // existantes) — sinon on refuse et on suggère l'archivage à la place.
+  async deleteCategoryPermanently(id: string): Promise<void> {
+    const cat = this.categories().find((c) => c.id === id);
+    if (!cat) throw new Error('Catégorie introuvable.');
+    const inUse =
+      this.expenses().some((e) => e.category === cat.name) ||
+      this.provisions().some((p) => p.category === cat.name) ||
+      this.recurringExpenses().some((r) => r.category === cat.name) ||
+      Object.values(this.categoryBudgets().moi).some((m) => cat.name in m) ||
+      Object.values(this.categoryBudgets().madame).some((m) => cat.name in m);
+    if (inUse) {
+      throw new Error(
+        `"${cat.name}" est encore utilisée quelque part — impossible de la supprimer ` +
+          `définitivement sans risquer de perdre le lien avec des données existantes. ` +
+          `Utilise plutôt "Archiver" pour la retirer des listes sans rien casser.`,
+      );
+    }
+    const { error } = await this.supabase.client.from('categories').delete().eq('id', id);
+    if (error) throw error;
+    this.categories.update((list) => list.filter((c) => c.id !== id));
+  }
+
   // En vue Global, retire le report des DEUX profils pour ce mois (le report
   // Global affiché n'est que leur somme, jamais stocké séparément).
   async removeRollover(owner: OwnerOrGlobal, ym: string): Promise<void> {
@@ -2422,6 +2638,12 @@ export class BudgetStore {
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
     this.creditCardPayments.set([]);
+    // `categories` n'est volontairement PAS vidé ici : c'est une liste de
+    // configuration/taxonomie (comme les profils Moi/Madame), pas une
+    // donnée financière — "Réinitialiser toutes les données" ne doit pas
+    // obliger à reconfigurer ses catégories personnalisées à chaque fois.
+    // Voir aussi reset_everything() côté SQL (migration-008/013/015),
+    // qui exclut aussi delete from categories pour la même raison.
   }
 
   // Restaure une sauvegarde .json exportée précédemment : remplace TOUTES
@@ -2591,6 +2813,28 @@ export class BudgetStore {
       if (error) throw error;
     }
 
+    // Optionnel : absent des sauvegardes exportées avant l'ajout des
+    // catégories dynamiques (migration-016). Un compte a déjà les
+    // catégories par défaut dès sa création (seed de la migration) — on ne
+    // réimporte donc que les catégories vraiment nouvelles (personnalisées),
+    // en comparant par NOM (insensible à la casse), sans jamais écraser ou
+    // dupliquer une catégorie existante.
+    if (Array.isArray(data.categories) && data.categories.length) {
+      const existingNames = new Set(this.categories().map((c) => c.name.toLowerCase()));
+      const newCategories = (data.categories as Category[]).filter(
+        (c) => !existingNames.has(c.name.toLowerCase()),
+      );
+      if (newCategories.length) {
+        const rows = newCategories.map((c) => ({ id: idFor(c.id), ...categoryToRow(c) }));
+        const { data: inserted, error } = await this.supabase.client
+          .from('categories')
+          .insert(rows)
+          .select();
+        if (error) throw error;
+        this.categories.update((list) => [...list, ...(inserted ?? []).map(rowToCategory)]);
+      }
+    }
+
     // Optionnel : absent des sauvegardes exportées avant l'ajout du suivi
     // de carte de crédit (migration-012).
     if (Array.isArray(data.creditCardPayments) && data.creditCardPayments.length) {
@@ -2737,6 +2981,7 @@ export class BudgetStore {
       savingsGoals: this.savingsGoals(),
       recurringExpenses: this.recurringExpenses(),
       recurringIncomes: this.recurringIncomes(),
+      categories: this.categories(),
       budgets: this.budgets(),
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),

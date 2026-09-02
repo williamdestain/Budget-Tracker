@@ -1,8 +1,7 @@
-import { Component, signal } from '@angular/core';
+import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner, ProvisionIntervalUnit } from '../../../core/models/budget.models';
-import { CATEGORIES, sortedAlpha } from '../../../core/utils/categories';
 import { isoOfDate } from '../../../core/utils/date.utils';
 
 const MOIS_NOMS = [
@@ -17,9 +16,6 @@ const MOIS_NOMS = [
   styleUrl: './provision-form.scss',
 })
 export class ProvisionForm {
-  readonly categories = sortedAlpha(
-    CATEGORIES.filter((c) => !['Revenu', 'Versement'].includes(c)),
-  );
   readonly open = signal(false);
   readonly saving = signal(false);
 
@@ -29,7 +25,7 @@ export class ProvisionForm {
   readonly years = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - 4 + i);
 
   name = '';
-  category = this.categories[0];
+  category = '';
   amount: number | null = null;
   intervalUnit: ProvisionIntervalUnit = 'months';
   everyN: number | null = null;
@@ -43,7 +39,18 @@ export class ProvisionForm {
   // la date de la prochaine échéance eux-mêmes (voir provision-card).
   autoRecalibrate = true;
 
-  constructor(private store: BudgetStore) {}
+  constructor(public store: BudgetStore) {
+    // Catégories chargées dynamiquement depuis le store — remplace
+    // l'ancienne liste codée en dur.
+    effect(() => {
+      const list = this.categories();
+      if (list.length && !this.category) this.category = list[0];
+    });
+  }
+
+  categories(): string[] {
+    return this.store.activeCategoryNames().filter((c) => !['Revenu', 'Versement'].includes(c));
+  }
 
   toggle(): void {
     this.open.update((v) => !v);

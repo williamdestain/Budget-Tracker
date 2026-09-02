@@ -1,7 +1,7 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP, OWNERS, OWNERS_SHORT, CATEGORIES, sortedAlpha } from '../../../core/utils/categories';
+import { OWNERS, OWNERS_SHORT } from '../../../core/utils/categories';
 import { fmtDate } from '../../../core/utils/date.utils';
 import { fmt } from '../../../core/utils/currency.utils';
 import { Expense, Owner } from '../../../core/models/budget.models';
@@ -14,11 +14,6 @@ import { CountedExpense } from '../../../core/utils/provision.utils';
   styleUrl: './expense-list.scss',
 })
 export class ExpenseList {
-  // Même exclusion que le formulaire d'ajout — voir expense-form.ts.
-  readonly categories = sortedAlpha(
-    CATEGORIES.filter((c) => c !== 'Revenu' && c !== 'Remboursement Carte Crédit'),
-  );
-
   readonly editingId = signal<string | null>(null);
   readonly savingEdit = signal(false);
 
@@ -29,6 +24,22 @@ export class ExpenseList {
   editCc = false;
 
   constructor(public store: BudgetStore) {}
+
+  // Catégories chargées dynamiquement depuis le store (voir "🏷️ Gérer les
+  // catégories"). Même exclusion que le formulaire d'ajout — voir
+  // expense-form.ts. Inclut aussi la catégorie de la ligne en cours
+  // d'édition même si elle a depuis été archivée/renommée, pour ne jamais
+  // faire disparaître ou changer silencieusement une valeur existante à
+  // l'ouverture du formulaire d'édition.
+  categoryOptions(): string[] {
+    const active = this.store
+      .activeCategoryNames()
+      .filter((c) => c !== 'Revenu' && c !== 'Remboursement Carte Crédit');
+    if (this.editCategory && !active.includes(this.editCategory)) {
+      return [this.editCategory, ...active];
+    }
+    return active;
+  }
 
   // Dépenses réelles + réserves synthétiques des provisions (même logique
   // que l'ancienne app) : les réserves complètent la liste sans dupliquer
@@ -46,7 +57,7 @@ export class ExpenseList {
   }
 
   colorFor(category: string): string {
-    return COLOR_MAP[category] || '#94a3b8';
+    return this.store.colorFor(category);
   }
 
   ownerShort(owner: Owner): string {

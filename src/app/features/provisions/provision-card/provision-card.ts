@@ -4,7 +4,6 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Provision } from '../../../core/models/budget.models';
 import { fmt } from '../../../core/utils/currency.utils';
 import { fmtDate, isoOfDate } from '../../../core/utils/date.utils';
-import { COLOR_MAP } from '../../../core/utils/categories';
 import * as PU from '../../../core/utils/provision.utils';
 import { ToastService } from '../../../core/services/toast.service';
 
@@ -155,7 +154,7 @@ export class ProvisionCard {
   });
 
   colorDot(): string {
-    return COLOR_MAP[this.provision().category] || '#94a3b8';
+    return this.store.colorFor(this.provision().category);
   }
 
   barWidth(): number {

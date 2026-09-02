@@ -1,7 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
-import { COLOR_MAP } from '../../../core/utils/categories';
 
 @Component({
   selector: 'app-month-comparison',
@@ -23,7 +22,7 @@ export class MonthComparison {
   }
 
   colorFor(category: string): string {
-    return COLOR_MAP[category] || '#94a3b8';
+    return this.store.colorFor(category);
   }
 
   // Signe + couleur d'une variation : plus dépensé = rouge (mauvaise

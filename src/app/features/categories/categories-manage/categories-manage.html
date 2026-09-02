@@ -1,0 +1,90 @@
+<button class="seg" (click)="toggle()" title="Ajouter, renommer ou archiver des catégories">
+  🏷️ Catégories
+</button>
+
+@if (open()) {
+  <div class="reset-overlay open" (click)="onOverlayClick($event)">
+    <div class="reset-modal">
+      <div class="reset-modal-header">
+        <h2>🏷️ Catégories</h2>
+        <button class="reset-close" (click)="close()" aria-label="Fermer">✕</button>
+      </div>
+      <p class="reset-sub">
+        Renommer met à jour les dépenses, provisions et budgets déjà existants
+        — sauf dans les mois clôturés, jamais modifiés. Archiver retire une
+        catégorie des listes sans jamais toucher à l'historique.
+      </p>
+
+      <div class="cat-add-row">
+        <input
+          type="text"
+          placeholder="Nouvelle catégorie…"
+          [(ngModel)]="newName"
+          (keydown.enter)="add()"
+          [disabled]="saving()"
+        />
+        <button class="seg" (click)="add()" [disabled]="saving() || !newName.trim()">
+          + Ajouter
+        </button>
+      </div>
+
+      <div class="reset-divider"></div>
+
+      <div class="cat-list">
+        @for (c of activeList; track c.id) {
+          <div class="cat-row">
+            <span class="cat-dot" [style.background]="c.color"></span>
+            @if (editingId() === c.id) {
+              <input
+                type="text"
+                class="cat-edit-input"
+                [(ngModel)]="editName"
+                (keydown.enter)="saveEdit(c.id)"
+                (keydown.escape)="cancelEdit()"
+                autofocus
+              />
+              <button class="cat-icon-btn" title="Enregistrer" (click)="saveEdit(c.id)">✓</button>
+              <button class="cat-icon-btn" title="Annuler" (click)="cancelEdit()">✕</button>
+            } @else {
+              <span class="cat-name">{{ c.name }}</span>
+              <button class="cat-icon-btn" title="Renommer" (click)="startEdit(c)">✏️</button>
+              <button class="cat-icon-btn" title="Archiver" (click)="archive(c)">🗄️</button>
+            }
+          </div>
+        }
+        @if (activeList.length === 0) {
+          <p class="reset-sub">Aucune catégorie active.</p>
+        }
+      </div>
+
+      @if (archivedList.length) {
+        <div class="reset-divider"></div>
+        <button class="cat-toggle-archived" (click)="showArchived.set(!showArchived())">
+          {{ showArchived() ? '▾' : '▸' }} Catégories archivées ({{ archivedList.length }})
+        </button>
+        @if (showArchived()) {
+          <div class="cat-list">
+            @for (c of archivedList; track c.id) {
+              <div class="cat-row cat-row-archived">
+                <span class="cat-dot" [style.background]="c.color"></span>
+                <span class="cat-name">{{ c.name }}</span>
+                <button class="cat-icon-btn" title="Restaurer" (click)="unarchive(c)">↩️</button>
+                <button
+                  class="cat-icon-btn cat-danger"
+                  title="Supprimer définitivement (uniquement si inutilisée)"
+                  (click)="deleteForever(c)"
+                >
+                  🗑️
+                </button>
+              </div>
+            }
+          </div>
+        }
+      }
+
+      <div class="reset-actions">
+        <button class="seg" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

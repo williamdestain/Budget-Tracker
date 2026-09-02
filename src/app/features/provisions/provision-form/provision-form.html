@@ -14,7 +14,7 @@
         <div class="field">
           <label for="prov-category">Catégorie liée</label>
           <select id="prov-category" name="category" [(ngModel)]="category" required>
-            @for (c of categories; track c) {
+            @for (c of categories(); track c) {
               <option [value]="c">{{ c }}</option>
             }
           </select>

@@ -19,7 +19,7 @@
       <div class="field field-category">
         <label>Catégorie</label>
         <select name="category" [(ngModel)]="category">
-          @for (c of categories; track c) {
+          @for (c of categories(); track c) {
             <option [value]="c">{{ c }}</option>
           }
         </select>

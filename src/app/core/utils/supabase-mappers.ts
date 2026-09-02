@@ -8,6 +8,7 @@ import {
   ProvisionAdjustment,
   RecurringExpense,
   RecurringIncome,
+  Category,
   SavingsGoal,
   SavingsContribution,
   CreditCardPayment,
@@ -98,6 +99,25 @@ export function incomeToRow(i: Omit<Income, 'id'> | Income): any {
     recurring_interval: i.recurringInterval,
     recurring_start_month: i.recurringStartMonth,
     recurring_source_id: i.recurringSourceId ?? null,
+  };
+}
+
+export function rowToCategory(row: any): Category {
+  return {
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    archived: row.archived,
+    sortOrder: row.sort_order,
+  };
+}
+
+export function categoryToRow(c: Omit<Category, 'id'> | Category): any {
+  return {
+    name: c.name,
+    color: c.color,
+    archived: c.archived,
+    sort_order: c.sortOrder,
   };
 }
 

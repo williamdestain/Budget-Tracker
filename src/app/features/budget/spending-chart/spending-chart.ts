@@ -1,6 +1,5 @@
 import { Component, computed, signal } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 
 interface ChartSegment {
@@ -52,7 +51,7 @@ export class SpendingChart {
         category,
         amount,
         pct,
-        color: COLOR_MAP[category] || '#94a3b8',
+        color: this.store.colorFor(category),
         dash: Math.max(length - gap, 0.5),
         gap: CIRC - Math.max(length - gap, 0.5),
         offset,

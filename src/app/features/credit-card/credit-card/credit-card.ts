@@ -1,7 +1,7 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { COLOR_MAP, OWNERS } from '../../../core/utils/categories';
+import { OWNERS } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 import { fmtDate, isoOfDate } from '../../../core/utils/date.utils';
 import { ToastService } from '../../../core/services/toast.service';
@@ -86,7 +86,7 @@ export class CreditCard {
   });
 
   colorFor(category: string): string {
-    return COLOR_MAP[category] || '#94a3b8';
+    return this.store.colorFor(category);
   }
 
   fmt(n: number): string {

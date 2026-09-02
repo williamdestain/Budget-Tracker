@@ -1,7 +1,6 @@
 import { Component, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { CATEGORIES, COLOR_MAP, sortedAlpha } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 import { RECURRING_EXPENSE_INTERVAL_LABELS } from '../../../core/utils/recurring-expense.utils';
 import { Owner, RecurringExpenseInterval } from '../../../core/models/budget.models';
@@ -13,7 +12,6 @@ import { Owner, RecurringExpenseInterval } from '../../../core/models/budget.mod
   styleUrl: './recurring-expenses-manage.scss',
 })
 export class RecurringExpensesManage {
-  readonly categories = sortedAlpha(CATEGORIES.filter((c) => c !== 'Revenu'));
   readonly open = signal(false);
   readonly saving = signal(false);
   readonly intervalOptions: RecurringExpenseInterval[] = ['monthly', 'weekly', 'biweekly', 'semimonthly'];
@@ -21,7 +19,7 @@ export class RecurringExpensesManage {
 
   name = '';
   amount: number | null = null;
-  category = this.categories[0];
+  category = '';
   interval: RecurringExpenseInterval = 'monthly';
   dayOfMonth = 1;
   secondDayOfMonth = 15;
@@ -35,10 +33,19 @@ export class RecurringExpensesManage {
       const active = this.store.activeOwner();
       if (active === 'moi' || active === 'madame') this.owner = active;
     });
+    // Catégories chargées dynamiquement depuis le store.
+    effect(() => {
+      const list = this.categories();
+      if (list.length && !this.category) this.category = list[0];
+    });
+  }
+
+  categories(): string[] {
+    return this.store.activeCategoryNames().filter((c) => c !== 'Revenu');
   }
 
   colorFor(category: string): string {
-    return COLOR_MAP[category] || '#94a3b8';
+    return this.store.colorFor(category);
   }
 
   fmt(n: number): string {

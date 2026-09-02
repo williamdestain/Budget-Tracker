@@ -77,6 +77,19 @@ export interface Income {
 // seules les prochaines s'arrêtent.
 export type IncomeRecurringInterval = 'monthly' | 'weekly' | 'biweekly' | 'semimonthly';
 
+// Catégorie de dépense/provision, gérée dynamiquement (ajout/renommage/
+// archivage) — voir migration-016-categories.sql. La couleur est figée à
+// la création (jamais recalculée depuis la position dans une liste), pour
+// qu'ajouter ou archiver une catégorie ne fasse jamais changer la couleur
+// des autres, déjà utilisée ailleurs dans l'app (graphiques, badges...).
+export interface Category {
+  id: string;
+  name: string;
+  color: string;
+  archived: boolean;
+  sortOrder: number;
+}
+
 export interface RecurringIncome {
   id: string;
   amount: number; // montant d'UNE occurrence (pas une moyenne)

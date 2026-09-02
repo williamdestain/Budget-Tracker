@@ -35,7 +35,7 @@
               <input type="text" value="💳↩️ Remboursement Carte Crédit" disabled />
             } @else {
               <select name="editCategory" [(ngModel)]="editCategory">
-                @for (c of categories; track c) {
+                @for (c of categoryOptions(); track c) {
                   <option [value]="c">{{ c }}</option>
                 }
               </select>
