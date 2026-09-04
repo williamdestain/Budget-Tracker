@@ -1,0 +1,89 @@
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="logo">🏠</div>
+    <h1>Bienvenue</h1>
+
+    @switch (mode()) {
+      @case ('choose') {
+        <p class="subtitle">
+          Ce compte n'est encore rattaché à aucun foyer. Crée un nouveau foyer,
+          ou rejoins celui de ta/ton conjoint(e) avec son code.
+        </p>
+        <div class="choice-buttons">
+          <button type="button" class="btn-primary" (click)="mode.set('create')">
+            🆕 Créer un nouveau foyer
+          </button>
+          <button type="button" class="btn-secondary" (click)="mode.set('join')">
+            🔑 Rejoindre un foyer existant
+          </button>
+        </div>
+        <button type="button" class="link-btn" (click)="logout()">Se déconnecter</button>
+      }
+
+      @case ('create') {
+        <p class="subtitle">Quel est ton profil dans ce foyer ?</p>
+        <div class="owner-choice">
+          <label class="radio-card">
+            <input type="radio" name="ownerLabel" value="moi" [(ngModel)]="ownerLabel" />
+            Moi
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="ownerLabel" value="madame" [(ngModel)]="ownerLabel" />
+            Madame
+          </label>
+        </div>
+        @if (error()) {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        <button type="button" class="btn-primary" [disabled]="loading()" (click)="create()">
+          {{ loading() ? 'Création…' : 'Créer le foyer' }}
+        </button>
+        <button type="button" class="link-btn" (click)="mode.set('choose')">← Retour</button>
+      }
+
+      @case ('join') {
+        <p class="subtitle">Entre le code partagé par ta/ton conjoint(e).</p>
+        <label for="code">Code du foyer</label>
+        <input
+          id="code"
+          type="text"
+          maxlength="6"
+          placeholder="Ex. A3F9K2"
+          [(ngModel)]="codeInput"
+          style="text-transform: uppercase; text-align: center; font-size: 20px; letter-spacing: 3px;"
+        />
+        <p class="subtitle" style="margin-top: 14px;">Quel est ton profil ?</p>
+        <div class="owner-choice">
+          <label class="radio-card">
+            <input type="radio" name="ownerLabelJoin" value="moi" [(ngModel)]="ownerLabel" />
+            Moi
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="ownerLabelJoin" value="madame" [(ngModel)]="ownerLabel" />
+            Madame
+          </label>
+        </div>
+        @if (error()) {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        <button type="button" class="btn-primary" [disabled]="loading() || !codeInput.trim()" (click)="join()">
+          {{ loading() ? 'Connexion…' : 'Rejoindre ce foyer' }}
+        </button>
+        <button type="button" class="link-btn" (click)="mode.set('choose')">← Retour</button>
+      }
+
+      @case ('created') {
+        <p class="subtitle">Foyer créé 🎉 Partage ce code avec ta/ton conjoint(e) :</p>
+        <div class="join-code-display">{{ joinCode() }}</div>
+        <p class="hint">
+          Elle/il pourra rejoindre ce même foyer depuis son propre compte, en
+          choisissant "Rejoindre un foyer existant" et en entrant ce code. Tu
+          peux le retrouver plus tard dans les paramètres du foyer.
+        </p>
+        <button type="button" class="btn-primary" (click)="continueToApp()">
+          Continuer vers l'app
+        </button>
+      }
+    }
+  </div>
+</div>

@@ -109,6 +109,19 @@ class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
     return this;
   }
 
+  // Sur le vrai client Supabase, .single() lève une erreur s'il n'y a pas
+  // exactement 1 ligne, alors que .maybeSingle() renvoie simplement `null`
+  // sans erreur pour 0 ligne — distinction importante pour
+  // resolveHousehold() (l'absence de foyer n'est PAS une erreur). Ce faux
+  // client ne modélise pas la levée d'erreur de .single() sur 0 ligne (déjà
+  // le cas avant cet ajout), donc les deux méthodes partagent la même
+  // implémentation ici ; le nom est gardé distinct pour que le code appelant
+  // reste correct une fois branché sur le vrai client.
+  maybeSingle(): this {
+    this.wantSingle = true;
+    return this;
+  }
+
   private run(): { data: any; error: any } {
     if (this.forcedError) {
       return { data: null, error: this.forcedError };
@@ -211,7 +224,17 @@ export class FakeSupabaseClient {
   // seule des tables concernées est en erreur simulée, AUCUNE table n'est
   // vidée (comme une vraie transaction Postgres qui rollback entièrement),
   // et l'erreur de cette table est renvoyée telle quelle.
-  async rpc(fn: string, _params?: Record<string, unknown>): Promise<{ data: any; error: any }> {
+  // Identifiant "auth.uid()" simulé pour ce faux client — settable par les
+  // tests (setCurrentUser) pour simuler des comptes distincts lors des
+  // tests de create_household()/join_household().
+  currentUserId = 'test-user-1';
+  setCurrentUser(id: string): void {
+    this.currentUserId = id;
+  }
+
+  async rpc(fn: string, params?: Record<string, unknown>): Promise<{ data: any; error: any }> {
+    if (fn === 'create_household') return this.fakeCreateHousehold(params);
+    if (fn === 'join_household') return this.fakeJoinHousehold(params);
     if (fn !== 'reset_everything') {
       return { data: null, error: { message: `RPC non supportée par le faux client: ${fn}` } };
     }
@@ -223,6 +246,7 @@ export class FakeSupabaseClient {
       'savings_goals',
       'savings_goal_contributions',
       'recurring_expenses',
+      'recurring_incomes',
       'budgets',
       'category_budgets',
       'rollovers',
@@ -238,6 +262,61 @@ export class FakeSupabaseClient {
       this.tables[t] = [];
     });
     return { data: null, error: null };
+  }
+
+  // Reproduit les règles métier de create_household()/join_household()
+  // (voir migration-017-households.sql) : un compte = un seul foyer, un
+  // foyer = un "moi" + une "madame" maximum. Ne simule PAS la génération
+  // des catégories par défaut (hors périmètre des tests unitaires du
+  // store, qui seedent leurs propres catégories si besoin).
+  private fakeCreateHousehold(params?: Record<string, unknown>) {
+    const ownerLabel = params?.['p_owner_label'] as string;
+    const name = (params?.['p_name'] as string) ?? 'Mon foyer';
+    if (!['moi', 'madame'].includes(ownerLabel)) {
+      return { data: null, error: { message: `Profil invalide : ${ownerLabel}` } };
+    }
+    const members = this.tables['household_members'] ?? [];
+    if (members.some((m) => m['user_id'] === this.currentUserId)) {
+      return { data: null, error: { message: 'Ce compte appartient déjà à un foyer.' } };
+    }
+    const householdId = nextId();
+    const joinCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+    if (!this.tables['households']) this.tables['households'] = [];
+    if (!this.tables['household_members']) this.tables['household_members'] = [];
+    this.tables['households'].push({ id: householdId, name, join_code: joinCode });
+    this.tables['household_members'].push({
+      id: nextId(),
+      household_id: householdId,
+      user_id: this.currentUserId,
+      owner_label: ownerLabel,
+    });
+    return { data: [{ household_id: householdId, join_code: joinCode }], error: null };
+  }
+
+  private fakeJoinHousehold(params?: Record<string, unknown>) {
+    const code = ((params?.['p_code'] as string) ?? '').toUpperCase().trim();
+    const ownerLabel = params?.['p_owner_label'] as string;
+    if (!['moi', 'madame'].includes(ownerLabel)) {
+      return { data: null, error: { message: `Profil invalide : ${ownerLabel}` } };
+    }
+    const members = this.tables['household_members'] ?? [];
+    if (members.some((m) => m['user_id'] === this.currentUserId)) {
+      return { data: null, error: { message: 'Ce compte appartient déjà à un foyer.' } };
+    }
+    const household = (this.tables['households'] ?? []).find((h) => h['join_code'] === code);
+    if (!household) {
+      return { data: null, error: { message: 'Code invalide.' } };
+    }
+    if (members.some((m) => m['household_id'] === household['id'] && m['owner_label'] === ownerLabel)) {
+      return { data: null, error: { message: `Le profil "${ownerLabel}" existe déjà dans ce foyer.` } };
+    }
+    this.tables['household_members'].push({
+      id: nextId(),
+      household_id: household['id'],
+      user_id: this.currentUserId,
+      owner_label: ownerLabel,
+    });
+    return { data: household['id'], error: null };
   }
 
   // Sous-ensemble minimal de l'API auth, pas utilisé par BudgetStore

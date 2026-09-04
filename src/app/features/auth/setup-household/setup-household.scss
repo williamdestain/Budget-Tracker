@@ -1,0 +1,108 @@
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+}
+.logo {
+  font-size: 36px;
+}
+h1 {
+  font-size: 20px;
+  margin: 8px 0 2px;
+}
+.subtitle {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  display: block;
+  text-align: left;
+  margin-top: 8px;
+}
+input[type='text'] {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  width: 100%;
+  margin-top: 6px;
+}
+.error {
+  color: var(--red);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+button {
+  width: 100%;
+}
+.btn-primary {
+  margin-top: 16px;
+}
+.btn-secondary {
+  margin-top: 10px;
+  background: var(--surface-soft, rgba(148, 163, 184, 0.12));
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.choice-buttons {
+  display: flex;
+  flex-direction: column;
+}
+.link-btn {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.owner-choice {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.radio-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13.5px;
+  cursor: pointer;
+  margin-top: 0;
+}
+.join-code-display {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  background: var(--surface-soft, rgba(148, 163, 184, 0.12));
+  border-radius: 12px;
+  padding: 16px;
+  margin: 4px 0 14px;
+}
+.hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}

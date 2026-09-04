@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
+import { signal, ApplicationRef } from '@angular/core';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BudgetStore } from './budget-store.service';
 import { SupabaseService } from './supabase.service';
+import { AuthService } from './auth.service';
 import { FakeSupabaseClient } from '../testing/fake-supabase-client';
 import { ymOf, nextYM } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
@@ -15,6 +17,7 @@ import { provisionPot } from '../utils/provision.utils';
 describe('BudgetStore (intégration avec faux Supabase)', () => {
   let store: BudgetStore;
   let fakeClient: FakeSupabaseClient;
+  const TEST_HOUSEHOLD_ID = 'household-1';
 
   beforeEach(() => {
     fakeClient = new FakeSupabaseClient();
@@ -25,6 +28,12 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       ],
     });
     store = TestBed.inject(BudgetStore);
+    // Foyer résolu par défaut (voir migration-017-households.sql) — sans
+    // ça, toute écriture (addExpense, closeMonth, etc.) lèverait "Foyer non
+    // résolu" via BudgetStore.hid(). Les tests qui portent spécifiquement
+    // sur la résolution/création/adhésion à un foyer (describe('Foyers'))
+    // repartent d'un store sans foyer, volontairement.
+    store.householdId.set(TEST_HOUSEHOLD_ID);
   });
 
   describe('loadAll()', () => {
@@ -2023,6 +2032,123 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     it('colorFor() retombe sur un gris neutre pour un nom de catégorie inconnu (jamais d’erreur)', async () => {
       await store.loadAll();
       expect(store.colorFor('N’existe pas')).toBe('#94a3b8');
+    });
+  });
+
+  // Modèle multi-foyers (correction du P0 de l'audit — voir
+  // migration-017-households.sql, AUDIT_PRODUCTION_FUSION.md §2). Ces
+  // tests repartent volontairement d'un store SANS foyer résolu
+  // (householdId non défini par le beforeEach global, contrairement au
+  // reste de la suite) pour tester précisément ce flux.
+  describe('Foyers', () => {
+    beforeEach(() => {
+      // Repart sans foyer — annule le household de test par défaut posé
+      // par le beforeEach global, pour tester la résolution elle-même.
+      store.householdId.set(null);
+    });
+
+    it("écrire sans foyer résolu lève une erreur claire plutôt qu'un household_id null envoyé au serveur", async () => {
+      await expect(
+        store.addIncome({
+          amount: 100, type: 'Autre', date: '2026-07-05', owner: 'moi', note: '',
+          recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
+          recurringSourceId: null,
+        }),
+      ).rejects.toThrow(/Foyer non résolu/);
+    });
+
+    it("resolveHousehold() détecte l'absence de foyer (needsHouseholdSetup)", async () => {
+      await store.resolveHousehold();
+      expect(store.needsHouseholdSetup()).toBe(true);
+      expect(store.householdId()).toBeNull();
+    });
+
+    it('resolveHousehold() résout le foyer existant du compte connecté', async () => {
+      fakeClient.seed('household_members', [
+        { id: 'm1', household_id: 'h1', user_id: 'test-user-1', owner_label: 'madame' },
+      ]);
+      await store.resolveHousehold();
+      expect(store.needsHouseholdSetup()).toBe(false);
+      expect(store.householdId()).toBe('h1');
+      expect(store.myOwnerLabel()).toBe('madame');
+    });
+
+    it('createHousehold() crée un foyer, résout householdId/myOwnerLabel, et retourne un code à partager', async () => {
+      const { joinCode } = await store.createHousehold('moi', 'Chez nous');
+      expect(store.householdId()).not.toBeNull();
+      expect(store.myOwnerLabel()).toBe('moi');
+      expect(store.needsHouseholdSetup()).toBe(false);
+      expect(joinCode).toMatch(/^[A-Z0-9]{6}$/);
+    });
+
+    it('createHousehold() est refusé si le compte a déjà un foyer', async () => {
+      await store.createHousehold('moi');
+      await expect(store.createHousehold('madame')).rejects.toThrow(/appartient déjà à un foyer/);
+    });
+
+    it("joinHousehold() rejoint un foyer existant via son code et résout l'état local", async () => {
+      // Simule Madame en créant le foyer avec un autre "compte" (autre
+      // user_id simulé), pour rejoindre ensuite avec le compte de test par
+      // défaut — sinon createHousehold() puis joinHousehold() avec le
+      // MÊME user_id échouerait ("appartient déjà à un foyer"), comme
+      // prévu par les règles métier.
+      fakeClient.setCurrentUser('user-madame');
+      const { joinCode } = await store.createHousehold('madame');
+      fakeClient.setCurrentUser('test-user-1');
+
+      await store.joinHousehold(joinCode, 'moi');
+      expect(store.householdId()).not.toBeNull();
+      expect(store.myOwnerLabel()).toBe('moi');
+    });
+
+    it('joinHousehold() est refusé avec un code invalide', async () => {
+      await expect(store.joinHousehold('BADCOD', 'moi')).rejects.toThrow(/Code invalide/);
+    });
+
+    it('joinHousehold() est refusé si le profil demandé existe déjà dans ce foyer', async () => {
+      fakeClient.setCurrentUser('user-madame');
+      const { joinCode } = await store.createHousehold('madame');
+      fakeClient.setCurrentUser('test-user-1');
+
+      await expect(store.joinHousehold(joinCode, 'madame')).rejects.toThrow(/existe déjà dans ce foyer/);
+    });
+  });
+
+  // Test isolé (TestBed dédié) : vérifie qu'un changement de session RÉEL
+  // (connecté -> déconnecté) vide bien tout l'état du store — sécurité
+  // importante pour un navigateur partagé où un 2e compte se connecte
+  // sans recharger la page (voir le commentaire du constructeur de
+  // BudgetStore). N'utilise pas le beforeEach global : a besoin de
+  // contrôler le signal `session` d'AuthService directement.
+  describe('Sécurité : vidage de l’état à la déconnexion (changement de compte sans rechargement)', () => {
+    it("clearAllState() se déclenche sur une vraie transition connecté → déconnecté, pas sur l'état initial", async () => {
+      const fakeSession = signal<{ user: { id: string } } | null>({ user: { id: 'u1' } });
+      const isolatedClient = new FakeSupabaseClient();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          BudgetStore,
+          { provide: SupabaseService, useValue: { client: isolatedClient } },
+          { provide: AuthService, useValue: { session: fakeSession } },
+        ],
+      });
+      const isolatedStore = TestBed.inject(BudgetStore);
+      const appRef = TestBed.inject(ApplicationRef);
+      appRef.tick(); // 1er passage de l'effect : session active -> hadSession devient true
+
+      // Connecté dès le départ : household + une dépense chargée.
+      isolatedStore.householdId.set('household-x');
+      await isolatedStore.addExpense({
+        amount: 20, category: 'Courses', date: '2026-07-01', owner: 'moi', cc: false,
+      });
+      expect(isolatedStore.expenses().length).toBe(1);
+
+      // Vraie déconnexion.
+      fakeSession.set(null);
+      appRef.tick(); // 2e passage : détecte la transition et vide l'état
+
+      expect(isolatedStore.householdId()).toBeNull();
+      expect(isolatedStore.expenses()).toEqual([]);
     });
   });
 });

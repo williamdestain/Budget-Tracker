@@ -1,5 +1,6 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, effect, signal } from '@angular/core';
 import { SupabaseService } from './supabase.service';
+import { AuthService } from './auth.service';
 import {
   Expense,
   Income,
@@ -242,6 +243,85 @@ const SURPLUS_CARRY_NOTE = 'Surplus reporté du cycle précédent';
 
 @Injectable({ providedIn: 'root' })
 export class BudgetStore {
+  // Foyer de l'utilisateur connecté (voir migration-017-households.sql) —
+  // résolu par resolveHousehold() avant tout chargement/écriture de
+  // données. Toute donnée créée depuis l'app DOIT porter ce household_id
+  // (la RLS le vérifie aussi côté serveur, mais l'envoyer nous-mêmes évite
+  // un aller-retour d'erreur inutile et rend l'intention explicite dans le
+  // code). `null` = pas encore résolu OU compte sans foyer (voir
+  // needsHouseholdSetup ci-dessous, qui pilote l'écran d'accueil dédié).
+  readonly householdId = signal<string | null>(null);
+  readonly myOwnerLabel = signal<Owner | null>(null);
+  // Vrai une fois qu'on sait avec certitude que le compte connecté n'a
+  // ENCORE aucun foyer — distinct de householdId()===null pendant le court
+  // instant où la résolution est en cours (évite un flash de l'écran
+  // d'accueil "Créer/rejoindre" avant que la vraie réponse soit connue).
+  readonly needsHouseholdSetup = signal(false);
+
+  // Lève une erreur claire plutôt que d'envoyer household_id: null à
+  // Supabase (ce qui échouerait de toute façon la contrainte not null /
+  // la policy RLS, mais avec un message générique et confus) si jamais une
+  // écriture est tentée avant que le foyer soit résolu — ne devrait
+  // normalement jamais arriver, le guard de route s'assure de la
+  // résolution avant même d'afficher le tableau de bord.
+  private hid(): string {
+    const id = this.householdId();
+    if (!id) throw new Error('Foyer non résolu — reconnecte-toi.');
+    return id;
+  }
+
+  // Résout le foyer du compte connecté (à appeler une fois après le
+  // login, avant loadAll()). Ne lance PAS la création/adhésion — juste la
+  // lecture ; c'est l'écran d'accueil dédié (setup-household) qui appelle
+  // create_household()/join_household() si needsHouseholdSetup() est vrai.
+  // Crée un nouveau foyer pour le compte connecté (voir create_household()
+  // dans la migration SQL) et résout immédiatement householdId/myOwnerLabel
+  // — pas besoin d'un second aller-retour réseau après.
+  async createHousehold(ownerLabel: Owner, name = 'Mon foyer'): Promise<{ joinCode: string }> {
+    const { data, error } = await this.supabase.client.rpc('create_household', {
+      p_owner_label: ownerLabel,
+      p_name: name,
+    });
+    if (error) throw error;
+    // Une fonction Postgres RETURNS TABLE renvoie un tableau (même à une
+    // seule ligne) tant qu'on n'appelle pas .single() — évité ici pour
+    // rester compatible avec le faux client de test, qui ne simule pas le
+    // chaînage .single() de PostgREST.
+    const row = (Array.isArray(data) ? data[0] : data) as { household_id: string; join_code: string };
+    this.householdId.set(row.household_id);
+    this.myOwnerLabel.set(ownerLabel);
+    this.needsHouseholdSetup.set(false);
+    return { joinCode: row.join_code };
+  }
+
+  // Rejoint un foyer existant via son code (voir join_household() dans la
+  // migration SQL).
+  async joinHousehold(code: string, ownerLabel: Owner): Promise<void> {
+    const { data, error } = await this.supabase.client.rpc('join_household', {
+      p_code: code,
+      p_owner_label: ownerLabel,
+    });
+    if (error) throw error;
+    this.householdId.set(data as string);
+    this.myOwnerLabel.set(ownerLabel);
+    this.needsHouseholdSetup.set(false);
+  }
+
+  async resolveHousehold(): Promise<void> {
+    const { data, error } = await this.supabase.client
+      .from('household_members')
+      .select('household_id, owner_label')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      this.needsHouseholdSetup.set(true);
+      return;
+    }
+    this.householdId.set(data.household_id);
+    this.myOwnerLabel.set(data.owner_label as Owner);
+    this.needsHouseholdSetup.set(false);
+  }
+
   readonly expenses = signal<Expense[]>([]);
   readonly incomes = signal<Income[]>([]);
   readonly provisions = signal<Provision[]>([]);
@@ -280,7 +360,54 @@ export class BudgetStore {
   // laisser croire silencieusement que les données sont à jour.
   readonly loadError = signal<string[] | null>(null);
 
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    auth: AuthService,
+  ) {
+    // Sécurité importante : Angular garde ce service en singleton tant que
+    // l'app reste ouverte (pas de rechargement de page entre une
+    // déconnexion et une reconnexion avec un AUTRE compte). Sans ce guard,
+    // householdId/les signals de données resteraient sur les valeurs du
+    // compte précédent — un nouveau compte verrait un instant les données
+    // (et le foyer) de l'ancien avant le prochain loadAll(). On vide donc
+    // tout dès qu'on détecte une VRAIE transition connecté → déconnecté
+    // (pas le simple état initial avant que la session sauvegardée ait
+    // fini d'être relue par AuthService, qui vaut aussi `null` un court
+    // instant au tout premier chargement de l'app — rien à vider dans ce
+    // cas, le store est déjà vide).
+    let hadSession = false;
+    effect(() => {
+      if (auth.session() !== null) {
+        hadSession = true;
+        return;
+      }
+      if (hadSession) {
+        hadSession = false;
+        this.clearAllState();
+      }
+    });
+  }
+
+  // Remet le store à l'état "compte tout juste connecté, rien de chargé
+  // encore" — voir le commentaire du constructeur.
+  private clearAllState(): void {
+    this.householdId.set(null);
+    this.myOwnerLabel.set(null);
+    this.needsHouseholdSetup.set(false);
+    this.expenses.set([]);
+    this.incomes.set([]);
+    this.provisions.set([]);
+    this.creditCardPayments.set([]);
+    this.savingsGoals.set([]);
+    this.recurringExpenses.set([]);
+    this.recurringIncomes.set([]);
+    this.categories.set([]);
+    this.budgets.set(emptyMonthlyMap());
+    this.categoryBudgets.set(emptyCategoryBudgetMap());
+    this.rollovers.set(emptyMonthlyMap());
+    this.closedMonths.set(new Set());
+    this.loadError.set(null);
+  }
 
   async loadAll(): Promise<void> {
     this.loading.set(true);
@@ -439,7 +566,7 @@ export class BudgetStore {
   async closeMonth(ym: string): Promise<void> {
     const { error } = await this.supabase.client
       .from('closed_months')
-      .upsert({ ym }, { onConflict: 'ym' });
+      .upsert({ household_id: this.hid(), ym }, { onConflict: 'household_id,ym' });
     if (error) throw error;
     this.closedMonths.update((set) => new Set(set).add(ym));
   }
@@ -1168,7 +1295,10 @@ export class BudgetStore {
     }
     const { error } = await this.supabase.client
       .from('category_budgets')
-      .upsert({ owner, ym, category, amount }, { onConflict: 'owner,ym,category' });
+      .upsert(
+        { household_id: this.hid(), owner, ym, category, amount },
+        { onConflict: 'household_id,owner,ym,category' },
+      );
     if (error) throw error;
     this.categoryBudgets.update((map) => {
       const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
@@ -1211,7 +1341,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('expenses')
-      .insert(expenseToRow(expense))
+      .insert({ household_id: this.hid(), ...expenseToRow(expense) })
       .select()
       .single();
     if (error) throw error;
@@ -1388,7 +1518,7 @@ export class BudgetStore {
   async addRecurringExpense(r: Omit<RecurringExpense, 'id'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('recurring_expenses')
-      .insert(recurringExpenseToRow(r))
+      .insert({ household_id: this.hid(), ...recurringExpenseToRow(r) })
       .select()
       .single();
     if (error) throw error;
@@ -1668,7 +1798,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('provisions')
-      .insert(provisionToRow(provision))
+      .insert({ household_id: this.hid(), ...provisionToRow(provision) })
       .select()
       .single();
     if (error) throw error;
@@ -1723,7 +1853,7 @@ export class BudgetStore {
   async addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'contributions'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('savings_goals')
-      .insert(savingsGoalToRow(goal))
+      .insert({ household_id: this.hid(), ...savingsGoalToRow(goal) })
       .select()
       .single();
     if (error) throw error;
@@ -1748,7 +1878,7 @@ export class BudgetStore {
     this.assertMonthOpen(date.slice(0, 7));
     const { data, error } = await this.supabase.client
       .from('savings_goal_contributions')
-      .insert(savingsContributionToRow(goalId, { amount, date, note }))
+      .insert({ household_id: this.hid(), ...savingsContributionToRow(goalId, { amount, date, note }) })
       .select()
       .single();
     if (error) throw error;
@@ -2081,7 +2211,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('provision_adjustments')
-      .insert(adjustmentToRow(provisionId, { amount, date, note, versementExpenseId }))
+      .insert({ household_id: this.hid(), ...adjustmentToRow(provisionId, { amount, date, note, versementExpenseId }) })
       .select()
       .single();
     if (error) throw error;
@@ -2143,7 +2273,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('incomes')
-      .insert(incomeToRow(income))
+      .insert({ household_id: this.hid(), ...incomeToRow(income) })
       .select()
       .single();
     if (error) throw error;
@@ -2213,7 +2343,7 @@ export class BudgetStore {
   async addRecurringIncome(r: Omit<RecurringIncome, 'id'>): Promise<RecurringIncome> {
     const { data, error } = await this.supabase.client
       .from('recurring_incomes')
-      .insert(recurringIncomeToRow(r))
+      .insert({ household_id: this.hid(), ...recurringIncomeToRow(r) })
       .select()
       .single();
     if (error) throw error;
@@ -2342,7 +2472,7 @@ export class BudgetStore {
     };
     const { data, error } = await this.supabase.client
       .from('categories')
-      .insert(categoryToRow(row))
+      .insert({ household_id: this.hid(), ...categoryToRow(row) })
       .select()
       .single();
     if (error) throw error;
@@ -2436,7 +2566,10 @@ export class BudgetStore {
         const amount = budgetsForOwner[ym][oldName];
         const { error: upErr } = await this.supabase.client
           .from('category_budgets')
-          .upsert({ owner, ym, category: trimmed, amount }, { onConflict: 'owner,ym,category' });
+          .upsert(
+            { household_id: this.hid(), owner, ym, category: trimmed, amount },
+            { onConflict: 'household_id,owner,ym,category' },
+          );
         if (upErr) throw upErr;
         const { error: delErr } = await this.supabase.client
           .from('category_budgets')
@@ -2552,7 +2685,7 @@ export class BudgetStore {
     this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('rollovers')
-      .upsert({ owner, ym, amount }, { onConflict: 'owner,ym' });
+      .upsert({ household_id: this.hid(), owner, ym, amount }, { onConflict: 'household_id,owner,ym' });
     if (error) throw error;
     this.rollovers.update((map) => ({
       ...map,
@@ -2735,7 +2868,7 @@ export class BudgetStore {
       const provisionRows = data.provisions.map((p: Provision) => {
         const newId = idFor(p.id);
         provisionIdMap.set(String(p.id), newId);
-        return { id: newId, ...provisionToRow(p) };
+        return { id: newId, household_id: this.hid(), ...provisionToRow(p) };
       });
       const { error } = await this.supabase.client
         .from('provisions')
@@ -2745,6 +2878,7 @@ export class BudgetStore {
       const adjustmentRows = data.provisions.flatMap((p: Provision) =>
         (p.adjustments || []).map((a) => ({
           id: idFor(a.id),
+          household_id: this.hid(),
           provision_id: provisionIdMap.get(String(p.id))!,
           amount: a.amount,
           date: a.date,
@@ -2766,7 +2900,7 @@ export class BudgetStore {
       const goalRows = data.savingsGoals.map((g: SavingsGoal) => {
         const newId = idFor(g.id);
         goalIdMap.set(String(g.id), newId);
-        return { id: newId, ...savingsGoalToRow(g) };
+        return { id: newId, household_id: this.hid(), ...savingsGoalToRow(g) };
       });
       const { error: goalError } = await this.supabase.client
         .from('savings_goals')
@@ -2776,6 +2910,7 @@ export class BudgetStore {
       const contributionRows = data.savingsGoals.flatMap((g: SavingsGoal) =>
         (g.contributions || []).map((c) => ({
           id: idFor(c.id),
+          household_id: this.hid(),
           savings_goal_id: goalIdMap.get(String(g.id))!,
           amount: c.amount,
           date: c.date,
@@ -2796,6 +2931,7 @@ export class BudgetStore {
     if (Array.isArray(data.recurringExpenses) && data.recurringExpenses.length) {
       const rows = data.recurringExpenses.map((r: RecurringExpense) => ({
         id: idFor(r.id),
+        household_id: this.hid(),
         ...recurringExpenseToRow(r),
       }));
       const { error } = await this.supabase.client.from('recurring_expenses').insert(rows);
@@ -2807,6 +2943,7 @@ export class BudgetStore {
     if (Array.isArray(data.recurringIncomes) && data.recurringIncomes.length) {
       const rows = data.recurringIncomes.map((r: RecurringIncome) => ({
         id: idFor(r.id),
+        household_id: this.hid(),
         ...recurringIncomeToRow(r),
       }));
       const { error } = await this.supabase.client.from('recurring_incomes').insert(rows);
@@ -2825,7 +2962,7 @@ export class BudgetStore {
         (c) => !existingNames.has(c.name.toLowerCase()),
       );
       if (newCategories.length) {
-        const rows = newCategories.map((c) => ({ id: idFor(c.id), ...categoryToRow(c) }));
+        const rows = newCategories.map((c) => ({ id: idFor(c.id), household_id: this.hid(), ...categoryToRow(c) }));
         const { data: inserted, error } = await this.supabase.client
           .from('categories')
           .insert(rows)
@@ -2840,6 +2977,7 @@ export class BudgetStore {
     if (Array.isArray(data.creditCardPayments) && data.creditCardPayments.length) {
       const rows = data.creditCardPayments.map((p: CreditCardPayment) => ({
         id: idFor(p.id),
+        household_id: this.hid(),
         ...creditCardPaymentToRow(p),
       }));
       const { error } = await this.supabase.client.from('credit_card_payments').insert(rows);
@@ -2849,6 +2987,7 @@ export class BudgetStore {
     if (data.expenses.length) {
       const rows = data.expenses.map((e: Expense) => ({
         id: idFor(e.id),
+        household_id: this.hid(),
         ...expenseToRow(e),
       }));
       const { error } = await this.supabase.client.from('expenses').insert(rows);
@@ -2858,6 +2997,7 @@ export class BudgetStore {
     if (data.incomes.length) {
       const rows = data.incomes.map((i: Income) => ({
         id: idFor(i.id),
+        household_id: this.hid(),
         ...incomeToRow(i),
       }));
       const { error } = await this.supabase.client.from('incomes').insert(rows);
@@ -2869,7 +3009,7 @@ export class BudgetStore {
       const rows: any[] = [];
       ownersList.forEach((o) => {
         Object.entries(data.budgets[o] || {}).forEach(([ym, amount]) => {
-          rows.push({ owner: o, ym, amount });
+          rows.push({ household_id: this.hid(), owner: o, ym, amount });
         });
       });
       if (rows.length) {
@@ -2882,7 +3022,7 @@ export class BudgetStore {
       const rows: any[] = [];
       ownersList.forEach((o) => {
         Object.entries(data.rollovers[o] || {}).forEach(([ym, amount]) => {
-          rows.push({ owner: o, ym, amount });
+          rows.push({ household_id: this.hid(), owner: o, ym, amount });
         });
       });
       if (rows.length) {
@@ -2896,7 +3036,7 @@ export class BudgetStore {
       ownersList.forEach((o) => {
         Object.entries(data.categoryBudgets[o] || {}).forEach(([ym, catMap]: [string, any]) => {
           Object.entries(catMap || {}).forEach(([category, amount]) => {
-            rows.push({ owner: o, ym, category, amount });
+            rows.push({ household_id: this.hid(), owner: o, ym, category, amount });
           });
         });
       });
@@ -2952,7 +3092,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('credit_card_payments')
-      .insert(creditCardPaymentToRow({ owner, amount, date, note }))
+      .insert({ household_id: this.hid(), ...creditCardPaymentToRow({ owner, amount, date, note }) })
       .select()
       .single();
     if (error) throw error;
