@@ -323,7 +323,10 @@ export class FakeSupabaseClient {
   // directement mais présent sur un vrai SupabaseClient — ajouté seulement
   // si un test en a besoin un jour.
   readonly auth = {
-    getSession: async () => ({ data: { session: null }, error: null }),
+    getSession: async () => ({
+      data: { session: { user: { id: this.currentUserId } } },
+      error: null,
+    }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
   };
 }

@@ -2,9 +2,11 @@ import { Injectable, signal } from '@angular/core';
 import { Session } from '@supabase/supabase-js';
 import { SupabaseService } from './supabase.service';
 
-// Authentification simple : un seul compte partagé pour Moi + Madame
-// (pas de gestion multi-comptes, pas d'inscription en libre-service —
-// le compte est créé une fois manuellement dans le dashboard Supabase).
+// Authentification : chaque personne a son propre compte Supabase Auth,
+// relié à un foyer via household_members (voir BudgetStore.resolveHousehold()
+// et migration-017-households.sql). Pas d'inscription en libre-service à ce
+// jour — les comptes sont créés manuellement dans le dashboard Supabase,
+// puis rattachés à un foyer depuis l'app (créer ou rejoindre avec un code).
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   readonly session = signal<Session | null>(null);

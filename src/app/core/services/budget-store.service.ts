@@ -308,9 +308,21 @@ export class BudgetStore {
   }
 
   async resolveHousehold(): Promise<void> {
+    // Bug corrigé (remonté en conditions réelles après qu'un 2e compte a
+    // rejoint un foyer) : la policy RLS sur household_members autorise à
+    // voir TOUS les membres de SON foyer (légitime — utile pour afficher
+    // qui en fait partie), pas seulement sa propre ligne. Sans filtre
+    // explicite par user_id, cette requête renvoyait donc 2 lignes dès
+    // qu'un foyer avait 2 membres, et .maybeSingle() plantait
+    // (PGRST116 : "multiple rows returned"). Le filtre .eq('user_id', …)
+    // cible précisément SA PROPRE ligne d'adhésion.
+    await this.auth.waitUntilReady();
+    const userId = this.auth.session()?.user.id;
+    if (!userId) throw new Error('Session introuvable — reconnecte-toi.');
     const { data, error } = await this.supabase.client
       .from('household_members')
       .select('household_id, owner_label')
+      .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
     if (!data) {
@@ -362,7 +374,7 @@ export class BudgetStore {
 
   constructor(
     private supabase: SupabaseService,
-    auth: AuthService,
+    private auth: AuthService,
   ) {
     // Sécurité importante : Angular garde ce service en singleton tant que
     // l'app reste ouverte (pas de rechargement de page entre une

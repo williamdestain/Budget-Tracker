@@ -15,7 +15,7 @@ La V2 avait ajouté un axe que la V1 sous-estimait : des **bugs de fiabilité de
 
 | Catégorie | Statut actuel (vérifié aujourd'hui) | Bloquant pour le public ? |
 |---|---|---|
-| Isolation des données entre comptes | 🟡 Implémentée, testée unitairement — **vérification en conditions réelles (2 vrais comptes) encore à faire** | **Oui, tant que la vérification réelle n'est pas faite** |
+| Isolation des données entre comptes | ✅ Implémentée ET vérifiée en conditions réelles (2 comptes/1 foyer + 1 compte/foyer séparé) | Non — plus bloquant |
 | Fiabilité des données (reset/export/erreurs de chargement) | ✅ Corrigée depuis l'audit | Réglé |
 | Atomicité des opérations (import, répartition de versement) | 🟡 Partielle (le reset est atomique, pas l'import) | Recommandé |
 | Tests automatisés | ✅ 249 tests, logique métier critique couverte | Réglé |
@@ -30,7 +30,7 @@ La V2 avait ajouté un axe que la V1 sous-estimait : des **bugs de fiabilité de
 
 ---
 
-## 2. 🔴 P0 — Isolation des données entre comptes — ✅ implémenté (option B), ⚠️ vérification réelle restante
+## 2. 🔴 P0 — Isolation des données entre comptes — ✅ implémenté (option B) ET vérifié en conditions réelles
 
 **Ce qui a changé (3 septembre 2026)** : `migration-017-households.sql` remplace toutes les policies `using (auth.role() = 'authenticated')` par des policies scoped par foyer :
 ```sql
@@ -44,7 +44,9 @@ où `auth_household_id()` est une fonction `security definer` qui résout le foy
 
 **Testé (258 tests automatisés)** : logique de `create_household()`/`join_household()` (un compte = un seul foyer, un foyer = un "moi" + une "madame" maximum), présence de `household_id` sur chaque écriture (27 emplacements vérifiés), vidage complet de l'état applicatif à la déconnexion (empêche qu'un 2e compte, connecté sans recharger la page, hérite un instant des données du 1er).
 
-> ⚠️ **Ce qui N'A PAS pu être testé automatiquement** : ces tests tournent contre un faux client en mémoire, jamais contre une vraie base Postgres — ils ne peuvent donc pas confirmer que le SQL des policies RLS est syntaxiquement correct une fois réellement appliqué à Supabase, ni qu'un vrai compte B ne peut vraiment rien voir/modifier des données d'un vrai compte A. **Il reste à exécuter la migration sur le vrai projet, créer 2 vrais comptes, et vérifier à la main.**
+> ✅ **Vérifié en conditions réelles le 4 septembre 2026** : migration exécutée sur le vrai projet Supabase, un compte créé dans un foyer séparé + 2 comptes rattachés au même foyer — aucune fuite de données constatée entre foyers, et les deux comptes du même foyer voient bien les mêmes données. Cette vérification manuelle a d'ailleurs immédiatement débusqué un vrai bug (voir encadré ci-dessous), exactement ce pour quoi elle était nécessaire — la preuve que les tests automatisés seuls n'auraient pas suffi.
+
+> 🐛 **Bug trouvé et corrigé pendant la vérification** : `resolveHousehold()` interrogeait `household_members` sans filtrer par utilisateur, en ne comptant que sur la RLS. Mais la policy RLS autorise (à raison) à voir *tous* les membres de son propre foyer, pas seulement sa propre ligne — dès qu'un foyer a eu 2 membres, la requête renvoyait 2 lignes et `.maybeSingle()` plantait (`PGRST116`). Corrigé en filtrant explicitement par `user_id`, avec une garde supplémentaire contre une course possible entre la lecture de la session et sa résolution complète au démarrage.
 
 ### 2.1 Tables enfants — réglé
 
@@ -54,12 +56,12 @@ où `auth_household_id()` est une fonction `security definer` qui résout le foy
 
 Point additionnel découvert en implémentant : les catégories (ajoutées après les deux audits d'origine) sont maintenant scoped par foyer elles aussi — chaque nouveau foyer reçoit sa propre copie des 32 catégories par défaut à sa création (`create_household()` les sème), personnalisable ensuite indépendamment par foyer.
 
-### 2.3 Ce qu'il reste à faire manuellement
+### 2.3 Ce qui a été fait manuellement (historique de la vérification)
 
-1. Exécuter `migration-017-households.sql` sur le vrai projet Supabase.
-2. Récupérer le code du foyer créé pour les données existantes (`select join_code from households;`).
-3. Créer 2 vrais comptes dans Supabase Auth > Users (un pour toi, un pour Madame) si pas déjà fait.
-4. Se connecter avec chacun dans l'app, rejoindre ce même foyer via le code (l'app affiche l'écran dédié automatiquement).
+1. ✅ Migration `migration-017-households.sql` exécutée sur le vrai projet Supabase.
+2. ✅ Code du foyer récupéré et deux comptes rattachés au même foyer.
+3. ✅ Un troisième compte, dans un foyer séparé, confirmé étanche (aucune donnée visible de l'autre foyer).
+4. ✅ Bug de résolution du foyer trouvé et corrigé en cours de route (voir encadré ci-dessus).
 5. **Vérifier à la main** qu'un 3ᵉ compte de test, dans un foyer différent, ne voit strictement rien des données du foyer principal.
 
 ---
@@ -180,7 +182,7 @@ Constats V1 (§4.1, 4.2, 4.4, 4.5) toujours valides, non re-détaillés ici pour
 | Qualité TypeScript | 8/10 | Stable |
 | Organisation du projet | 8/10 | Stable |
 | Sécurité — usage actuel (foyer unique) | 6/10 | Stable |
-| Sécurité — multi-utilisateurs public | 1/10 → **7/10** | **Nettement amélioré — reste la vérification en conditions réelles (§2.3)** |
+| Sécurité — multi-utilisateurs public | 1/10 → **9/10** | **Isolation implémentée ET vérifiée en conditions réelles** |
 | Intégrité des données | 4/10 → **7/10** | **Nettement amélioré** (reset/export/erreurs corrigés) |
 | Résilience aux erreurs | 4/10 → **7/10** | **Amélioré** (`loadError`), mais concurrence toujours absente |
 | Tests | 2/10 → **8/10** | **Nettement amélioré** (249 tests) |
@@ -198,7 +200,7 @@ Fusion des plans V1 (11 items) et V2 (11 phases), dédupliqués, avec le statut 
 | 2 | Corriger `resetEverything` (RPC complet), `exportData` (export complet), `loadAll` (détection d'erreur par table) | 🔴 P1 | 1 jour | ✅ Done |
 | 3 | Modèle de données : `household_id`/`user_id` sur les 10 tables de données **+ les 2 tables enfants** (`provision_adjustments`, `savings_goal_contributions`) | 🔴 P0 — bloquant | 1-2 jours | ✅ Done |
 | 4 | Décider du modèle de compte (option A `user_id` simple vs. option B `households`/`household_members`) | 🔴 P0 | 1h de réflexion | ✅ Done — option B retenue |
-| 5 | Réécrire les policies RLS scoped + **tester activement avec 2 comptes distincts** | 🔴 P0 — bloquant | Inclus dans le #3 | 🟡 Partiel — voir note ⚠️ ci-dessous
+| 5 | Réécrire les policies RLS scoped + **tester activement avec 2 comptes distincts** | 🔴 P0 — bloquant | Inclus dans le #3 | ✅ Done — vérifié en conditions réelles le 4 sept. 2026
 | 6 | Contraintes `check` sur les longueurs de texte (`category`/`name`/`note`) — les montants sont déjà couverts | 🟠 P1 | 1h | 🟡 Partiel |
 | 7 | Transactions PostgreSQL (RPC) pour l'import complet et la répartition de versement — le reset est déjà atomique | 🟠 P1 | 1-2 jours | 🟡 Partiel |
 | 8 | Concurrence : colonne `updated_at` + rechargement post-mutation sur `budgets`/`category_budgets` | 🟠 P1 | 1 jour | ❌ To Do |
@@ -211,20 +213,20 @@ Fusion des plans V1 (11 items) et V2 (11 phases), dédupliqués, avec le statut 
 | 15 | Évaluer un changement d'hébergeur pour une vraie CSP/headers (Cloudflare Pages, Netlify) | 🟢 P3 | 1 jour | ❌ To Do |
 | 16 | Mentions légales / politique de confidentialité si public | 🟢 P3 (légalement important) | Dépend de la juridiction | ❌ To Do |
 
-**Ordre recommandé** : 1 ✅ → 2 ✅ → **3 → 4 → 5** (le vrai P0, rien d'autre ne compte tant que ce n'est pas fait) → 6 → 10 → 11, puis 7 et 8 (fiabilité/concurrence), puis 9 seulement si l'inscription libre est vraiment voulue, puis 12-16 selon le temps disponible.
+**Ordre recommandé** : 1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 5 ✅ (**le P0 est clos**) → 6 → 10 → 11, puis 7 et 8 (fiabilité/concurrence), puis 9 seulement si l'inscription libre est vraiment voulue, puis 12-16 selon le temps disponible.
 
-> ⚠️ **Ligne 5 — ce qui est fait vs. ce qui reste à vérifier avant d'ouvrir l'app au public.**
-> Fait et validé par 258 tests automatisés (dont 8 dédiés spécifiquement au modèle multi-foyers) : la logique métier des fonctions `create_household()`/`join_household()` (un compte = un seul foyer, un foyer = un "moi" + une "madame" maximum), la génération de `household_id` sur chaque écriture, le vidage complet de l'état du store à la déconnexion (anti-fuite si deux comptes se connectent successivement dans le même onglet sans recharger la page).
+> ✅ **Ligne 5 — clôturée le 4 septembre 2026.**
+> Fait et validé par 258 tests automatisés (dont 8 dédiés au modèle multi-foyers) : la logique métier de `create_household()`/`join_household()`, la génération de `household_id` sur chaque écriture, le vidage complet de l'état du store à la déconnexion.
 >
-> **Non fait, et volontairement pas simulable par ces tests** : les tests ci-dessus tournent contre un faux client en mémoire, jamais contre une vraie base Postgres — ils ne peuvent donc pas confirmer que les *policies RLS elles-mêmes* (le SQL de `migration-017-households.sql`) sont syntaxiquement correctes une fois appliquées, ni qu'un vrai compte B ne peut vraiment rien voir/modifier des données d'un vrai compte A. **Il reste à exécuter la migration sur le vrai projet Supabase, créer 2 vrais comptes, et vérifier à la main (ou via un test Playwright, voir ligne 12) qu'un compte ne voit jamais les données de l'autre.** Tant que cette vérification manuelle n'est pas faite, ne considère pas le P0 comme définitivement clos.
+> **Et maintenant confirmé en conditions réelles**, ce que les tests seuls ne pouvaient pas garantir : migration exécutée sur le vrai projet Supabase, un compte dans un foyer séparé + deux comptes sur un même foyer, aucune fuite constatée. Cette vérification a d'ailleurs trouvé un vrai bug (`resolveHousehold()` plantait dès qu'un foyer avait 2 membres — voir §2), corrigé et revalidé (258/258 tests toujours au vert après correction).
 
-**En une phrase** : le P0 est implémenté et son code testé unitairement (lignes 3 et 4 vraiment faites) — mais la ligne 5 garde un astérisque tant que la vérification en conditions réelles (2 vrais comptes Supabase) n'a pas été faite ; c'est la seule étape qui sépare encore l'app d'un vrai feu vert pour un lancement public restreint (voir l'avertissement ci-dessus).
+**En une phrase** : le P0 est fait, testé, **et vérifié en conditions réelles** — l'isolation des données entre foyers n'est plus la raison de ne pas ouvrir l'app à d'autres foyers. Les points restants du plan (6 à 16) sont tous des améliorations, plus des bloquants.
 
 ---
 
 ## 11. Ce qui est déjà bien fait
 
-- **Isolation des données par foyer implémentée** : modèle `households`/`household_members`, RLS scoped, fonctions RPC sécurisées pour créer/rejoindre un foyer (voir §2).
+- **Isolation des données par foyer implémentée ET vérifiée en conditions réelles** : modèle `households`/`household_members`, RLS scoped, fonctions RPC sécurisées pour créer/rejoindre un foyer (voir §2).
 - Clé anon Supabase traitée correctement comme publique.
 - Aucun XSS, injection SQL ou usage dangereux (`eval`, `innerHTML`) trouvé.
 - HTTPS de bout en bout, chiffrement au repos géré nativement par Supabase.
@@ -238,4 +240,4 @@ Fusion des plans V1 (11 items) et V2 (11 phases), dédupliqués, avec le statut 
 
 ## 12. Verdict final
 
-**Le diagnostic change : le P0 est implémenté.** Le travail effectué depuis l'audit a suivi le bon ordre — fiabilité des données et tests d'abord (faits), puis le P0 lui-même (fait). Il ne reste qu'une étape avant de considérer le sujet réellement clos : **vérifier en conditions réelles, avec 2 vrais comptes Supabase, qu'aucune fuite de données n'existe entre foyers** (§2.3) — les tests automatisés couvrent la logique métier mais tournent contre un faux client, pas contre une vraie base Postgres avec RLS active. Une fois cette vérification faite, l'app est raisonnablement prête pour un lancement public à échelle contrôlée (les points P2/P3 restants — CI, monitoring, mentions légales — sont recommandés mais non bloquants).
+**Le P0 est fait, testé, et vérifié en conditions réelles (4 septembre 2026).** Le travail a suivi le bon ordre — fiabilité des données et tests d'abord, puis le modèle multi-foyers, puis la vérification manuelle avec de vrais comptes, qui a d'ailleurs débusqué et permis de corriger un vrai bug avant qu'il n'affecte un usage réel. L'isolation des données entre foyers n'est plus un obstacle à l'ouverture de l'app à d'autres foyers. Les points restants du plan d'action (6 à 16) sont tous des améliorations recommandées — aucun n'est aussi critique que ce qui vient d'être réglé.
