@@ -77,12 +77,12 @@ C'était l'apport principal de la V2 : des bugs qui affectent même l'usage actu
 | `loadAll()` masque les pannes en état "aucune donnée" | ✅ **Corrigé** — signal `loadError()` + détection par table (`failedTables`), avec un composant `load-error-banner` dédié |
 | Import/reset non transactionnels | 🟡 **Partiel** — le reset est maintenant atomique (RPC), **l'import reste séquentiel** (une dizaine d'`insert` indépendants depuis Angular, pas de RPC englobante) |
 | Opérations métier non atomiques (`addExpense`, `splitVersementIntoProvisions`) | 🟡 **Partiel** — `splitVersementIntoProvisions()` boucle toujours séquentiellement sur `addProvisionAdjustment`, sans transaction ni détection d'échec partiel |
-| Concurrence (2 sessions, même compte) | ❌ **Toujours absent** — aucune colonne `updated_at` trouvée dans `schema.sql` ni les migrations, aucun mécanisme de verrouillage optimiste |
+| Concurrence (2 sessions, même compte) | ✅ **Corrigé** — colonne `updated_at` (trigger `set_updated_at()`) sur `budgets`/`category_budgets`/`closed_months` (migration-019), contrôle de concurrence optimiste (compare-and-swap) sur `setCategoryBudget()`/`removeCategoryBudget()`/`closeMonth()`/`reopenMonth()` : détecte une modification concurrente par l'autre compte et recharge plutôt que d'écraser silencieusement, 5 tests dédiés |
 | `owner` non lié à l'identité réelle | ❌ Constat toujours valide (rejoint le §2) — rien n'empêche un client d'envoyer `owner: "madame"` sur une entrée qui devrait être « Moi » |
 | `importData()` trop permissif (pas de validation de schéma) | ✅ **Corrigé** — `validateImportPayload()` valide maintenant types/bornes/valeurs autorisées avant tout import, et le rejette *avant* de toucher aux données existantes |
 | Sauvegarde pas fiable (export manuel navigateur uniquement) | 🟡 **Inchangé sur le fond** (toujours un téléchargement manuel), mais moins risqué qu'à l'audit puisque export/import sont maintenant complets et validés |
 
-**Reste à faire sur ce bloc** : rendre l'import et la répartition de versement transactionnels (RPC), et ajouter un mécanisme de concurrence minimal (`updated_at`).
+~~**Reste à faire sur ce bloc**~~ : import complet et répartition de versement rendus transactionnels le 5 septembre 2026 (`migration-021`/`migration-022`, #7 → ✅ Done). Plus de "rollback applicatif" pouvant lui-même échouer à moitié — vraies transactions Postgres de bout en bout.
 
 ---
 
@@ -108,7 +108,7 @@ Toujours aucun `netlify.toml`/`vercel.json`/`_headers` dans le repo : l'app est 
 
 ### 4.5 Import de fichier — validation de schéma faite, limite de taille manquante
 
-**Vérifié** : `validateImportPayload()` couvre maintenant la validation de schéma en profondeur (voir §3), y compris pour les entités ajoutées depuis l'audit (`recurringIncomes`, `categories`). En revanche, `onFileSelected()` dans `data-management.ts` ne vérifie toujours pas la taille du fichier avant de le lire (`file.text()` direct, sans garde-fou).
+**Vérifié** : `validateImportPayload()` couvre maintenant la validation de schéma en profondeur (voir §3), y compris pour les entités ajoutées depuis l'audit (`recurringIncomes`, `categories`). **Corrigé le 5 septembre 2026 (#13)** : `onFileSelected()` dans `data-management.ts` refuse maintenant tout fichier de plus de 20 Mo avant même de le lire (`file.size`, vérifié avant `file.text()`) — largement au-dessus de ce qu'une sauvegarde JSON réelle de cette app peut atteindre.
 
 ### 4.6 Messages d'erreur bruts remontés à l'utilisateur — non revérifié en détail
 
@@ -131,17 +131,16 @@ Constat V1 non re-vérifié précisément dans cette passe ; probablement encore
 
 ## 6. 🟡 P2 — Points additionnels
 
-### 6.1 Playwright / README — 🟡 partiellement corrigé
+### 6.1 Playwright / README — ✅ corrigé (5 septembre 2026)
 
 **Au moment de l'audit** : `test-checkbox.cjs` pointait vers un chemin absolu propre au sandbox où il avait été écrit, `playwright` n'apparaissait nulle part dans `package.json`, et le README affirmait de façon non vérifiable « vérifié avec un test automatisé (Playwright) ».
 
-**Vérifié aujourd'hui** :
-- ✅ `@playwright/test` est maintenant une vraie dépendance déclarée dans `package.json`.
-- ✅ Le README ne fait plus l'affirmation trompeuse — il précise explicitement que la vérification était manuelle, via un « script ad hoc, non conservé dans le repo », et renvoie vers la vraie suite de tests (§5).
-- ❌ Mais `test-checkbox.cjs` **existe toujours** à la racine, avec le même chemin absolu cassé — ce qui contredit la propre affirmation du README (« non conservé dans le repo »).
-- ❌ Aucun `playwright.config.ts` ni script `test:e2e` : Playwright n'est pas « réellement intégré », juste installé.
+**Corrigé le 5 septembre 2026** :
+- ✅ `test-checkbox.cjs` supprimé — l'affirmation du README (« non conservé dans le repo ») est maintenant vraie.
+- ✅ `@playwright/test` retiré de `package.json` : c'était devenu une dépendance orpheline (déclarée mais sans `playwright.config.ts` ni script `test:e2e`, jamais réellement intégrée) — la garder aurait juste élargi la surface d'audit `npm audit` pour rien.
+- ✅ README reformulé pour préciser explicitement qu'aucune dépendance Playwright n'est installée et que ce vérificatif ponctuel n'a jamais été intégré en CI.
 
-**Reste à faire** : supprimer `test-checkbox.cjs`, ou l'intégrer proprement (config + script npm) si des tests E2E sont voulus.
+Pas d'intégration Playwright complète (config + script npm + vraie suite E2E) : jugée disproportionnée pour un usage privé à 2 comptes — à reconsidérer seulement si l'app s'ouvre à d'autres foyers ou gagne en complexité UI.
 
 ### 6.2 CI de sécurité — ❌ inchangé
 
@@ -201,14 +200,14 @@ Fusion des plans V1 (11 items) et V2 (11 phases), dédupliqués, avec le statut 
 | 3 | Modèle de données : `household_id`/`user_id` sur les 10 tables de données **+ les 2 tables enfants** (`provision_adjustments`, `savings_goal_contributions`) | 🔴 P0 — bloquant | 1-2 jours | ✅ Done |
 | 4 | Décider du modèle de compte (option A `user_id` simple vs. option B `households`/`household_members`) | 🔴 P0 | 1h de réflexion | ✅ Done — option B retenue |
 | 5 | Réécrire les policies RLS scoped + **tester activement avec 2 comptes distincts** | 🔴 P0 — bloquant | Inclus dans le #3 | ✅ Done — vérifié en conditions réelles le 4 sept. 2026
-| 6 | Contraintes `check` sur les longueurs de texte (`category`/`name`/`note`) — les montants sont déjà couverts | 🟠 P1 | 1h | 🟡 Partiel |
-| 7 | Transactions PostgreSQL (RPC) pour l'import complet et la répartition de versement — le reset est déjà atomique | 🟠 P1 | 1-2 jours | 🟡 Partiel |
-| 8 | Concurrence : colonne `updated_at` + rechargement post-mutation sur `budgets`/`category_budgets` | 🟠 P1 | 1 jour | ❌ To Do |
+| 6 | Contraintes `check` sur les longueurs de texte (`category`/`name`/`note`) — les montants sont déjà couverts | 🟠 P1 | 1h | ✅ Done (`migration-018-text-length-constraints.sql`) |
+| 7 | Transactions PostgreSQL (RPC) pour l'import complet et la répartition de versement — le reset est déjà atomique | 🟠 P1 | 1-2 jours | ✅ Done (`migration-021`/`migration-022`) |
+| 8 | Concurrence : colonne `updated_at` + rechargement post-mutation sur `budgets`/`category_budgets`/`closed_months` | 🟠 P1 | 1 jour | ✅ Done (`migration-019-concurrency-updated-at.sql` + compare-and-swap dans `budget-store.service.ts`) |
 | 9 | Flux inscription + mot de passe oublié + confirmation email | 🟠 P1 — seulement si self-service public | 1-2 jours | ❌ To Do |
-| 10 | Activer *leaked password protection* + longueur mini dans Supabase Auth Settings | 🟠 P1 | 5 min | ❌ To Do |
-| 11 | `npm audit fix` + activer Dependabot + job CI de sécurité | 🟡 P2 | 30 min - 1h | ❌ To Do |
-| 12 | Supprimer `test-checkbox.cjs` (orphelin) ou intégrer Playwright proprement (config + script `test:e2e`) | 🟡 P2 | 5 min (suppression) à 1 jour (intégration complète) | 🟡 Partiel |
-| 13 | Limiter la taille du fichier importé (la validation de schéma, elle, est déjà faite) | 🟢 P3 | 30 min | 🟡 Partiel |
+| 10 | Activer *leaked password protection* + longueur mini dans Supabase Auth Settings | 🟠 P1 | 5 min | 🟡 Compensé (voir note ci-dessous) |
+| 11 | `npm audit fix` + activer Dependabot + job CI de sécurité | 🟡 P2 | 30 min - 1h | ✅ Done (`npm audit fix` appliqué, `.github/dependabot.yml`, `.github/workflows/ci.yml`) |
+| 12 | Supprimer `test-checkbox.cjs` (orphelin) ou intégrer Playwright proprement (config + script `test:e2e`) | 🟡 P2 | 5 min (suppression) à 1 jour (intégration complète) | ✅ Done (supprimé + dépendance `@playwright/test` orpheline retirée + README corrigé) |
+| 13 | Limiter la taille du fichier importé (la validation de schéma, elle, est déjà faite) | 🟢 P3 | 30 min | ✅ Done (20 Mo max, `data-management.ts`) |
 | 14 | Monitoring d'erreurs (Sentry ou équivalent) | 🟢 P3 | 2-3h | ❌ To Do |
 | 15 | Évaluer un changement d'hébergeur pour une vraie CSP/headers (Cloudflare Pages, Netlify) | 🟢 P3 | 1 jour | ❌ To Do |
 | 16 | Mentions légales / politique de confidentialité si public | 🟢 P3 (légalement important) | Dépend de la juridiction | ❌ To Do |
@@ -221,6 +220,11 @@ Fusion des plans V1 (11 items) et V2 (11 phases), dédupliqués, avec le statut 
 > **Et maintenant confirmé en conditions réelles**, ce que les tests seuls ne pouvaient pas garantir : migration exécutée sur le vrai projet Supabase, un compte dans un foyer séparé + deux comptes sur un même foyer, aucune fuite constatée. Cette vérification a d'ailleurs trouvé un vrai bug (`resolveHousehold()` plantait dès qu'un foyer avait 2 membres — voir §2), corrigé et revalidé (258/258 tests toujours au vert après correction).
 
 **En une phrase** : le P0 est fait, testé, **et vérifié en conditions réelles** — l'isolation des données entre foyers n'est plus la raison de ne pas ouvrir l'app à d'autres foyers. Les points restants du plan (6 à 16) sont tous des améliorations, plus des bloquants.
+
+> 🟡 **Ligne 10 — compensée le 4 septembre 2026 (plan Supabase Free, pas Pro).**
+> *Leaked password protection* (vérification contre HaveIBeenPwned) nécessite le plan Pro — confirmé indisponible sur ce projet. À la place : longueur minimale du mot de passe relevée (10-12 caractères) et exigence du mélange minuscules/majuscules/chiffres/symboles, dans Supabase Dashboard → Authentication → Providers → Email → réglage de dashboard uniquement, aucun code touché.
+>
+> Cette compensation réduit le même risque (mots de passe faibles/devinables) sans couvrir exactement le même cas (un mot de passe fort mais déjà présent dans une fuite connue resterait accepté). Ne s'applique qu'aux futurs changements de mot de passe, pas rétroactivement aux 2 comptes déjà créés — un changement de mot de passe volontaire de chaque côté serait nécessaire pour que la compensation s'applique réellement à leur mot de passe actuel. Repasser à la vraie *leaked password protection* si le projet passe un jour sur Pro.
 
 ---
 

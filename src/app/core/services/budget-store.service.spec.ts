@@ -34,6 +34,11 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     // sur la résolution/création/adhésion à un foyer (describe('Foyers'))
     // repartent d'un store sans foyer, volontairement.
     store.householdId.set(TEST_HOUSEHOLD_ID);
+    // Synchronise le foyer "résolu côté serveur" du faux client (utilisé
+    // par les RPC split_versement_into_provisions/import_household_data,
+    // qui ne reçoivent pas household_id en paramètre — voir
+    // fake-supabase-client.ts).
+    fakeClient.setCurrentHousehold(TEST_HOUSEHOLD_ID);
   });
 
   describe('loadAll()', () => {
@@ -773,6 +778,21 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(fakeClient.tables['recurring_expenses']).toHaveLength(0);
     });
 
+    // Bug corrigé (découvert en travaillant sur #8, voir
+    // migration-020-reset-includes-closed-months.sql) : reset_everything()
+    // ne vidait pas closed_months, ce qui laissait les mois clôturés
+    // verrouillés après un "Réinitialiser toutes les données".
+    it('vide bien closed_months aussi (sinon les mois clôturés restent verrouillés après un reset)', async () => {
+      await store.loadAll();
+      await store.closeMonth('2026-07');
+      expect(store.isMonthClosed('2026-07')).toBe(true);
+
+      await store.resetEverything();
+
+      expect(store.isMonthClosed('2026-07')).toBe(false);
+      expect(fakeClient.tables['closed_months']).toHaveLength(0);
+    });
+
     it("remonte une erreur explicite si la fonction reset_everything() échoue, et ne supprime RIEN (atomique)", async () => {
       fakeClient.seed('expenses', [
         { id: 'e1', amount: 50, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false },
@@ -956,23 +976,27 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(store.recurringExpenses()).toEqual([]);
     });
 
-    // Rollback de compensation — voir la note d'atomicité dans
-    // importData() : pas de vraie transaction SQL pour ~10 tables, mais
-    // un "tout ou rien" applicatif : si un insert échoue en cours de
-    // restauration, tout ce qui a déjà été inséré est revidé avant de
-    // remonter l'erreur.
-    it("si un insert échoue en cours d'import, revide tout (rollback) plutôt que de laisser un import partiel", async () => {
+    // Vraie transaction Postgres (plan d'action #7, migration-022) :
+    // import_household_data() vide ET réécrit tout en UNE seule
+    // transaction. Un échec à n'importe quelle étape (y compris le
+    // vidage initial) annule TOUT — contrairement à l'ancien mécanisme de
+    // rollback applicatif (qui vidait la base, tentait les inserts, puis
+    // revidait "en compensation" si ça échouait, avec un risque que ce
+    // second vidage échoue aussi).
+    it("si un insert échoue en cours d'import, RIEN n'est modifié — l'ancien état survit intact (vraie transaction, pas un rollback applicatif)", async () => {
       // Des données déjà en place avant l'import, pour vérifier qu'elles
-      // sont bien parties après le rollback (resetEverything() les a
-      // déjà supprimées avant même de tenter les inserts).
+      // survivent EXACTEMENT intactes si l'import échoue en cours de
+      // route (pas juste "revidées comme le reste").
       fakeClient.seed('expenses', [
         { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', owner: 'moi', cc: false },
       ]);
       await store.loadAll();
 
-      // simulateErrorOnce plutôt que simulateErrorOn : on veut que
-      // l'insert échoue, mais que le DELETE du rollback (resetEverything,
-      // qui repasse par "incomes" dans sa transaction) réussisse ensuite.
+      // simulateErrorOnce : l'insert dans `incomes` échoue une fois,
+      // APRÈS que `expenses` ait déjà reçu la nouvelle ligne 'e1' dans la
+      // même transaction simulée — exactement le scénario où une vraie
+      // transaction Postgres doit tout annuler, y compris ce qui a déjà
+      // été fait plus tôt dans la même transaction.
       fakeClient.simulateErrorOnce('incomes');
 
       await expect(
@@ -983,12 +1007,18 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         }),
       ).rejects.toThrow(/annulé/);
 
-      // Rien ne doit être resté : ni l'ancienne dépense (déjà supprimée
-      // par le reset initial), ni la nouvelle dépense insérée juste avant
-      // l'échec sur incomes (supprimée par le rollback de compensation).
-      expect(store.expenses()).toEqual([]);
-      expect(store.incomes()).toEqual([]);
-      expect(fakeClient.tables['expenses']).toEqual([]);
+      // L'ancienne dépense doit avoir survécu EXACTEMENT telle quelle
+      // (pas juste "recréée à l'identique") : ni vidée par le reset
+      // initial de la transaction avortée, ni remplacée par la nouvelle.
+      // Le store en mémoire n'a pas non plus été rechargé (importData()
+      // ne recharge qu'en cas de succès), donc il reflète toujours l'état
+      // chargé avant la tentative.
+      expect(fakeClient.tables['expenses']).toEqual([
+        { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', owner: 'moi', cc: false },
+      ]);
+      expect(fakeClient.tables['incomes']).toEqual([]);
+      expect(store.expenses()).toHaveLength(1);
+      expect(store.expenses()[0].id).toBe('old');
     });
   });
 
@@ -1127,6 +1157,101 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.removeCategoryBudget('moi', '2026-07', 'Loisirs');
 
       expect(store.effectiveCategoryBudget('moi', 'Loisirs', '2026-07')).toBe(200);
+    });
+  });
+
+  // Plan d'action #8 (voir AUDIT_PRODUCTION_FUSION.md / migration-019) :
+  // deux comptes distincts du même foyer peuvent maintenant écrire sur la
+  // même ligne — ces tests simulent une écriture "de l'autre compte" en
+  // modifiant directement fakeClient.tables (donc SANS passer par notre
+  // store, comme le ferait une vraie deuxième session), pour vérifier que
+  // notre store le détecte au lieu d'écraser silencieusement.
+  describe('Concurrence (#8) — category_budgets et closed_months', () => {
+    it("setCategoryBudget() détecte qu'une ligne existante a été modifiée par l'autre compte et recharge plutôt que d'écraser", async () => {
+      await store.loadAll();
+      await store.setCategoryBudget('moi', '2026-07', 'Loisirs', 100);
+
+      // "L'autre compte" modifie directement la même ligne, en dehors de
+      // notre store (donc notre cache local de updated_at est périmé).
+      const row = fakeClient.tables['category_budgets'].find(
+        (r) => r['category'] === 'Loisirs' && r['ym'] === '2026-07',
+      );
+      row!['amount'] = 250;
+      row!['updated_at'] = 'changed-by-other-account';
+
+      await expect(
+        store.setCategoryBudget('moi', '2026-07', 'Loisirs', 300),
+      ).rejects.toThrow(/modifié entre-temps/);
+
+      // Notre tentative (300) n'a PAS écrasé la valeur de l'autre compte
+      // (250) — et le rechargement automatique la reflète bien.
+      expect(store.effectiveCategoryBudget('moi', 'Loisirs', '2026-07')).toBe(250);
+    });
+
+    it("setCategoryBudget() détecte qu'une ligne a été créée par l'autre compte entre notre chargement et notre écriture", async () => {
+      await store.loadAll(); // 'Loisirs' n'existe pas encore, ni localement ni côté serveur
+
+      // "L'autre compte" crée la ligne en premier.
+      fakeClient.tables['category_budgets'].push({
+        id: 'external-1',
+        household_id: TEST_HOUSEHOLD_ID,
+        owner: 'moi',
+        ym: '2026-07',
+        category: 'Loisirs',
+        amount: 80,
+        updated_at: 'created-by-other-account',
+      });
+
+      await expect(
+        store.setCategoryBudget('moi', '2026-07', 'Loisirs', 300),
+      ).rejects.toThrow(/créé entre-temps/);
+      expect(store.effectiveCategoryBudget('moi', 'Loisirs', '2026-07')).toBe(80);
+    });
+
+    it("removeCategoryBudget() détecte qu'une ligne a été modifiée par l'autre compte et ne la supprime pas à l'aveugle", async () => {
+      await store.loadAll();
+      await store.setCategoryBudget('moi', '2026-07', 'Loisirs', 100);
+
+      const row = fakeClient.tables['category_budgets'].find(
+        (r) => r['category'] === 'Loisirs' && r['ym'] === '2026-07',
+      );
+      row!['amount'] = 250;
+      row!['updated_at'] = 'changed-by-other-account';
+
+      await expect(store.removeCategoryBudget('moi', '2026-07', 'Loisirs')).rejects.toThrow(
+        /modifié entre-temps/,
+      );
+
+      // La ligne de l'autre compte doit survivre — pas supprimée à tort.
+      expect(fakeClient.tables['category_budgets']).toHaveLength(1);
+      expect(store.effectiveCategoryBudget('moi', 'Loisirs', '2026-07')).toBe(250);
+    });
+
+    it("closeMonth() détecte que l'autre compte a déjà clôturé le mois et recharge plutôt que de dupliquer", async () => {
+      await store.loadAll();
+
+      // "L'autre compte" clôture le mois en premier, directement en base.
+      fakeClient.tables['closed_months'] = [
+        { id: 'external-1', household_id: TEST_HOUSEHOLD_ID, ym: '2026-07', updated_at: 't1' },
+      ];
+
+      await expect(store.closeMonth('2026-07')).rejects.toThrow(/déjà été clôturé/);
+      // Rechargé : notre store sait maintenant que le mois est clôturé.
+      expect(store.isMonthClosed('2026-07')).toBe(true);
+    });
+
+    it("reopenMonth() détecte que l'état de clôture a changé entre-temps (déjà rouvert par l'autre compte)", async () => {
+      await store.loadAll();
+      await store.closeMonth('2026-07');
+      expect(store.isMonthClosed('2026-07')).toBe(true);
+
+      // "L'autre compte" rouvre le mois en premier, directement en base
+      // (donc notre `updated_at` local pointe vers une ligne qui n'existe
+      // plus).
+      fakeClient.tables['closed_months'] = [];
+
+      await expect(store.reopenMonth('2026-07')).rejects.toThrow(/changé entre-temps/);
+      expect(store.isMonthClosed('2026-07')).toBe(false);
     });
   });
 
@@ -1522,6 +1647,65 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
 
       expect(combined.size).toBe(upcomingIds.length + otherIds.length); // pas de recoupement
       expect(combined.size).toBe(store.visibleProvisions().length); // rien de perdu non plus
+    });
+  });
+
+  // Plan d'action #7 (voir migration-021-split-versement-rpc.sql) :
+  // splitVersementIntoProvisions() est maintenant une RPC transactionnelle
+  // — ces tests vérifient qu'un échec en cours de répartition n'applique
+  // RIEN (ni le versement, ni les ajustements déjà "réussis" avant
+  // l'échec), contrairement à l'ancien rollback applicatif (BUG-010) qui
+  // pouvait lui-même échouer à moitié.
+  describe('splitVersementIntoProvisions() — atomicité (#7)', () => {
+    it('crée le versement ET tous les ajustements en un seul appel', async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Vacances', amount: 1000, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', category: 'Vacances', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+        {
+          id: 'p2', name: 'Auto', amount: 500, every_n: 6, interval_unit: 'months',
+          start_ym: '2026-01', category: 'Auto', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi'); // reçoit -> l'autre (madame) est l'expéditeur
+
+      await store.splitVersementIntoProvisions(100, '2026-07-15', [
+        { provisionId: 'p1', amount: 60 },
+        { provisionId: 'p2', amount: 40 },
+      ]);
+
+      const p1 = store.provisions().find((p) => p.id === 'p1');
+      const p2 = store.provisions().find((p) => p.id === 'p2');
+      expect(p1?.adjustments.some((a) => a.amount === 60)).toBe(true);
+      expect(p2?.adjustments.some((a) => a.amount === 40)).toBe(true);
+      expect(store.expenses().some((e) => e.category === 'Versement' && e.amount === 100)).toBe(true);
+    });
+
+    it("si la répartition échoue en cours de route, RIEN n'est modifié — pas de versement orphelin ni d'ajustement partiel", async () => {
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Vacances', amount: 1000, every_n: 12, interval_unit: 'months',
+          start_ym: '2026-01', category: 'Vacances', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+
+      fakeClient.simulateErrorOnce('provision_adjustments');
+
+      await expect(
+        store.splitVersementIntoProvisions(100, '2026-07-15', [{ provisionId: 'p1', amount: 100 }]),
+      ).rejects.toThrow(/répartition du versement/);
+
+      // Aucun versement "orphelin" (créé mais jamais réparti) ne doit
+      // rester en base.
+      expect(fakeClient.tables['expenses']).toEqual([]);
+      expect(fakeClient.tables['provision_adjustments']).toEqual([]);
     });
   });
 

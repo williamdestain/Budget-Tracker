@@ -360,6 +360,30 @@ export class BudgetStore {
   // méthodes de mutation datées, potentiellement souvent).
   readonly closedMonths = signal<Set<string>>(new Set());
 
+  // --- Concurrence (plan d'action #8) -------------------------------------
+  // `category_budgets` et `closed_months` peuvent maintenant être modifiés
+  // par 2 comptes distincts du même foyer (voir migration-019). Ces deux
+  // Maps gardent le dernier `updated_at` connu par ligne (chargé dans
+  // loadAll(), rafraîchi après chaque écriture réussie) : setCategoryBudget/
+  // removeCategoryBudget/closeMonth/reopenMonth s'en servent pour détecter
+  // qu'une ligne a changé côté serveur depuis notre dernier chargement,
+  // plutôt que de l'écraser silencieusement ("lost update"). Simples
+  // propriétés privées (pas des signals) : elles ne pilotent aucun affichage,
+  // seulement la logique d'écriture.
+  private categoryBudgetUpdatedAt = new Map<string, string>();
+  private closedMonthUpdatedAt = new Map<string, string>();
+
+  private cbKey(owner: Owner, ym: string, category: string): string {
+    return JSON.stringify([owner, ym, category]);
+  }
+
+  // Code Postgres "unique_violation" : sert à distinguer un vrai conflit de
+  // concurrence (l'autre compte a créé la ligne juste avant nous) d'une
+  // autre erreur d'écriture.
+  private isUniqueViolation(error: any): boolean {
+    return error?.code === '23505';
+  }
+
   readonly current = signal<string>(ymOf(new Date()));
   readonly activeOwner = signal<OwnerOrGlobal>('moi');
   readonly loading = signal(true);
@@ -418,6 +442,8 @@ export class BudgetStore {
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
     this.closedMonths.set(new Set());
+    this.categoryBudgetUpdatedAt = new Map();
+    this.closedMonthUpdatedAt = new Map();
     this.loadError.set(null);
   }
 
@@ -496,6 +522,12 @@ export class BudgetStore {
     if (!budgetsRes.error) this.budgets.set(rowsToMonthlyMap(budgetsRes.data ?? []));
     if (!categoryBudgetsRes.error) {
       this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
+      this.categoryBudgetUpdatedAt = new Map(
+        (categoryBudgetsRes.data ?? []).map((row: any) => [
+          this.cbKey(row.owner, row.ym, row.category),
+          row.updated_at,
+        ]),
+      );
     }
     if (!rolloversRes.error) this.rollovers.set(rowsToMonthlyMap(rolloversRes.data ?? []));
     if (!recurringExpensesRes.error) {
@@ -524,6 +556,9 @@ export class BudgetStore {
     }
     if (!closedMonthsRes.error) {
       this.closedMonths.set(new Set((closedMonthsRes.data ?? []).map((row: any) => row.ym as string)));
+      this.closedMonthUpdatedAt = new Map(
+        (closedMonthsRes.data ?? []).map((row: any) => [row.ym as string, row.updated_at]),
+      );
     }
     if (!creditCardPaymentsRes.error) {
       this.creditCardPayments.set((creditCardPaymentsRes.data ?? []).map(rowToCreditCardPayment));
@@ -576,19 +611,54 @@ export class BudgetStore {
   }
 
   async closeMonth(ym: string): Promise<void> {
-    const { error } = await this.supabase.client
+    if (this.closedMonths().has(ym)) return; // déjà clôturé localement, rien à faire
+    // INSERT (pas upsert) : si l'autre compte a clôturé ce mois entre notre
+    // dernier chargement et maintenant, ça viole la clé primaire
+    // (household_id, ym) — un vrai conflit de concurrence (#8), pas une
+    // simple répétition d'une action déjà faite par NOUS.
+    const { data, error } = await this.supabase.client
       .from('closed_months')
-      .upsert({ household_id: this.hid(), ym }, { onConflict: 'household_id,ym' });
-    if (error) throw error;
+      .insert({ household_id: this.hid(), ym })
+      .select('updated_at')
+      .single();
+    if (error) {
+      if (this.isUniqueViolation(error)) {
+        await this.loadAll();
+        throw new Error(
+          `${ym} a déjà été clôturé entre-temps (probablement par l'autre compte) — données rechargées.`,
+        );
+      }
+      throw error;
+    }
+    this.closedMonthUpdatedAt.set(ym, data.updated_at);
     this.closedMonths.update((set) => new Set(set).add(ym));
   }
 
   async reopenMonth(ym: string): Promise<void> {
-    const { error } = await this.supabase.client
+    const localUpdatedAt = this.closedMonthUpdatedAt.get(ym);
+    let query = this.supabase.client
       .from('closed_months')
       .delete()
+      .eq('household_id', this.hid())
       .eq('ym', ym);
+    // Si on connaît le `updated_at` de la dernière clôture qu'on a vue,
+    // on ne supprime QUE cette version précise (compare-and-swap) : si
+    // l'autre compte a rouvert puis re-clôturé ce mois entre-temps, notre
+    // suppression ne doit pas effacer sa nouvelle clôture par erreur.
+    if (localUpdatedAt) query = query.eq('updated_at', localUpdatedAt);
+    const { data, error } = await query.select('ym');
     if (error) throw error;
+    if (localUpdatedAt && (!data || data.length === 0)) {
+      // Rien supprimé alors qu'on pensait le mois clôturé : l'état a
+      // changé entre-temps côté serveur (déjà rouvert, ou re-clôturé
+      // avec un `updated_at` différent) — on recharge plutôt que de
+      // laisser l'UI locale mentir sur l'état réel.
+      await this.loadAll();
+      throw new Error(
+        `${ym} : l'état de clôture a changé entre-temps (autre compte) — données rechargées.`,
+      );
+    }
+    this.closedMonthUpdatedAt.delete(ym);
     this.closedMonths.update((set) => {
       const copy = new Set(set);
       copy.delete(ym);
@@ -1305,13 +1375,58 @@ export class BudgetStore {
     if (!Number.isFinite(amount) || amount < 0) {
       throw new Error(`Montant de budget invalide : ${amount}. Doit être un nombre ≥ 0.`);
     }
-    const { error } = await this.supabase.client
-      .from('category_budgets')
-      .upsert(
-        { household_id: this.hid(), owner, ym, category, amount },
-        { onConflict: 'household_id,owner,ym,category' },
+    const key = this.cbKey(owner, ym, category);
+    const localUpdatedAt = this.categoryBudgetUpdatedAt.get(key);
+    const client = this.supabase.client;
+    let data: { updated_at: string } | null;
+    let error: any;
+
+    if (localUpdatedAt) {
+      // La ligne existe déjà dans notre état local : UPDATE conditionné
+      // sur le `updated_at` qu'on a vu au dernier chargement
+      // (compare-and-swap). 0 ligne touchée = quelqu'un d'autre l'a
+      // modifiée ou supprimée entre-temps (#8, "lost update").
+      ({ data, error } = await client
+        .from('category_budgets')
+        .update({ amount })
+        .eq('household_id', this.hid())
+        .eq('owner', owner)
+        .eq('ym', ym)
+        .eq('category', category)
+        .eq('updated_at', localUpdatedAt)
+        .select('updated_at')
+        .maybeSingle());
+    } else {
+      // On ne connaît pas cette ligne localement : INSERT strict (pas
+      // upsert). Si elle existe déjà côté serveur (l'autre compte vient
+      // de la créer), ça viole la clé primaire — un vrai conflit, pas une
+      // simple répétition d'une action déjà faite par nous.
+      ({ data, error } = await client
+        .from('category_budgets')
+        .insert({ household_id: this.hid(), owner, ym, category, amount })
+        .select('updated_at')
+        .maybeSingle());
+    }
+
+    if (error) {
+      if (!localUpdatedAt && this.isUniqueViolation(error)) {
+        await this.loadAll();
+        throw new Error(
+          `Le budget de "${category}" a été créé entre-temps par l'autre compte — données rechargées, réessayez.`,
+        );
+      }
+      throw error;
+    }
+    if (!data) {
+      // UPDATE n'a touché aucune ligne : elle a changé (ou disparu) côté
+      // serveur depuis notre dernier chargement.
+      await this.loadAll();
+      throw new Error(
+        `Le budget de "${category}" a été modifié entre-temps par l'autre compte — données rechargées, réessayez.`,
       );
-    if (error) throw error;
+    }
+
+    this.categoryBudgetUpdatedAt.set(key, data.updated_at);
     this.categoryBudgets.update((map) => {
       const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
       copy[owner] = { ...copy[owner], [ym]: { ...copy[owner][ym], [category]: amount } };
@@ -1321,13 +1436,29 @@ export class BudgetStore {
 
   async removeCategoryBudget(owner: Owner, ym: string, category: string): Promise<void> {
     this.assertMonthOpen(ym);
-    const { error } = await this.supabase.client
+    const key = this.cbKey(owner, ym, category);
+    const localUpdatedAt = this.categoryBudgetUpdatedAt.get(key);
+    let query = this.supabase.client
       .from('category_budgets')
       .delete()
+      .eq('household_id', this.hid())
       .eq('owner', owner)
       .eq('ym', ym)
       .eq('category', category);
+    // Compare-and-swap : si on connaît le `updated_at` de la dernière
+    // version vue, on ne supprime QUE cette version précise — sinon on
+    // risquerait d'effacer une modification faite entre-temps par
+    // l'autre compte sans même s'en rendre compte.
+    if (localUpdatedAt) query = query.eq('updated_at', localUpdatedAt);
+    const { data, error } = await query.select('category');
     if (error) throw error;
+    if (localUpdatedAt && (!data || data.length === 0)) {
+      await this.loadAll();
+      throw new Error(
+        `Le budget de "${category}" a été modifié entre-temps par l'autre compte — données rechargées, réessayez.`,
+      );
+    }
+    this.categoryBudgetUpdatedAt.delete(key);
     this.categoryBudgets.update((map) => {
       const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
       if (copy[owner][ym]) {
@@ -2080,77 +2211,40 @@ export class BudgetStore {
     }
     const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
     const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
-
-    // Utilisé pour la compensation en cas d'échec partiel : on ne
-    // supprime le versement que si CET appel l'a créé — un versement déjà
-    // existant (existingExpenseId fourni) n'est pas notre responsabilité.
-    const createdVersementHere = !existingExpenseId;
-
-    let versementExpenseId: string;
-    if (existingExpenseId) {
-      const existing = this.expenses().find((e) => e.id === existingExpenseId);
-      if (!existing) throw new Error('Versement introuvable.');
-      versementExpenseId = existing.id;
-    } else {
-      const versementExpense = await this.addExpense({
-        amount: totalAmount,
-        category: 'Versement',
-        date,
-        owner: sender,
-        cc: false,
-      });
-      versementExpenseId = versementExpense.id;
+    this.assertMonthOpen(date.slice(0, 7));
+    // Défense en profondeur (audit BUG-013) : voir setCategoryBudget().
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      throw new Error(`Montant de versement invalide : ${totalAmount}. Doit être un nombre > 0.`);
     }
 
-    // Bug corrigé (audit BUG-010) : chaque répartition est un INSERT
-    // indépendant — si l'une d'elles échoue après que d'autres ont déjà
-    // réussi, l'opération restait auparavant partiellement appliquée
-    // (versement créé, certaines provisions déjà réparties, d'autres
-    // non, sans qu'aucun message ne le signale clairement). On garde la
-    // trace de ce qui a été inséré pour tout annuler en cas d'échec —
-    // équivalent applicatif d'une transaction, faute de RPC SQL dédiée.
-    const inserted: { provisionId: string; adjustmentId: string }[] = [];
-    try {
-      for (const a of allocations) {
-        if (a.amount > 0) {
-          const adjustment = await this.addProvisionAdjustment(
-            a.provisionId,
-            a.amount,
-            date,
-            `Versement de ${senderLabel}`,
-            versementExpenseId,
-          );
-          inserted.push({ provisionId: a.provisionId, adjustmentId: adjustment.id });
-        }
-      }
-    } catch (err) {
-      const rollbackErrors: string[] = [];
-      for (const { provisionId, adjustmentId } of inserted) {
-        try {
-          await this.removeProvisionAdjustment(provisionId, adjustmentId);
-        } catch (rollbackErr) {
-          rollbackErrors.push((rollbackErr as Error).message ?? String(rollbackErr));
-        }
-      }
-      if (createdVersementHere) {
-        try {
-          await this.removeExpense(versementExpenseId);
-        } catch (rollbackErr) {
-          rollbackErrors.push((rollbackErr as Error).message ?? String(rollbackErr));
-        }
-      }
-      if (rollbackErrors.length) {
-        throw new Error(
-          `Échec de la répartition du versement (${(err as Error).message ?? err}), et l'annulation automatique ` +
-            `n'a pas pu tout défaire (${rollbackErrors.join('; ')}). Vérifie manuellement les provisions et le ` +
-            `versement dans Supabase.`,
-        );
-      }
-      throw new Error(
-        `Échec de la répartition du versement : ${(err as Error).message ?? err}. Tout a été annulé` +
-          `${createdVersementHere ? ' (y compris le versement lui-même)' : ''}, tu peux réessayer.`,
-      );
+    // Transactionnel côté serveur (plan d'action #7, migration-021) :
+    // la RPC crée le versement (si besoin) ET tous les ajustements de
+    // provision dans une seule transaction Postgres — soit tout est
+    // écrit, soit rien ne l'est. Remplace l'ancienne approche (inserts
+    // indépendants + rollback applicatif "de compensation" qui pouvait
+    // lui-même échouer, voir BUG-010).
+    const { error } = await this.supabase.client.rpc('split_versement_into_provisions', {
+      p_sender: sender,
+      p_total_amount: totalAmount,
+      p_date: date,
+      p_existing_expense_id: existingExpenseId ?? null,
+      p_allocations: allocations
+        .filter((a) => a.amount > 0)
+        .map((a) => ({
+          provision_id: a.provisionId,
+          amount: a.amount,
+          note: `Versement de ${senderLabel}`,
+        })),
+    });
+    if (error) {
+      throw new Error(`Échec de la répartition du versement : ${error.message}. Rien n'a été modifié, tu peux réessayer.`);
     }
+
+    // Recharge plutôt que de reconstruire l'état localement à partir du
+    // seul résultat de la RPC : plus simple, plus sûr, et cohérent avec
+    // le choix fait pour closeMonth()/reopenMonth() (#8) — un aller-retour
+    // de plus, largement acceptable pour une action ponctuelle.
+    await this.loadAll();
   }
 
   // Annule une répartition de versement faite avec splitVersementIntoProvisions :
@@ -2576,12 +2670,14 @@ export class BudgetStore {
       );
       for (const ym of yms) {
         const amount = budgetsForOwner[ym][oldName];
-        const { error: upErr } = await this.supabase.client
+        const { data: upData, error: upErr } = await this.supabase.client
           .from('category_budgets')
           .upsert(
             { household_id: this.hid(), owner, ym, category: trimmed, amount },
             { onConflict: 'household_id,owner,ym,category' },
-          );
+          )
+          .select('updated_at')
+          .single();
         if (upErr) throw upErr;
         const { error: delErr } = await this.supabase.client
           .from('category_budgets')
@@ -2590,6 +2686,12 @@ export class BudgetStore {
           .eq('ym', ym)
           .eq('category', oldName);
         if (delErr) throw delErr;
+        // Tient le cache de concurrence (#8) à jour : sans ça, la ligne
+        // renommée serait inconnue localement et le prochain
+        // setCategoryBudget() dessus tenterait un INSERT strict qui
+        // échouerait à tort (elle existe déjà, on vient de la créer).
+        this.categoryBudgetUpdatedAt.set(this.cbKey(owner, ym, trimmed), upData.updated_at);
+        this.categoryBudgetUpdatedAt.delete(this.cbKey(owner, ym, oldName));
         this.categoryBudgets.update((map) => {
           const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
           const catMap = { ...copy[owner][ym] };
@@ -2783,11 +2885,24 @@ export class BudgetStore {
     this.categoryBudgets.set(emptyCategoryBudgetMap());
     this.rollovers.set(emptyMonthlyMap());
     this.creditCardPayments.set([]);
+    // Bug corrigé (découvert en travaillant sur #8, voir
+    // migration-020-reset-includes-closed-months.sql) : reset_everything()
+    // ne vidait pas closed_months côté serveur, donc les mois clôturés
+    // restaient verrouillés après un reset. `closedMonths` doit être remis
+    // à zéro ici comme les autres signals, une fois le correctif serveur
+    // appliqué.
+    this.closedMonths.set(new Set());
+    // Les caches de concurrence (#8) doivent être vidés ici : les lignes
+    // qu'ils référencent viennent d'être supprimées côté serveur, un
+    // cache resté périmé ferait croire à tort à un conflit (UPDATE sur
+    // une ligne qui n'existe plus) au prochain setCategoryBudget().
+    this.categoryBudgetUpdatedAt = new Map();
+    this.closedMonthUpdatedAt = new Map();
     // `categories` n'est volontairement PAS vidé ici : c'est une liste de
     // configuration/taxonomie (comme les profils Moi/Madame), pas une
     // donnée financière — "Réinitialiser toutes les données" ne doit pas
     // obliger à reconfigurer ses catégories personnalisées à chaque fois.
-    // Voir aussi reset_everything() côté SQL (migration-008/013/015),
+    // Voir aussi reset_everything() côté SQL (migration-008/013/015/020),
     // qui exclut aussi delete from categories pour la même raison.
   }
 
@@ -2821,10 +2936,10 @@ export class BudgetStore {
     // que la PRÉSENCE des tableaux (Array.isArray), pas le contenu de
     // chaque élément — un JSON syntaxiquement valide mais avec
     // amount:"bonjour" ou date:"pas-une-date" passait ce garde-fou et
-    // n'échouait qu'au moment de l'insertion en base, APRÈS que
-    // resetEverything() ait déjà vidé les données existantes. On valide
-    // maintenant le contenu en profondeur AVANT tout reset, pour qu'un
-    // fichier invalide échoue sans avoir touché à quoi que ce soit.
+    // n'échouait qu'au moment de l'insertion en base, APRÈS que le vidage
+    // ait déjà eu lieu. On valide maintenant le contenu en profondeur
+    // AVANT le moindre appel réseau, pour qu'un fichier invalide échoue
+    // sans avoir touché à quoi que ce soit.
     const validationErrors = validateImportPayload(data);
     if (validationErrors.length) {
       const shown = validationErrors.slice(0, 10);
@@ -2836,131 +2951,88 @@ export class BudgetStore {
       );
     }
 
-    await this.resetEverything();
-
-    try {
-      await this.insertImportedData(data);
-    } catch (err) {
-      try {
-        await this.resetEverything();
-      } catch (rollbackErr) {
-        // Cas rare et sérieux : l'import a échoué ET le rollback de
-        // compensation a échoué aussi (ex. panne réseau prolongée). On ne
-        // masque ni l'un ni l'autre — l'utilisateur doit savoir que l'état
-        // de la base est incertain et vérifier manuellement, plutôt que de
-        // recevoir un message qui ne parle que de l'échec d'origine.
-        throw new Error(
-          `Échec de l'import (${(err as Error).message ?? err}), et la restauration automatique de secours a ` +
-            `elle-même échoué (${(rollbackErr as Error).message ?? rollbackErr}). L'état de la base est incertain ` +
-            `— vérifie manuellement dans Supabase avant de réessayer.`,
-        );
-      }
+    // Transactionnel côté serveur (plan d'action #7, migration-022) :
+    // import_household_data() vide ET réécrit tout dans une seule
+    // transaction Postgres (elle réutilise reset_everything() en interne).
+    // Remplace l'ancienne approche — resetEverything() PUIS une dizaine
+    // d'inserts HTTP indépendants, avec un rollback applicatif "de
+    // compensation" qui pouvait lui-même échouer (panne réseau prolongée),
+    // laissant l'utilisateur face à un état incertain à vérifier
+    // manuellement. Ici : soit l'ancien état est intégralement remplacé
+    // par le nouveau, soit rien ne bouge — pas d'état intermédiaire
+    // possible.
+    const payload = this.buildImportPayload(data);
+    const { error } = await this.supabase.client.rpc('import_household_data', payload);
+    if (error) {
       throw new Error(
-        `Import annulé : ${(err as Error).message ?? err}. Aucune donnée n'a été conservée (la base a été revidée), tu peux réessayer.`,
+        `Import annulé : ${error.message}. Aucune donnée n'a été modifiée (la RPC est transactionnelle), tu peux réessayer.`,
       );
     }
 
     await this.loadAll();
   }
 
-  private async insertImportedData(data: any): Promise<void> {
-    // L'ancienne application (fichier HTML unique) générait des identifiants
-    // courts (ex. "mrztns345pw3k"), pas de vrais UUID comme Supabase les
-    // exige. On les remplace ici par de vrais UUID, en gardant une table de
-    // correspondance pour relier correctement les ajustements à leur
-    // provision. Les fichiers déjà au format UUID (exportés depuis cette
-    // nouvelle app) passent inchangés.
+  // Construit les tableaux jsonb attendus par la RPC import_household_data()
+  // à partir du fichier importé : mapping TS -> colonnes SQL (mappers
+  // dédiés), génération de vrais UUID pour les identifiants courts de
+  // l'ancienne application (ex. "mrztns345pw3k"), et dédoublonnage des
+  // catégories par nom. Toute cette logique reste en TS plutôt que d'être
+  // dupliquée en PL/pgSQL — la RPC, elle, ne fait qu'insérer ce qu'on lui
+  // donne (voir migration-022 pour le détail).
+  private buildImportPayload(data: any): Record<string, unknown> {
     const isUuid = (v: unknown): v is string =>
       typeof v === 'string' &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const idFor = (v: unknown): string => (isUuid(v) ? v : crypto.randomUUID());
+    const hid = this.hid();
 
-    if (data.provisions.length) {
-      const provisionIdMap = new Map<string, string>();
-      const provisionRows = data.provisions.map((p: Provision) => {
-        const newId = idFor(p.id);
-        provisionIdMap.set(String(p.id), newId);
-        return { id: newId, household_id: this.hid(), ...provisionToRow(p) };
-      });
-      const { error } = await this.supabase.client
-        .from('provisions')
-        .insert(provisionRows);
-      if (error) throw error;
-
-      const adjustmentRows = data.provisions.flatMap((p: Provision) =>
-        (p.adjustments || []).map((a) => ({
-          id: idFor(a.id),
-          household_id: this.hid(),
-          provision_id: provisionIdMap.get(String(p.id))!,
-          amount: a.amount,
-          date: a.date,
-          note: a.note,
-        })),
-      );
-      if (adjustmentRows.length) {
-        const { error: adjError } = await this.supabase.client
-          .from('provision_adjustments')
-          .insert(adjustmentRows);
-        if (adjError) throw adjError;
-      }
-    }
+    const provisionIdMap = new Map<string, string>();
+    const provisionRows = (data.provisions as Provision[]).map((p) => {
+      const newId = idFor(p.id);
+      provisionIdMap.set(String(p.id), newId);
+      return { id: newId, household_id: hid, ...provisionToRow(p) };
+    });
+    const provisionAdjustmentRows = (data.provisions as Provision[]).flatMap((p) =>
+      (p.adjustments || []).map((a) => ({
+        id: idFor(a.id),
+        household_id: hid,
+        provision_id: provisionIdMap.get(String(p.id))!,
+        amount: a.amount,
+        date: a.date,
+        note: a.note,
+      })),
+    );
 
     // Optionnel : absent des sauvegardes faites avant l'ajout des objectifs
     // d'épargne, donc on ne bloque pas l'import si le champ manque.
-    if (Array.isArray(data.savingsGoals) && data.savingsGoals.length) {
-      const goalIdMap = new Map<string, string>();
-      const goalRows = data.savingsGoals.map((g: SavingsGoal) => {
-        const newId = idFor(g.id);
-        goalIdMap.set(String(g.id), newId);
-        return { id: newId, household_id: this.hid(), ...savingsGoalToRow(g) };
-      });
-      const { error: goalError } = await this.supabase.client
-        .from('savings_goals')
-        .insert(goalRows);
-      if (goalError) throw goalError;
-
-      const contributionRows = data.savingsGoals.flatMap((g: SavingsGoal) =>
-        (g.contributions || []).map((c) => ({
-          id: idFor(c.id),
-          household_id: this.hid(),
-          savings_goal_id: goalIdMap.get(String(g.id))!,
-          amount: c.amount,
-          date: c.date,
-          note: c.note,
-        })),
-      );
-      if (contributionRows.length) {
-        const { error: contribError } = await this.supabase.client
-          .from('savings_goal_contributions')
-          .insert(contributionRows);
-        if (contribError) throw contribError;
-      }
-    }
+    const savingsGoals: SavingsGoal[] = Array.isArray(data.savingsGoals) ? data.savingsGoals : [];
+    const goalIdMap = new Map<string, string>();
+    const savingsGoalRows = savingsGoals.map((g) => {
+      const newId = idFor(g.id);
+      goalIdMap.set(String(g.id), newId);
+      return { id: newId, household_id: hid, ...savingsGoalToRow(g) };
+    });
+    const savingsGoalContributionRows = savingsGoals.flatMap((g) =>
+      (g.contributions || []).map((c) => ({
+        id: idFor(c.id),
+        household_id: hid,
+        savings_goal_id: goalIdMap.get(String(g.id))!,
+        amount: c.amount,
+        date: c.date,
+        note: c.note,
+      })),
+    );
 
     // Optionnel : absent des sauvegardes exportées avant ce correctif —
     // même garde que pour savingsGoals ci-dessus, on ne bloque pas
     // l'import d'un fichier plus ancien qui ne les contient pas.
-    if (Array.isArray(data.recurringExpenses) && data.recurringExpenses.length) {
-      const rows = data.recurringExpenses.map((r: RecurringExpense) => ({
-        id: idFor(r.id),
-        household_id: this.hid(),
-        ...recurringExpenseToRow(r),
-      }));
-      const { error } = await this.supabase.client.from('recurring_expenses').insert(rows);
-      if (error) throw error;
-    }
+    const recurringExpenseRows = (
+      Array.isArray(data.recurringExpenses) ? (data.recurringExpenses as RecurringExpense[]) : []
+    ).map((r) => ({ id: idFor(r.id), household_id: hid, ...recurringExpenseToRow(r) }));
 
-    // Doit être inséré AVANT incomes : incomes.recurring_source_id
-    // référence recurring_incomes(id).
-    if (Array.isArray(data.recurringIncomes) && data.recurringIncomes.length) {
-      const rows = data.recurringIncomes.map((r: RecurringIncome) => ({
-        id: idFor(r.id),
-        household_id: this.hid(),
-        ...recurringIncomeToRow(r),
-      }));
-      const { error } = await this.supabase.client.from('recurring_incomes').insert(rows);
-      if (error) throw error;
-    }
+    const recurringIncomeRows = (
+      Array.isArray(data.recurringIncomes) ? (data.recurringIncomes as RecurringIncome[]) : []
+    ).map((r) => ({ id: idFor(r.id), household_id: hid, ...recurringIncomeToRow(r) }));
 
     // Optionnel : absent des sauvegardes exportées avant l'ajout des
     // catégories dynamiques (migration-016). Un compte a déjà les
@@ -2968,97 +3040,66 @@ export class BudgetStore {
     // réimporte donc que les catégories vraiment nouvelles (personnalisées),
     // en comparant par NOM (insensible à la casse), sans jamais écraser ou
     // dupliquer une catégorie existante.
-    if (Array.isArray(data.categories) && data.categories.length) {
-      const existingNames = new Set(this.categories().map((c) => c.name.toLowerCase()));
-      const newCategories = (data.categories as Category[]).filter(
-        (c) => !existingNames.has(c.name.toLowerCase()),
-      );
-      if (newCategories.length) {
-        const rows = newCategories.map((c) => ({ id: idFor(c.id), household_id: this.hid(), ...categoryToRow(c) }));
-        const { data: inserted, error } = await this.supabase.client
-          .from('categories')
-          .insert(rows)
-          .select();
-        if (error) throw error;
-        this.categories.update((list) => [...list, ...(inserted ?? []).map(rowToCategory)]);
-      }
-    }
+    const existingNames = new Set(this.categories().map((c) => c.name.toLowerCase()));
+    const newCategories = (Array.isArray(data.categories) ? (data.categories as Category[]) : []).filter(
+      (c) => !existingNames.has(c.name.toLowerCase()),
+    );
+    const categoryRows = newCategories.map((c) => ({ id: idFor(c.id), household_id: hid, ...categoryToRow(c) }));
 
     // Optionnel : absent des sauvegardes exportées avant l'ajout du suivi
     // de carte de crédit (migration-012).
-    if (Array.isArray(data.creditCardPayments) && data.creditCardPayments.length) {
-      const rows = data.creditCardPayments.map((p: CreditCardPayment) => ({
-        id: idFor(p.id),
-        household_id: this.hid(),
-        ...creditCardPaymentToRow(p),
-      }));
-      const { error } = await this.supabase.client.from('credit_card_payments').insert(rows);
-      if (error) throw error;
-    }
+    const creditCardPaymentRows = (
+      Array.isArray(data.creditCardPayments) ? (data.creditCardPayments as CreditCardPayment[]) : []
+    ).map((p) => ({ id: idFor(p.id), household_id: hid, ...creditCardPaymentToRow(p) }));
 
-    if (data.expenses.length) {
-      const rows = data.expenses.map((e: Expense) => ({
-        id: idFor(e.id),
-        household_id: this.hid(),
-        ...expenseToRow(e),
-      }));
-      const { error } = await this.supabase.client.from('expenses').insert(rows);
-      if (error) throw error;
-    }
-
-    if (data.incomes.length) {
-      const rows = data.incomes.map((i: Income) => ({
-        id: idFor(i.id),
-        household_id: this.hid(),
-        ...incomeToRow(i),
-      }));
-      const { error } = await this.supabase.client.from('incomes').insert(rows);
-      if (error) throw error;
-    }
+    const expenseRows = (data.expenses as Expense[]).map((e) => ({
+      id: idFor(e.id),
+      household_id: hid,
+      ...expenseToRow(e),
+    }));
+    const incomeRows = (data.incomes as Income[]).map((i) => ({
+      id: idFor(i.id),
+      household_id: hid,
+      ...incomeToRow(i),
+    }));
 
     const ownersList: Owner[] = ['moi', 'madame'];
-    if (data.budgets) {
-      const rows: any[] = [];
-      ownersList.forEach((o) => {
-        Object.entries(data.budgets[o] || {}).forEach(([ym, amount]) => {
-          rows.push({ household_id: this.hid(), owner: o, ym, amount });
+    const budgetRows: any[] = [];
+    ownersList.forEach((o) => {
+      Object.entries(data.budgets?.[o] || {}).forEach(([ym, amount]) => {
+        budgetRows.push({ household_id: hid, owner: o, ym, amount });
+      });
+    });
+    const rolloverRows: any[] = [];
+    ownersList.forEach((o) => {
+      Object.entries(data.rollovers?.[o] || {}).forEach(([ym, amount]) => {
+        rolloverRows.push({ household_id: hid, owner: o, ym, amount });
+      });
+    });
+    const categoryBudgetRows: any[] = [];
+    ownersList.forEach((o) => {
+      Object.entries(data.categoryBudgets?.[o] || {}).forEach(([ym, catMap]: [string, any]) => {
+        Object.entries(catMap || {}).forEach(([category, amount]) => {
+          categoryBudgetRows.push({ household_id: hid, owner: o, ym, category, amount });
         });
       });
-      if (rows.length) {
-        const { error } = await this.supabase.client.from('budgets').insert(rows);
-        if (error) throw error;
-      }
-    }
+    });
 
-    if (data.rollovers) {
-      const rows: any[] = [];
-      ownersList.forEach((o) => {
-        Object.entries(data.rollovers[o] || {}).forEach(([ym, amount]) => {
-          rows.push({ household_id: this.hid(), owner: o, ym, amount });
-        });
-      });
-      if (rows.length) {
-        const { error } = await this.supabase.client.from('rollovers').insert(rows);
-        if (error) throw error;
-      }
-    }
-
-    if (data.categoryBudgets) {
-      const rows: any[] = [];
-      ownersList.forEach((o) => {
-        Object.entries(data.categoryBudgets[o] || {}).forEach(([ym, catMap]: [string, any]) => {
-          Object.entries(catMap || {}).forEach(([category, amount]) => {
-            rows.push({ household_id: this.hid(), owner: o, ym, category, amount });
-          });
-        });
-      });
-      if (rows.length) {
-        const { error } = await this.supabase.client
-          .from('category_budgets')
-          .insert(rows);
-        if (error) throw error;
-      }
-    }
+    return {
+      p_provisions: provisionRows,
+      p_provision_adjustments: provisionAdjustmentRows,
+      p_savings_goals: savingsGoalRows,
+      p_savings_goal_contributions: savingsGoalContributionRows,
+      p_recurring_expenses: recurringExpenseRows,
+      p_recurring_incomes: recurringIncomeRows,
+      p_categories: categoryRows,
+      p_credit_card_payments: creditCardPaymentRows,
+      p_expenses: expenseRows,
+      p_incomes: incomeRows,
+      p_budgets: budgetRows,
+      p_rollovers: rolloverRows,
+      p_category_budgets: categoryBudgetRows,
+    };
   }
 
   // --- Carte de crédit (solde dû, indépendant des provisions) -------------

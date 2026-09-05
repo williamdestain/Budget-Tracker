@@ -158,22 +158,26 @@ export class Dashboard implements OnInit {
     }
     if (!confirm(msg)) return;
 
-    await Promise.all([
-      this.store.setRollover('moi', target, rolloverMoi),
-      this.store.setRollover('madame', target, rolloverMadame),
-    ]);
-    await this.store.closeMonth(ym);
-    // Bascule automatiquement sur le mois cible : sans ça, le tableau de
-    // bord reste affiché sur le mois qu'on vient de verrouiller (rien n'y
-    // change visuellement), et il faut cliquer "Suivant" pour voir le
-    // report apparaître — au premier coup d'œil, ça donne l'impression
-    // que le report n'a pas fonctionné alors qu'il est bien enregistré.
-    this.store.current.set(target);
-    this.toast.show(
-      carryForward
-        ? `🔒 ${monthLabel(ym)} clôturé — reporté vers ${monthLabel(target)} : Moi ${this.fmtSigned(soldeMoi)}, Madame ${this.fmtSigned(soldeMadame)}.`
-        : `🔒 ${monthLabel(ym)} clôturé sans report — ${monthLabel(target)} démarre à 0.`,
-    );
+    try {
+      await Promise.all([
+        this.store.setRollover('moi', target, rolloverMoi),
+        this.store.setRollover('madame', target, rolloverMadame),
+      ]);
+      await this.store.closeMonth(ym);
+      // Bascule automatiquement sur le mois cible : sans ça, le tableau de
+      // bord reste affiché sur le mois qu'on vient de verrouiller (rien n'y
+      // change visuellement), et il faut cliquer "Suivant" pour voir le
+      // report apparaître — au premier coup d'œil, ça donne l'impression
+      // que le report n'a pas fonctionné alors qu'il est bien enregistré.
+      this.store.current.set(target);
+      this.toast.show(
+        carryForward
+          ? `🔒 ${monthLabel(ym)} clôturé — reporté vers ${monthLabel(target)} : Moi ${this.fmtSigned(soldeMoi)}, Madame ${this.fmtSigned(soldeMadame)}.`
+          : `🔒 ${monthLabel(ym)} clôturé sans report — ${monthLabel(target)} démarre à 0.`,
+      );
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
+    }
   }
 
   // Rouvre le mois affiché : lève le verrou, sans toucher au report déjà
@@ -184,7 +188,11 @@ export class Dashboard implements OnInit {
     if (!confirm(`Rouvrir ${monthLabel(ym)} ? Les modifications seront de nouveau possibles pour ce mois.`)) {
       return;
     }
-    await this.store.reopenMonth(ym);
-    this.toast.show(`🔓 ${monthLabel(ym)} rouvert.`);
+    try {
+      await this.store.reopenMonth(ym);
+      this.toast.show(`🔓 ${monthLabel(ym)} rouvert.`);
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
+    }
   }
 }

@@ -95,7 +95,9 @@ suite + un build de production sur chaque push et pull request.
   remonte jusqu'au fond). Remplacé par une vraie méthode
   (`onOverlayClick()`). Vérifié manuellement en local avec Playwright au
   moment du correctif (script ad hoc, non conservé dans le repo — voir
-  section Tests ci-dessous pour la suite de tests réellement reproductible).
+  section Tests ci-dessous pour la suite de tests réellement reproductible ;
+  aucune dépendance Playwright n'est installée, ce vérificatif ponctuel
+  n'a jamais été intégré en CI).
 - **Profil par défaut des formulaires** : "Ajouter un revenu", "Ajouter une
   dépense" et "Dépenses récurrentes" ne reprenaient l'onglet actif (Moi/
   Madame) qu'au tout premier chargement de la page, jamais après. Corrigé

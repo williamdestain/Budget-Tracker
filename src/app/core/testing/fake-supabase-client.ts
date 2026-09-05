@@ -38,11 +38,22 @@ function nextId(): string {
   return `fake-id-${idCounter}`;
 }
 
+// Simule le trigger set_updated_at() (migration-019) : un timestamp
+// différent à chaque insert/update, croissant, pour que le contrôle de
+// concurrence optimiste de BudgetStore (comparaison d'`updated_at`) soit
+// testable sans vraie base Postgres.
+let updatedAtCounter = 0;
+function nextUpdatedAt(): string {
+  updatedAtCounter += 1;
+  return `fake-updated-at-${updatedAtCounter}`;
+}
+
 class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
   private filters: Filter[] = [];
   private op: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
   private payload: Row | Row[] | null = null;
   private wantSingle = false;
+  private wantSelect = false;
   private orderColumn: string | null = null;
   private forcedError: { message: string } | null = null;
 
@@ -51,6 +62,12 @@ class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
     private table: string,
     private erroringTables: Set<string>,
     private consumeOnceError: (table: string) => boolean,
+    // Colonnes formant la clé unique/primaire de cette table, si connue —
+    // sert à simuler une violation de contrainte unique (code Postgres
+    // "23505") sur un INSERT en conflit, comme le ferait une vraie clé
+    // primaire composite (voir household_id/owner/ym/category sur
+    // category_budgets, household_id/ym sur closed_months).
+    private uniqueKeyColumns?: string[],
   ) {
     if (this.erroringTables.has(table) || this.consumeOnceError(table)) {
       this.forcedError = { message: `erreur simulée sur la table "${table}"` };
@@ -58,6 +75,7 @@ class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
   }
 
   select(_cols?: string): this {
+    this.wantSelect = true;
     return this;
   }
 
@@ -141,14 +159,37 @@ class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
 
     if (this.op === 'insert') {
       const toInsert = Array.isArray(this.payload) ? this.payload : [this.payload!];
-      const inserted = toInsert.map((r) => ({ id: r['id'] ?? nextId(), ...r }));
+      if (this.uniqueKeyColumns) {
+        const conflict = toInsert.find((candidate) =>
+          rows.some((existing) =>
+            this.uniqueKeyColumns!.every((col) => existing[col] === candidate[col]),
+          ),
+        );
+        if (conflict) {
+          return {
+            data: null,
+            error: {
+              code: '23505',
+              message: `duplicate key value violates unique constraint on "${this.table}"`,
+            },
+          };
+        }
+      }
+      const inserted = toInsert.map((r) => ({
+        id: r['id'] ?? nextId(),
+        updated_at: nextUpdatedAt(),
+        ...r,
+      }));
       rows.push(...inserted);
       return { data: this.wantSingle ? inserted[0] : inserted, error: null };
     }
 
     if (this.op === 'update') {
       const toUpdate = rows.filter((r) => matchesFilters(r, this.filters));
-      toUpdate.forEach((r) => Object.assign(r, this.payload));
+      // Comme le vrai trigger set_updated_at() (migration-019) : TOUJOURS
+      // un nouveau timestamp sur update, même si `updated_at` n'est pas
+      // dans le patch envoyé par le client.
+      toUpdate.forEach((r) => Object.assign(r, this.payload, { updated_at: nextUpdatedAt() }));
       return { data: this.wantSingle ? (toUpdate[0] ?? null) : toUpdate, error: null };
     }
 
@@ -157,16 +198,28 @@ class FakeQueryBuilder implements PromiseLike<{ data: any; error: any }> {
       // finement ici : on considère qu'un upsert insère toujours une
       // nouvelle ligne dans ce faux client (suffisant pour les tests
       // actuels, qui ne vérifient pas la déduplication d'upsert).
-      const row = { id: (this.payload as Row)['id'] ?? nextId(), ...(this.payload as Row) };
+      const row = {
+        id: (this.payload as Row)['id'] ?? nextId(),
+        updated_at: nextUpdatedAt(),
+        ...(this.payload as Row),
+      };
       rows.push(row);
       return { data: row, error: null };
     }
 
     if (this.op === 'delete') {
+      const toDelete = rows.filter((r) => matchesFilters(r, this.filters));
       const remaining = rows.filter((r) => !matchesFilters(r, this.filters));
-      const deletedCount = rows.length - remaining.length;
       this.tables[this.table] = remaining;
-      return { data: { count: deletedCount }, error: null };
+      // Comme le vrai client Supabase : `.delete()` seul renvoie un
+      // compte, `.delete().select(...)` renvoie les lignes supprimées —
+      // utilisé par reopenMonth()/removeCategoryBudget() pour détecter
+      // un conflit de concurrence (0 ligne supprimée = déjà modifiée
+      // ailleurs).
+      if (this.wantSelect) {
+        return { data: this.wantSingle ? (toDelete[0] ?? null) : toDelete, error: null };
+      }
+      return { data: { count: toDelete.length }, error: null };
     }
 
     return { data: null, error: { message: `opération non supportée par le faux client: ${this.op}` } };
@@ -214,8 +267,24 @@ export class FakeSupabaseClient {
     return false;
   }
 
+  // Colonnes de clé primaire/unique simulées pour quelques tables — sert
+  // uniquement à FakeQueryBuilder pour détecter un conflit d'INSERT
+  // (voir uniqueKeyColumns plus haut). Pas besoin de lister TOUTES les
+  // tables : seulement celles dont un test exerce réellement le chemin
+  // "INSERT strict, conflit = erreur" (contrôle de concurrence #8).
+  private uniqueKeyColumns: Record<string, string[]> = {
+    category_budgets: ['household_id', 'owner', 'ym', 'category'],
+    closed_months: ['household_id', 'ym'],
+  };
+
   from(table: string): FakeQueryBuilder {
-    return new FakeQueryBuilder(this.tables, table, this.erroringTables, (t) => this.consumeOnceError(t));
+    return new FakeQueryBuilder(
+      this.tables,
+      table,
+      this.erroringTables,
+      (t) => this.consumeOnceError(t),
+      this.uniqueKeyColumns[table],
+    );
   }
 
   // Simule l'appel RPC à la fonction Postgres reset_everything() (voir
@@ -232,35 +301,205 @@ export class FakeSupabaseClient {
     this.currentUserId = id;
   }
 
+  // Identifiant "household_id" simulé pour ce faux client, résolu côté
+  // fake "serveur" pour les RPC qui utilisent auth_household_id() dans la
+  // vraie base (split_versement_into_provisions, import_household_data) —
+  // celles-ci ne reçoivent PAS le household_id en paramètre (exactement
+  // comme la vraie RPC), donc le faux client doit le connaître d'une autre
+  // façon. À synchroniser dans les tests avec `store.householdId.set(...)`
+  // (voir beforeEach du spec).
+  currentHouseholdId = 'test-household-1';
+  setCurrentHousehold(id: string): void {
+    this.currentHouseholdId = id;
+  }
+
+  // Liste des tables vidées par reset_everything() côté SQL (voir
+  // migration-020) — partagée par le fake rpc('reset_everything') ET par
+  // fakeImportHouseholdData(), exactement comme la vraie
+  // import_household_data() appelle `perform reset_everything();` en
+  // interne (migration-022).
+  private readonly resetTables = [
+    'expenses',
+    'incomes',
+    'provisions',
+    'provision_adjustments',
+    'savings_goals',
+    'savings_goal_contributions',
+    'recurring_expenses',
+    'recurring_incomes',
+    'budgets',
+    'category_budgets',
+    'rollovers',
+    'credit_card_payments',
+    'closed_months',
+  ];
+
+  // Retourne la table en erreur simulée si le "reset" doit échouer, sinon
+  // vide effectivement toutes les tables et retourne null. Factorisé pour
+  // être appelé aussi bien par rpc('reset_everything') que par
+  // fakeImportHouseholdData().
+  private tryResetEverything(): string | null {
+    const failing = this.resetTables.find((t) => this.erroringTables.has(t));
+    if (failing) return failing;
+    this.resetTables.forEach((t) => {
+      this.tables[t] = [];
+    });
+    return null;
+  }
+
   async rpc(fn: string, params?: Record<string, unknown>): Promise<{ data: any; error: any }> {
     if (fn === 'create_household') return this.fakeCreateHousehold(params);
     if (fn === 'join_household') return this.fakeJoinHousehold(params);
+    if (fn === 'split_versement_into_provisions') return this.fakeSplitVersementIntoProvisions(params);
+    if (fn === 'import_household_data') return this.fakeImportHouseholdData(params);
     if (fn !== 'reset_everything') {
       return { data: null, error: { message: `RPC non supportée par le faux client: ${fn}` } };
     }
-    const resetTables = [
-      'expenses',
-      'incomes',
-      'provisions',
-      'provision_adjustments',
-      'savings_goals',
-      'savings_goal_contributions',
-      'recurring_expenses',
-      'recurring_incomes',
-      'budgets',
-      'category_budgets',
-      'rollovers',
-      'credit_card_payments',
-    ];
-    const failing = resetTables.find((t) => this.erroringTables.has(t));
+    const failing = this.tryResetEverything();
     if (failing) {
       // Rien n'est supprimé — c'est exactement le point : une transaction
       // Postgres qui échoue en cours de route ne laisse aucune trace.
       return { data: null, error: { message: `erreur simulée sur la table "${failing}"` } };
     }
-    resetTables.forEach((t) => {
+    return { data: null, error: null };
+  }
+
+  // Simule split_versement_into_provisions() (voir migration-021) : crée
+  // (ou réutilise) la dépense "Versement" puis insère les ajustements de
+  // provision correspondants. Pas de vraie transaction ici — mais les
+  // tests de ce faux client vérifient le COMPORTEMENT observable (tout ou
+  // rien du point de vue de l'appelant), pas l'implémentation SQL.
+  private fakeSplitVersementIntoProvisions(params?: Record<string, unknown>) {
+    const sender = params?.['p_sender'] as string;
+    const totalAmount = params?.['p_total_amount'] as number;
+    const date = params?.['p_date'] as string;
+    const existingExpenseId = (params?.['p_existing_expense_id'] as string | null) ?? null;
+    const allocations = (params?.['p_allocations'] as any[]) ?? [];
+
+    if (!['moi', 'madame'].includes(sender)) {
+      return { data: null, error: { message: `Owner invalide : ${sender}` } };
+    }
+    if (!(totalAmount > 0)) {
+      return { data: null, error: { message: `Montant de versement invalide : ${totalAmount}` } };
+    }
+
+    // Instantané pour simuler une vraie transaction : tout échec plus bas
+    // (création du versement ou d'un ajustement) restaure ces deux tables
+    // exactement comme avant l'appel — ni versement orphelin, ni
+    // ajustement partiel.
+    const snapshot = {
+      expenses: [...(this.tables['expenses'] ?? [])],
+      provision_adjustments: [...(this.tables['provision_adjustments'] ?? [])],
+    };
+    const rollbackAndFail = (table: string) => {
+      this.tables['expenses'] = snapshot.expenses;
+      this.tables['provision_adjustments'] = snapshot.provision_adjustments;
+      return { data: null, error: { message: `erreur simulée sur la table "${table}"` } };
+    };
+
+    let expenseId: string;
+    if (existingExpenseId) {
+      const existing = (this.tables['expenses'] ?? []).find((e) => e['id'] === existingExpenseId);
+      if (!existing) {
+        return { data: null, error: { message: 'Versement introuvable.' } };
+      }
+      expenseId = existingExpenseId;
+    } else {
+      if (this.erroringTables.has('expenses') || this.consumeOnceError('expenses')) {
+        return rollbackAndFail('expenses');
+      }
+      expenseId = nextId();
+      this.tables['expenses'] = [
+        ...(this.tables['expenses'] ?? []),
+        {
+          id: expenseId,
+          household_id: this.currentHouseholdId,
+          amount: totalAmount,
+          category: 'Versement',
+          date,
+          owner: sender,
+          cc: false,
+        },
+      ];
+    }
+
+    const adjustmentIds: string[] = [];
+    for (const alloc of allocations) {
+      const amount = Number(alloc?.amount);
+      if (amount > 0) {
+        if (this.erroringTables.has('provision_adjustments') || this.consumeOnceError('provision_adjustments')) {
+          return rollbackAndFail('provision_adjustments');
+        }
+        const adjustmentId = nextId();
+        this.tables['provision_adjustments'] = [
+          ...(this.tables['provision_adjustments'] ?? []),
+          {
+            id: adjustmentId,
+            household_id: this.currentHouseholdId,
+            provision_id: alloc.provision_id,
+            amount,
+            date,
+            note: alloc.note ?? '',
+            versement_expense_id: expenseId,
+          },
+        ];
+        adjustmentIds.push(adjustmentId);
+      }
+    }
+
+    return { data: { expense_id: expenseId, adjustment_ids: adjustmentIds }, error: null };
+  }
+
+  // Simule import_household_data() (voir migration-022) : vide tout
+  // (comme reset_everything()) puis insère les tableaux fournis. Pour
+  // simuler une VRAIE transaction (tout ou rien, pas un rollback
+  // applicatif a posteriori), on prend un instantané de toutes les tables
+  // concernées avant de toucher quoi que ce soit : si un échec survient à
+  // n'importe quelle étape (reset ou un insert), on restaure exactement
+  // cet instantané avant de renvoyer l'erreur — comme un vrai ROLLBACK
+  // Postgres qui annule tout ce qui a été fait depuis le début de la
+  // transaction, y compris le vidage initial.
+  private fakeImportHouseholdData(params?: Record<string, unknown>) {
+    const snapshot: Record<string, Row[]> = {};
+    this.resetTables.forEach((t) => {
+      snapshot[t] = this.tables[t] ? [...this.tables[t]] : [];
+    });
+    const rollbackAndFail = (table: string) => {
+      this.resetTables.forEach((t) => {
+        this.tables[t] = snapshot[t];
+      });
+      return { data: null, error: { message: `erreur simulée sur la table "${table}"` } };
+    };
+
+    const resetFailing = this.resetTables.find((t) => this.erroringTables.has(t));
+    if (resetFailing) return rollbackAndFail(resetFailing);
+    this.resetTables.forEach((t) => {
       this.tables[t] = [];
     });
+
+    const tableParamMap: Record<string, string> = {
+      p_provisions: 'provisions',
+      p_provision_adjustments: 'provision_adjustments',
+      p_savings_goals: 'savings_goals',
+      p_savings_goal_contributions: 'savings_goal_contributions',
+      p_recurring_expenses: 'recurring_expenses',
+      p_recurring_incomes: 'recurring_incomes',
+      p_categories: 'categories',
+      p_credit_card_payments: 'credit_card_payments',
+      p_expenses: 'expenses',
+      p_incomes: 'incomes',
+      p_budgets: 'budgets',
+      p_rollovers: 'rollovers',
+      p_category_budgets: 'category_budgets',
+    };
+    for (const [param, table] of Object.entries(tableParamMap)) {
+      const rows = (params?.[param] as Row[] | undefined) ?? [];
+      if (!rows.length) continue;
+      if (this.erroringTables.has(table) || this.consumeOnceError(table)) {
+        return rollbackAndFail(table);
+      }
+      this.tables[table] = [...(this.tables[table] ?? []), ...rows];
+    }
     return { data: null, error: null };
   }
 

@@ -12,6 +12,16 @@ import { monthLabel } from '../../../core/utils/date.utils';
 export class DataManagement {
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
+  // Plan d'action #13 : aucune limite n'existait avant sur la taille du
+  // fichier importé — `file.text()` chargeait tout en mémoire quelle que
+  // soit sa taille, avant même la validation de schéma. 20 Mo est très
+  // largement au-dessus de ce qu'une sauvegarde JSON de cette app peut
+  // atteindre en usage réel (quelques centaines de Ko typiquement, même
+  // après plusieurs années de données) — la limite sert à bloquer un
+  // fichier accidentellement énorme ou corrompu, pas à contraindre un
+  // usage normal.
+  private static readonly MAX_IMPORT_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+
   readonly open = signal(false);
   readonly step = signal<'choice' | 'confirm'>('choice');
   readonly saving = signal(false);
@@ -69,6 +79,15 @@ export class DataManagement {
     const file = input.files?.[0];
     input.value = ''; // permet de réimporter le même fichier ensuite
     if (!file) return;
+
+    if (file.size > DataManagement.MAX_IMPORT_FILE_SIZE_BYTES) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      const maxMb = DataManagement.MAX_IMPORT_FILE_SIZE_BYTES / (1024 * 1024);
+      this.toast.show(
+        `⚠️ Fichier trop volumineux (${mb} Mo, max ${maxMb} Mo) — ce n'est probablement pas une sauvegarde valide de cette app.`,
+      );
+      return;
+    }
 
     let data: any;
     try {

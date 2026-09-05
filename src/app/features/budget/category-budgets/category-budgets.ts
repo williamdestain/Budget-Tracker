@@ -1,6 +1,7 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
+import { ToastService } from '../../../core/services/toast.service';
 import { fmt } from '../../../core/utils/currency.utils';
 import { Owner } from '../../../core/models/budget.models';
 
@@ -19,7 +20,10 @@ export class CategoryBudgets {
   newCategory = '';
   newAmount: number | null = null;
 
-  constructor(public store: BudgetStore) {}
+  constructor(
+    public store: BudgetStore,
+    private toast: ToastService,
+  ) {}
 
   toggle(): void {
     this.open.update((v) => !v);
@@ -83,14 +87,22 @@ export class CategoryBudgets {
     const owner = this.store.activeOwner() as Owner;
     const amount = this.editAmount ?? 0;
     if (amount < 0) return;
-    await this.store.setCategoryBudget(owner, this.store.current(), category, amount);
-    this.editingCategory.set(null);
+    try {
+      await this.store.setCategoryBudget(owner, this.store.current(), category, amount);
+      this.editingCategory.set(null);
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
+    }
   }
 
   async removeBudget(category: string): Promise<void> {
     if (this.isGlobal) return;
     const owner = this.store.activeOwner() as Owner;
-    await this.store.removeCategoryBudget(owner, this.store.current(), category);
+    try {
+      await this.store.removeCategoryBudget(owner, this.store.current(), category);
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
+    }
   }
 
   toggleAdd(): void {
@@ -104,12 +116,16 @@ export class CategoryBudgets {
     // seuls "rien saisi" et les montants négatifs sont refusés.
     if (this.isGlobal || !this.newCategory || this.newAmount == null || this.newAmount < 0) return;
     const owner = this.store.activeOwner() as Owner;
-    await this.store.setCategoryBudget(
-      owner,
-      this.store.current(),
-      this.newCategory,
-      this.newAmount,
-    );
-    this.addOpen.set(false);
+    try {
+      await this.store.setCategoryBudget(
+        owner,
+        this.store.current(),
+        this.newCategory,
+        this.newAmount,
+      );
+      this.addOpen.set(false);
+    } catch (err) {
+      this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
+    }
   }
 }
