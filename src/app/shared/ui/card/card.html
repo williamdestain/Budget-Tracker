@@ -1,0 +1,8 @@
+<div
+  class="app-card"
+  [class.app-card--lg]="size() === 'lg'"
+  [class.app-card--accent]="accent() !== null"
+  [style.border-top-color]="accent()"
+>
+  <ng-content></ng-content>
+</div>

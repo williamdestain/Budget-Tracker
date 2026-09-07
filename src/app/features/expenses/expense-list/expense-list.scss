@@ -78,8 +78,11 @@
   flex-shrink: 0;
 }
 .owner-badge.moi {
-  background: var(--accent-soft);
-  color: var(--accent);
+  // --accent est devenu la couleur de marque (vert) avec la refonte FINA ;
+  // --owner-moi est dédié à ce badge pour ne pas se confondre avec les
+  // boutons/liens. Voir styles.scss et MODELE.md section 6.
+  background: var(--owner-moi-soft);
+  color: var(--owner-moi);
 }
 .owner-badge.madame {
   background: var(--pink-soft);

@@ -1,0 +1,9 @@
+<button
+  [type]="type()"
+  [disabled]="disabled()"
+  class="app-btn"
+  [class.app-btn--ghost]="variant() === 'ghost'"
+  [class.app-btn--full]="fullWidth()"
+>
+  <ng-content></ng-content>
+</button>

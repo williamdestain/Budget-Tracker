@@ -1,0 +1,25 @@
+:host {
+  display: block;
+}
+
+.app-progress-track {
+  height: 8px;
+  background: var(--surface-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.app-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 6px;
+  transition: width 0.2s ease;
+}
+
+.app-progress-fill--gold {
+  background: var(--gold);
+}
+
+.app-progress-fill--danger {
+  background: var(--red);
+}

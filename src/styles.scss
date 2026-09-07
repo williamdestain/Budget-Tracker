@@ -1,29 +1,58 @@
 /* ===================== Design global ===================== */
-/* Tokens repris tel quel de l'ancienne application (fichier unique HTML)
-   pour une continuité visuelle exacte — ce n'est pas une refonte. */
+/* Tokens de la refonte FINA (voir MODELE.md et plan-industrialisation.md,
+   Phase 0). Principe : les NOMS de variables restent ceux de l'ancienne
+   appli (--bg, --card, --accent, --green, --pink, ...) pour que les ~20
+   templates existants continuent de fonctionner sans y toucher — seules
+   les VALEURS changent, plus quelques ajouts pour ce qui n'avait pas
+   d'équivalent avant (--primary/--primary-dark/--gold, les polices).
+
+   Exception délibérée : --owner-moi est un AJOUT, pas juste une nouvelle
+   valeur. --accent servait avant à deux choses différentes : la couleur
+   d'action principale ET la couleur du badge "Moi" (owner-badge.moi dans
+   expense-list.scss). Maintenant que --accent devient la couleur de marque
+   (le vert), il faut une variable dédiée pour que le badge "Moi" ne se
+   confonde pas avec tous les boutons/liens verts de l'appli. Le badge
+   "Madame" n'a pas ce problème : --pink lui était déjà dédié, seule sa
+   valeur change (bleu ardoise -> prune). Voir MODELE.md section 6 : ce
+   sera remplacé par la couleur du membre (Member.color) une fois la
+   généralisation des membres faite — --owner-moi/--pink sont une étape
+   intermédiaire, pas la solution finale. */
 :root {
-  --bg: #eef2f7;
+  --bg: #f1f4ee;
   --card: #ffffff;
-  --ink: #1f2937;
-  --ink-soft: #6b7280;
-  --line: #e5e9f0;
-  --accent: #4f7cff;
-  --accent-soft: #eaf0ff;
-  --accent-soft-border: #d5def2;
-  --surface-soft: #f7f9fc;
-  --green: #16a34a;
-  --green-soft: #dcfce7;
-  --green-soft-border: #b8e6c4;
-  --red: #dc2626;
-  --red-soft: #fee2e2;
-  --red-soft-border: #f5b8b8;
-  --amber: #d97706;
-  --amber-soft: #fef3c7;
-  --amber-soft-border: #f5d896;
-  --pink: #d6457d;
-  --pink-soft: #fde4ef;
-  --teal: #0f9d8f;
+  --ink: #1b241f;
+  --ink-soft: #5b665c;
+  --line: #dee3d6;
+  --accent: #1f6f54;
+  --accent-soft: #e1eee7;
+  --accent-soft-border: #c7ded4;
+  --surface-soft: #e6eadf;
+  --green: #1f6f54;
+  --green-soft: #e1eee7;
+  --green-soft-border: #c7ded4;
+  --red: #b3432b;
+  --red-soft: #f5e0d9;
+  --red-soft-border: #e7c2b5;
+  --amber: #bf8f2e;
+  --amber-soft: #f5ead2;
+  --amber-soft-border: #e8d19f;
+  --pink: #a15385;
+  --pink-soft: #f3e6ef;
+  --teal: #0f9d8f; // inutilisé actuellement, conservé tel quel
+
+  // Ajouts Phase 0 — pas d'équivalent avant la refonte.
+  --primary: #1f6f54;
+  --primary-dark: #122b22;
+  --gold: #bf8f2e;
+  --owner-moi: #4a6fa1;
+  --owner-moi-soft: #e7eef6;
+  --font-display: 'Fraunces', georgia, serif;
+  --font-body:
+    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+
   --radius: 16px;
+  --radius-lg: 22px; // nouveau : cartes "hero" (bandeau de solde, etc.)
   --shadow: 0 6px 24px rgba(20, 30, 60, 0.07);
   --shadow-sm: 0 2px 8px rgba(20, 30, 60, 0.05);
 
@@ -41,27 +70,34 @@
 // de surface ne soit codée en dur (voir les correctifs #fff -> var(--card)
 // appliqués dans les composants concernés).
 :root[data-theme='dark'] {
-  --bg: #10141c;
-  --card: #1a2030;
-  --ink: #e8ecf4;
-  --ink-soft: #9aa4bd;
-  --line: #2b3346;
-  --accent: #6f95ff;
-  --accent-soft: #263259;
-  --accent-soft-border: #37456e;
-  --surface-soft: #212a3d;
-  --green: #4ade80;
-  --green-soft: #163524;
-  --green-soft-border: #245638;
-  --red: #f87171;
-  --red-soft: #3a1c22;
-  --red-soft-border: #5c2a30;
-  --amber: #fbbf24;
-  --amber-soft: #3a2f14;
-  --amber-soft-border: #5c4a1e;
-  --pink: #f472b6;
-  --pink-soft: #3a1f30;
-  --teal: #2dd4bf;
+  --bg: #12140f;
+  --card: #1b1f17;
+  --ink: #ecefe5;
+  --ink-soft: #a8b29f;
+  --line: #2b3126;
+  --accent: #2e9172;
+  --accent-soft: #1e3a2e;
+  --accent-soft-border: #2c5645;
+  --surface-soft: #1b1f16;
+  --green: #2e9172;
+  --green-soft: #1e3a2e;
+  --green-soft-border: #2c5645;
+  --red: #d9694e;
+  --red-soft: #3a2019;
+  --red-soft-border: #55362a;
+  --amber: #d9a63e;
+  --amber-soft: #3a2e14;
+  --amber-soft-border: #56451f;
+  --pink: #bd75a3;
+  --pink-soft: #33212d;
+  --teal: #2dd4bf; // inutilisé actuellement, conservé tel quel
+
+  --primary: #2e9172;
+  --primary-dark: #0c1b15;
+  --gold: #d9a63e;
+  --owner-moi: #6f95ff;
+  --owner-moi-soft: #1e2b45;
+
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
 
@@ -74,9 +110,7 @@
 
 body {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--ink);
   line-height: 1.5;
@@ -241,6 +275,16 @@ select {
 }
 .check-icon {
   font-size: 15px;
+}
+
+// Conteneur pour grouper plusieurs <app-chip> (filtre, contrôle segmenté).
+.chip-row {
+  display: inline-flex;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 1px;
 }
 
 .cat-dot {

@@ -1,0 +1,99 @@
+<div class="ds-page">
+  <header class="ds-header">
+    <h1>Fondations visuelles — FINA</h1>
+    <p>
+      Vitrine temporaire (Phase 0, voir <code>plan-industrialisation.md</code>) pour valider chaque
+      composant partagé isolément. À retirer avant la mise en production.
+    </p>
+  </header>
+
+  <section class="ds-section">
+    <h2>Typographie</h2>
+    <div class="ds-type-sample">
+      <span class="ds-type-display">Solde net — Août 2026</span>
+      <span class="ds-type-amount">1 284,50 $</span>
+      <span class="ds-type-body">
+        Texte courant en IBM Plex Sans, avec chiffres tabulaires pour les montants.
+      </span>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Couleurs</h2>
+    <div class="ds-swatch-grid">
+      @for (t of tokenSwatches; track t.name) {
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" [style.background]="'var(' + t.name + ')'"></div>
+          <span class="ds-swatch-name">{{ t.name }}</span>
+          <span class="ds-swatch-label">{{ t.label }}</span>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Boutons</h2>
+    <div class="ds-row">
+      <app-button>Ajouter une transaction</app-button>
+      <app-button variant="ghost">Répartir un versement</app-button>
+      <app-button [disabled]="true">Désactivé</app-button>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Chips / filtres</h2>
+    <div class="chip-row">
+      <app-chip [active]="activeChip() === 'all'" (click)="setActiveChip('all')">Tout</app-chip>
+      <app-chip [active]="activeChip() === 'expense'" (click)="setActiveChip('expense')">
+        Dépenses
+      </app-chip>
+      <app-chip [active]="activeChip() === 'income'" (click)="setActiveChip('income')">
+        Revenus
+      </app-chip>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Cartes</h2>
+    <div class="ds-row ds-row--wrap">
+      <app-card>
+        <strong>Carte standard</strong>
+        <p>Filet fin, pas d'ombre marquée.</p>
+      </app-card>
+      <app-card size="lg" accent="var(--accent)">
+        <strong>Carte "hero"</strong>
+        <p>Rayon plus grand, bordure d'accent en haut — pour le bandeau de solde, par exemple.</p>
+      </app-card>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Barres de progression</h2>
+    <div class="ds-progress-demo">
+      <app-progress-bar [percent]="42" />
+      <app-progress-bar [percent]="80" tone="gold" />
+      <app-progress-bar [percent]="112" tone="danger" />
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Anneaux de progression (objectifs d'épargne)</h2>
+    <div class="ds-row">
+      <app-progress-ring [percent]="18" />
+      <app-progress-ring [percent]="62" />
+      <app-progress-ring [percent]="100" />
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <h2>Icônes ({{ iconNames.length }})</h2>
+    <div class="ds-icon-grid">
+      @for (name of iconNames; track name) {
+        <div class="ds-icon-cell">
+          <app-icon [name]="name" [size]="20" />
+          <span>{{ name }}</span>
+        </div>
+      }
+    </div>
+  </section>
+</div>

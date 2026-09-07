@@ -1,0 +1,8 @@
+<div class="app-progress-track">
+  <div
+    class="app-progress-fill"
+    [class.app-progress-fill--gold]="tone() === 'gold'"
+    [class.app-progress-fill--danger]="tone() === 'danger'"
+    [style.width.%]="clamped()"
+  ></div>
+</div>

@@ -1,0 +1,20 @@
+:host {
+  display: block;
+}
+
+.app-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+.app-card--lg {
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+}
+
+.app-card--accent {
+  border-top-width: 3px;
+  border-top-style: solid;
+}

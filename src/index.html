@@ -8,6 +8,12 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- Polices du design system (voir styles.scss, --font-display / --font-body).
+       Chargées en CDN pour l'instant ; à auto-héberger (@fontsource) une fois
+       la refonte visuelle en production, pour ne pas dépendre d'un tiers. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     // Applique le thème avant qu'Angular ne démarre, pour éviter un flash
     // du thème clair au chargement quand l'utilisateur a choisi le sombre
