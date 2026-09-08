@@ -1,0 +1,21 @@
+<div class="donut-wrap">
+  <div
+    class="donut"
+    [style.width.px]="size()"
+    [style.height.px]="size()"
+    [style.background]="gradient()"
+  >
+    @if (centerLabel()) {
+      <span class="donut-center">{{ centerLabel() }}</span>
+    }
+  </div>
+  <div class="donut-legend">
+    @for (s of segments(); track s.label) {
+      <div class="donut-legend-row">
+        <span class="donut-dot" [style.background]="s.color"></span>
+        <span class="donut-legend-name">{{ s.label }}</span>
+        <span>{{ s.percent }}%</span>
+      </div>
+    }
+  </div>
+</div>

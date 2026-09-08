@@ -1,0 +1,13 @@
+<div class="member-switch">
+  @for (m of members(); track m.id) {
+    <button
+      type="button"
+      class="member-switch-btn"
+      [class.member-switch-btn--active]="m.id === activeId()"
+      [style.--_c]="m.color"
+      (click)="select.emit(m.id)"
+    >
+      {{ m.name }}
+    </button>
+  }
+</div>

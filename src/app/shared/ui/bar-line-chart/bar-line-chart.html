@@ -1,0 +1,44 @@
+<svg [attr.viewBox]="viewBox" class="chart-svg">
+  @for (b of bars(); track $index) {
+    <rect
+      [attr.x]="b.x"
+      [attr.y]="b.y"
+      [attr.width]="b.width"
+      [attr.height]="b.height"
+      rx="2"
+      [attr.fill]="b.color"
+    />
+  }
+  @for (line of lineSeries(); track $index) {
+    <polyline
+      [attr.points]="pointsToString(line.points)"
+      fill="none"
+      [attr.stroke]="line.color"
+      stroke-width="2.2"
+      stroke-linejoin="round"
+    />
+    @for (p of line.points; track $index) {
+      <circle [attr.cx]="p.x" [attr.cy]="p.y" r="3" [attr.fill]="line.color" />
+    }
+  }
+  @for (l of xLabels(); track $index) {
+    <text
+      [attr.x]="l.x"
+      [attr.y]="labelY"
+      font-size="9"
+      text-anchor="middle"
+      fill="var(--ink-soft)"
+    >{{ l.label }}</text>
+  }
+</svg>
+
+@if (showLegend()) {
+  <div class="chart-legend">
+    @for (s of series(); track s.name) {
+      <span>
+        <i [class.chart-legend-line]="s.kind === 'line'" [style.background]="s.color"></i>
+        {{ s.name }}
+      </span>
+    }
+  </div>
+}

@@ -1,0 +1,105 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 15, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+  animation: modal-fade-in 0.15s ease;
+}
+
+.modal-panel {
+  background: var(--card);
+  width: 420px;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  padding: 20px 22px 22px;
+  box-shadow: var(--shadow);
+  animation: modal-slide-up 0.2s ease;
+
+  &:focus {
+    // Le focus est géré visuellement par les éléments internes (champs,
+    // boutons) ; pas besoin d'un contour sur le panneau lui-même.
+    outline: none;
+  }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 16.5px;
+    margin: 0;
+    color: var(--ink);
+  }
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-panel {
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: 24px 24px 0 0;
+    padding: 18px 18px 26px;
+  }
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-slide-up {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-panel {
+    animation: none;
+  }
+}

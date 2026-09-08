@@ -86,6 +86,50 @@
   </section>
 
   <section class="ds-section">
+    <h2>Sélecteur de membres</h2>
+    <app-member-switch
+      [members]="demoMembers"
+      [activeId]="activeMember()"
+      (select)="activeMember.set($event)"
+    />
+    <p class="ds-note">Actif : {{ activeMember() }}</p>
+  </section>
+
+  <section class="ds-section">
+    <h2>Modale</h2>
+    <app-button (click)="showModal.set(true)">Ouvrir une modale d'exemple</app-button>
+    @if (showModal()) {
+      <app-modal title="Ajouter une transaction" (closed)="showModal.set(false)">
+        <p>
+          N'importe quel contenu peut être projeté ici (formulaire, liste...). Fermeture par le
+          bouton, le fond, ou la touche Échap.
+        </p>
+        <app-button [fullWidth]="true" (click)="showModal.set(false)">Ajouter</app-button>
+      </app-modal>
+    }
+  </section>
+
+  <section class="ds-section">
+    <h2>Graphique en anneau</h2>
+    <app-donut-chart [segments]="demoSegments" centerLabel="1 070 $" />
+  </section>
+
+  <section class="ds-section">
+    <h2>Graphique barres + ligne (vue annuelle)</h2>
+    <app-bar-line-chart [categories]="demoMonths" [series]="demoYearlySeries" />
+  </section>
+
+  <section class="ds-section">
+    <h2>Graphique en ligne seule (portefeuille), axe resserré</h2>
+    <app-bar-line-chart
+      [categories]="demoMonths"
+      [series]="demoInvestSeries"
+      [zeroBased]="false"
+      [showLegend]="false"
+    />
+  </section>
+
+  <section class="ds-section">
     <h2>Icônes ({{ iconNames.length }})</h2>
     <div class="ds-icon-grid">
       @for (name of iconNames; track name) {
