@@ -518,8 +518,8 @@ describe('provision.utils', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(2026, 0, 1)); // "aujourd'hui" = 1er janvier, mais on consulte juin (futur)
       const p = makeProvision({ startYM: '2026-01', everyN: 6 }); // échéance juillet
-      // Référence = 1er janvier (vraie date du jour) ; échéance = 1er juillet => 181 jours
-      expect(provisionDaysUntilNext(p, '2026-06')).toBe(181);
+      // Référence = 1er janvier (vraie date du jour) ; échéance = 1er juillet => 180 jours
+      expect(provisionDaysUntilNext(p, '2026-06')).toBe(180);
     });
 
     it('se base sur la fin du mois consulté si ce mois est entièrement dans le passé', () => {
