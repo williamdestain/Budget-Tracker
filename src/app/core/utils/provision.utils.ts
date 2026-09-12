@@ -571,10 +571,10 @@ export function countedExpenses(
         }
       });
 
-    // Ajustements manuels (contributions à la cagnotte) du mois — bornés
-    // par le cycle en cours (audit BUG-009), inchangé.
-    provisionAdjustmentsUpTo(p, currentYM)
-      .filter((a) => a.date.startsWith(currentYM))
+    // Les ajustements du mois restent visibles dans la liste des dépenses,
+    // même si un recalage ultérieur a déplacé l'ancre après leur date.
+    // Le cycle borne le calcul de la cagnotte, pas l'historique affiché.
+    provisionAdjustmentsForMonth(p, currentYM)
       .forEach((a) => {
         if (!(a.amount > 0)) return;
         counted.push({

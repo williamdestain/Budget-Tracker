@@ -350,6 +350,24 @@ describe('provision.utils', () => {
       });
       expect(provisionAdjustmentsForDisplay(p, '2026-09')).toEqual(p.adjustments);
     });
+
+    it("inclut dans les dépenses du mois un versement réparti malgré l'ancre recalée", () => {
+      const p = makeProvision({
+        intervalUnit: 'days',
+        startDate: '2026-09-10',
+        adjustments: [
+          { id: 'a1', amount: 120, date: '2026-09-12', note: 'Versement de Madame' },
+        ],
+      });
+      const entries = countedExpenses([], [p], 'moi', '2026-09');
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          amount: 120,
+          provisionAdjustment: true,
+          note: 'Versement de Madame',
+        }),
+      );
+    });
   });
 
   describe('provisionNextHit — intervalle en mois', () => {
