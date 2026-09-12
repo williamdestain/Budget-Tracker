@@ -29,6 +29,7 @@ import {
   provisionDaysUntilNext,
   isHitMonth,
   provisionPot,
+  provisionPotBeforeRecalibration,
   round2,
   provisionStart,
   effectiveProvisionAmount,
@@ -793,7 +794,7 @@ export class BudgetStore {
       .map((p) => {
         const pot = provisionPot(p, ym, expenses);
         const target = effectiveProvisionAmount(p, expenses);
-        const daysUntil = provisionDaysUntilNext(p, ym);
+        const daysUntil = provisionDaysUntilNext(p, ym, expenses);
         const dueThisMonth = isHitMonth(p, ym);
         const dueAlert = provisionDueAlert(p, ym, expenses);
 
@@ -815,7 +816,7 @@ export class BudgetStore {
           dueThisMonth,
           dueAlert,
           status,
-          nextLabel: formatProvisionUpcomingHit(p, ym),
+          nextLabel: formatProvisionUpcomingHit(p, ym, expenses),
         };
       })
       .filter((row) => row.dueThisMonth || row.daysUntil <= 30 || row.status === 'deficit')
@@ -1771,9 +1772,14 @@ export class BudgetStore {
     const expensesExcludingThis = this.expenses().filter((e) => e.id !== expense.id);
     const surplusByProvisionId = new Map<string, number>();
     matches.forEach((p) => {
-      const potAfterThisPayment = provisionPot(p, currentYM, this.expenses());
+      const potBeforeThisPayment = provisionPotBeforeRecalibration(
+        p,
+        currentYM,
+        expensesExcludingThis,
+        expense.date,
+      );
+      const potAfterThisPayment = potBeforeThisPayment - expense.amount;
       if (potAfterThisPayment > 0.004) {
-        const potBeforeThisPayment = provisionPot(p, currentYM, expensesExcludingThis);
         surplusByProvisionId.set(p.id, round2(potBeforeThisPayment));
       }
     });

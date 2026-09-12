@@ -73,7 +73,7 @@ export class ProvisionCard {
     const ym = this.store.current();
 
     const pot = PU.provisionPot(p, ym, expenses);
-    const nextLabel = PU.formatProvisionUpcomingHit(p, ym);
+    const nextLabel = PU.formatProvisionUpcomingHit(p, ym, expenses);
     const isHit = PU.isHitMonth(p, ym);
     const startLabel = PU.formatProvisionStart(p);
     const startFieldLabel =
@@ -121,7 +121,7 @@ export class ProvisionCard {
     const rollingLabel = PU.provisionRollingLabel(p, expenses);
     const unitLabel = PU.provisionUnit(p) === 'days' ? 'j' : 'mois';
 
-    const adjustmentsUpTo = PU.provisionAdjustmentsUpTo(p, ym).sort(
+    const adjustmentsUpTo = PU.provisionAdjustmentsForDisplay(p, ym).sort(
       (a, b) =>
         b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)),
     );

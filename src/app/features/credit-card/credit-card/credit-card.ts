@@ -1,11 +1,13 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { OWNERS } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 import { fmtDate, isoOfDate } from '../../../core/utils/date.utils';
 import { ToastService } from '../../../core/services/toast.service';
 import { Owner } from '../../../core/models/budget.models';
+import { Card } from '../../../shared/ui/card/card';
+import { Button } from '../../../shared/ui/button/button';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 interface CcBreakdownEntry {
   category: string;
@@ -18,9 +20,16 @@ interface CcBreakdownEntry {
 // cc à retenir de cocher) — voir CreditCardPayment dans budget.models.ts
 // et creditCardBalance() dans budget-store.service.ts. Volontairement
 // dans sa propre section, indépendante des provisions.
+//
+// Phase 2, vague A, écran 1 (plan-industrialisation.md) : premier écran
+// restylé avec le design system FINA. Aucun calcul ci-dessous n'a changé
+// — seuls credit-card.html et credit-card.scss ont été touchés. Le titre
+// "💳 Carte de crédit — {profil}" a été retiré : AppShell affiche déjà
+// "Carte de crédit" dans son en-tête, et le profil actif dans son
+// sélecteur de membre — le répéter ici aurait été redondant.
 @Component({
   selector: 'app-credit-card',
-  imports: [FormsModule],
+  imports: [FormsModule, Card, Button, Icon],
   templateUrl: './credit-card.html',
   styleUrl: './credit-card.scss',
 })
@@ -35,10 +44,6 @@ export class CreditCard {
     public store: BudgetStore,
     private toast: ToastService,
   ) {}
-
-  get title(): string {
-    return '💳 Carte de crédit — ' + OWNERS[this.store.activeOwner()];
-  }
 
   // Solde dû du profil affiché — une dette qui se reporte tant qu'elle
   // n'est pas payée, jamais bornée à un seul mois (contrairement à
@@ -124,7 +129,7 @@ export class CreditCard {
       this.payOpen.set(false);
       this.payAmount = null;
       this.payNote = '';
-      this.toast.show(`✅ Paiement de ${this.fmt(amountPaid)} enregistré.`);
+      this.toast.show(`Paiement de ${this.fmt(amountPaid)} enregistré.`);
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {

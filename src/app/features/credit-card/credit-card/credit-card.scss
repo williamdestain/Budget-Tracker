@@ -1,70 +1,81 @@
-.cc-card {
-  border: 1px solid var(--line);
-  margin-bottom: 18px;
-}
-.cc-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.cc-totals {
+.cc-page {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  gap: 16px;
+}
+
+.cc-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.cc-stat {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
-.cc-balance {
-  font-size: 13px;
+
+.cc-stat-label {
+  font-size: 12px;
   color: var(--ink-soft);
 }
-.cc-balance span:last-child {
-  font-size: 20px;
+
+.cc-stat-value {
+  font-size: 26px;
   font-weight: 700;
-  color: var(--ink);
-  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--red);
 }
+
 // Solde négatif = crédit (tu as payé plus que ce que tu devais) — teinté
 // en vert plutôt qu'en couleur neutre, pour que ce soit visuellement
 // clair que c'est en ta faveur, pas une dette.
-.cc-balance-credit span:last-child {
-  color: var(--green);
+.cc-stat-value--credit {
+  color: var(--accent);
 }
-.cc-balance-combined {
-  font-size: 11.5px;
+
+.cc-stat--muted {
+  .cc-stat-value {
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
 }
-.cc-balance-combined span:last-child {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink-soft);
+
+.cc-hero app-button {
+  margin-left: auto;
+
+  @media (max-width: 640px) {
+    margin-left: 0;
+    width: 100%;
+  }
 }
-.cc-pay-row {
-  margin-bottom: 14px;
-}
-.btn-pay-cc {
-  width: 100%;
-}
+
 .cc-pay-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px 14px;
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
 }
-.cc-pay-form .field-note {
-  grid-column: 1 / -1;
-}
+.cc-pay-form .field-note,
 .cc-pay-form .field-actions {
   grid-column: 1 / -1;
 }
-.cc-pay-form .field-actions button {
-  width: 100%;
+
+.cc-stack-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+
+  span {
+    display: block;
+    height: 100%;
+  }
 }
+
 .cc-breakdown {
   display: flex;
   flex-direction: column;
@@ -92,6 +103,7 @@
 }
 .cc-row .cc-amt {
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .cc-row .cc-pct {
   color: var(--ink-soft);
@@ -99,31 +111,21 @@
   min-width: 36px;
   text-align: right;
 }
+
 .cc-note {
   font-size: 11.5px;
   color: var(--ink-soft);
   margin-top: 10px;
   font-style: italic;
 }
+
 .cc-empty {
   font-size: 13px;
   color: var(--ink-soft);
   padding: 16px 10px;
   text-align: center;
 }
-.cc-reimb {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-.cc-reimb-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-bottom: 8px;
-}
+
 .cc-reimb-list {
   display: flex;
   flex-direction: column;
@@ -145,17 +147,22 @@
 }
 .cc-reimb-row .cc-reimb-amt {
   font-weight: 700;
-  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 .cc-reimb-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
-  font-size: 12px;
   margin-left: 8px;
-  padding: 2px 4px;
+  padding: 4px;
+  border-radius: 6px;
 }
 .cc-reimb-del:hover {
   color: var(--red);
+  background: var(--red-soft);
 }

@@ -44,7 +44,8 @@ export type IconName =
   | 'users'
   | 'plus'
   | 'chevron-left'
-  | 'chevron-right';
+  | 'chevron-right'
+  | 'more';
 
 // Utilisé par la vitrine /design-system pour afficher toutes les icônes
 // sans avoir à maintenir une deuxième liste séparée à jour manuellement.
@@ -83,4 +84,5 @@ export const ALL_ICON_NAMES: IconName[] = [
   'plus',
   'chevron-left',
   'chevron-right',
+  'more',
 ];

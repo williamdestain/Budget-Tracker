@@ -154,6 +154,16 @@ export function provisionAdjustmentsForMonth(p: Provision, ym: string): Provisio
   return (p.adjustments || []).filter((a) => a.date.startsWith(ym));
 }
 
+// Historique affichable : ne masque pas un versement ou un ajout simplement
+// parce que le recalage automatique a déplacé l'ancre après sa date.
+export function provisionAdjustmentsForDisplay(
+  p: Provision,
+  currentYM: string,
+): ProvisionAdjustment[] {
+  const end = provisionReferenceDate(currentYM);
+  return (p.adjustments || []).filter((a) => a.date <= end);
+}
+
 export function provisionAdjustmentTotal(p: Provision, currentYM: string): number {
   return provisionAdjustmentsUpTo(p, currentYM).reduce((s, a) => s + a.amount, 0);
 }
@@ -172,7 +182,83 @@ export function provisionSpent(p: Provision, currentYM: string, expenses: Expens
 // (bouton "+$") jusqu'à ce que le montant cible soit atteint.
 // Peut être négative (facture payée avant d'avoir assez économisé).
 export function provisionPot(p: Provision, currentYM: string, expenses: Expense[]): number {
-  return provisionAdjustmentTotal(p, currentYM) - provisionSpent(p, currentYM, expenses);
+  let adjustments = provisionAdjustmentTotal(p, currentYM);
+
+  // Une ancre en jours représente parfois la date de la prochaine facture,
+  // pas encore un nouveau cycle. Les ajouts déjà faits doivent rester dans
+  // la cagnotte jusqu'au premier paiement qui déclenche le recalage.
+  if (provisionUnit(p) === 'days') {
+    const start = provisionStart(p);
+    const hasPaymentInCurrentCycle = expenses.some(
+      (e) =>
+        e.category === p.category &&
+        e.owner === p.owner &&
+        e.amount > 0 &&
+        e.date >= start &&
+        e.date.slice(0, 7) <= currentYM,
+    );
+    const end = provisionReferenceDate(currentYM);
+    if (!hasPaymentInCurrentCycle && start >= end) {
+      adjustments = (p.adjustments || [])
+        .filter((a) => a.date <= end)
+        .reduce((s, a) => s + a.amount, 0);
+    }
+  }
+
+  // Compatibilité avec un paiement enregistré avant le correctif du report :
+  // si le cycle a déjà été recalé mais qu'aucun ajout n'a été reporté dans le
+  // nouveau cycle, les anciens ajouts restent la seule trace du solde réel.
+  if (provisionUnit(p) === 'days') {
+    const start = provisionStart(p);
+    const hasPaymentAtOrAfterStart = expenses.some(
+      (e) =>
+        e.category === p.category &&
+        e.owner === p.owner &&
+        e.amount > 0 &&
+        e.date >= start &&
+        e.date.slice(0, 7) <= currentYM,
+    );
+    const hasCarriedSurplus = (p.adjustments || []).some(
+      (a) => a.date >= start && a.note === 'Surplus reporté du cycle précédent',
+    );
+    if (hasPaymentAtOrAfterStart && !hasCarriedSurplus) {
+      const legacyAdjustments = (p.adjustments || [])
+        .filter((a) => a.date < start && a.date <= provisionReferenceDate(currentYM))
+        .reduce((s, a) => s + a.amount, 0);
+      adjustments += legacyAdjustments;
+    }
+  }
+
+  return adjustments - provisionSpent(p, currentYM, expenses);
+}
+
+// Solde juste avant le paiement qui va déclencher un recalage automatique.
+// À ce moment, l'ancre peut encore être la date de la prochaine échéance :
+// les ajouts antérieurs doivent donc être considérés comme disponibles.
+export function provisionPotBeforeRecalibration(
+  p: Provision,
+  currentYM: string,
+  expenses: Expense[],
+  paymentDate: string,
+): number {
+  if (provisionUnit(p) !== 'days') {
+    return provisionPot(p, currentYM, expenses);
+  }
+
+  const adjustments = (p.adjustments || [])
+    .filter((a) => a.date <= paymentDate)
+    .reduce((s, a) => s + a.amount, 0);
+  const spent = expenses
+    .filter(
+      (e) =>
+        e.category === p.category &&
+        e.owner === p.owner &&
+        e.amount > 0 &&
+        e.date >= provisionStart(p) &&
+        e.date <= paymentDate,
+    )
+    .reduce((s, e) => s + e.amount, 0);
+  return adjustments - spent;
 }
 
 // Prochaine échéance (YYYY-MM-DD si jours, YYYY-MM si mois).
@@ -216,9 +302,22 @@ export function formatProvisionNextHit(p: Provision, currentYM: string): string 
 // pour un usage de planification pure ("après celle-ci, la suivante sera
 // quand ?"), mais provisionUpcomingHit() est ce qu'il faut utiliser
 // partout où on affiche/alerte sur "la prochaine échéance à surveiller".
-export function provisionUpcomingHit(p: Provision, currentYM: string): string {
+export function provisionUpcomingHit(
+  p: Provision,
+  currentYM: string,
+  expenses: Expense[] = [],
+): string {
   if (!isHitMonth(p, currentYM)) return provisionNextHit(p, currentYM);
-  if (provisionUnit(p) !== 'days') return currentYM;
+  if (provisionUnit(p) !== 'days') {
+    const paid = expenses.some(
+      (e) =>
+        e.category === p.category &&
+        e.owner === p.owner &&
+        e.amount > 0 &&
+        e.date.startsWith(currentYM),
+    );
+    return paid ? provisionNextHit(p, currentYM) : currentYM;
+  }
   // Même logique de grille que isHitMonth (jours) : retrouve le point
   // précis DANS ce mois plutôt que de renvoyer tout le mois.
   const start = provisionStart(p);
@@ -227,11 +326,23 @@ export function provisionUpcomingHit(p: Provision, currentYM: string): string {
   while (hitDate < monthStart) {
     hitDate = addDays(hitDate, p.everyN);
   }
-  return hitDate;
+  const paid = expenses.some(
+    (e) =>
+      e.category === p.category &&
+      e.owner === p.owner &&
+      e.amount > 0 &&
+      e.date >= hitDate &&
+      e.date <= lastDayOfMonthYM(currentYM),
+  );
+  return paid ? provisionNextHit(p, currentYM) : hitDate;
 }
 
-export function formatProvisionUpcomingHit(p: Provision, currentYM: string): string {
-  const next = provisionUpcomingHit(p, currentYM);
+export function formatProvisionUpcomingHit(
+  p: Provision,
+  currentYM: string,
+  expenses: Expense[] = [],
+): string {
+  const next = provisionUpcomingHit(p, currentYM, expenses);
   return provisionUnit(p) === 'days' ? fmtDate(next) : monthLabel(next);
 }
 
@@ -305,11 +416,16 @@ function provisionNextHitAsDate(p: Provision, currentYM: string): string {
   return provisionUnit(p) === 'days' ? hit : hit + '-01';
 }
 
-export function provisionDaysUntilNext(p: Provision, currentYM: string): number {
+export function provisionDaysUntilNext(
+  p: Provision,
+  currentYM: string,
+  expenses: Expense[] = [],
+): number {
   const ref = provisionReferenceDate(currentYM);
-  const next = provisionNextHitAsDate(p, currentYM);
+  const next = provisionUpcomingHit(p, currentYM, expenses);
+  const nextDate = provisionUnit(p) === 'days' ? next : next + '-01';
   return Math.floor(
-    (parseISODate(next).getTime() - parseISODate(ref).getTime()) / (1000 * 60 * 60 * 24),
+    (parseISODate(nextDate).getTime() - parseISODate(ref).getTime()) / (1000 * 60 * 60 * 24),
   );
 }
 
@@ -321,7 +437,7 @@ export function provisionDueAlert(
   const target = effectiveProvisionAmount(p, expenses);
   const pot = provisionPot(p, currentYM, expenses);
   if (pot >= target) return null;
-  const daysLeft = provisionDaysUntilNext(p, currentYM);
+  const daysLeft = provisionDaysUntilNext(p, currentYM, expenses);
   const missing = target - pot;
   if (daysLeft < 0) {
     return { type: 'overdue', message: `🔴 Prélèvement en retard — il manque ${fmt(missing)}` };

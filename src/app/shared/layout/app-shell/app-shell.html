@@ -1,0 +1,97 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark"><app-icon name="chart" [size]="16" /></span>
+      <span class="brand-name">FINA</span>
+    </div>
+
+    <nav class="nav-list">
+      @for (item of mainNav; track item.path) {
+        <a class="nav-item" [routerLink]="item.path" routerLinkActive="nav-item--active">
+          <app-icon [name]="item.icon" [size]="18" />
+          {{ item.label }}
+        </a>
+      }
+    </nav>
+
+    <div class="sidebar-foot">
+      <a
+        class="nav-item nav-item--small"
+        routerLink="/parametres"
+        routerLinkActive="nav-item--active"
+      >
+        <app-icon name="settings" [size]="16" />
+        Paramètres
+      </a>
+      <button type="button" class="nav-item nav-item--small" (click)="logout()">
+        <app-icon name="arrow-left" [size]="16" />
+        Se déconnecter
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-row1">
+        <h2 class="topbar-title">{{ pageTitle() }}</h2>
+      </div>
+      <div class="topbar-row2">
+        <div class="month-nav">
+          <button type="button" class="icon-btn" (click)="prevMonth()" title="Mois précédent">
+            <app-icon name="chevron-left" [size]="16" />
+          </button>
+          <span class="month-label">{{ monthLabel }}</span>
+          <button type="button" class="icon-btn" (click)="nextMonth()" title="Mois suivant">
+            <app-icon name="chevron-right" [size]="16" />
+          </button>
+        </div>
+        <app-member-switch
+          [members]="members"
+          [activeId]="store.activeOwner()"
+          (select)="selectMember($event)"
+        />
+      </div>
+    </header>
+
+    <div class="page-content">
+      <router-outlet />
+    </div>
+  </div>
+
+  <nav class="bottom-tabs">
+    <a class="tab-item" routerLink="/tableau-de-bord" routerLinkActive="tab-item--active">
+      <app-icon name="dashboard" [size]="19" />
+      <span>Accueil</span>
+    </a>
+    <a class="tab-item" routerLink="/mouvements" routerLinkActive="tab-item--active">
+      <app-icon name="transactions" [size]="19" />
+      <span>Mouvements</span>
+    </a>
+    <!-- Navigue vers Mouvements pour l'instant plutôt que d'ouvrir une
+         modale d'ajout directement : le vrai formulaire est un composant
+         de la Phase 2 (Mouvements), pas de la coquille de navigation. -->
+    <a class="tab-item tab-item--fab" routerLink="/mouvements">
+      <span class="tab-fab-circle"><app-icon name="plus" [size]="20" /></span>
+      <span>Ajouter</span>
+    </a>
+    <a class="tab-item" routerLink="/budget" routerLinkActive="tab-item--active">
+      <app-icon name="envelope" [size]="19" />
+      <span>Budget</span>
+    </a>
+    <button type="button" class="tab-item" (click)="showMore.set(true)">
+      <app-icon name="more" [size]="19" />
+      <span>Plus</span>
+    </button>
+  </nav>
+
+  @if (showMore()) {
+    <app-modal title="Plus" (closed)="showMore.set(false)">
+      @for (item of moreNav; track item.path) {
+        <a class="more-row" [routerLink]="item.path" (click)="showMore.set(false)">
+          <app-icon [name]="item.icon" [size]="18" />
+          <span>{{ item.label }}</span>
+        </a>
+      }
+    </app-modal>
+  }
+</div>

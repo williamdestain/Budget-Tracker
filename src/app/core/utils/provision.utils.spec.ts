@@ -8,6 +8,8 @@ import {
   provisionAdjustmentTotal,
   provisionSpent,
   provisionPot,
+  provisionPotBeforeRecalibration,
+  provisionAdjustmentsForDisplay,
   provisionNextHit,
   provisionUpcomingHit,
   isHitMonth,
@@ -268,9 +270,23 @@ describe('provision.utils', () => {
       expect(provisionPot(p, '2026-09', [])).toBe(100);
     });
 
-    it("une fois le jour réel de l'échéance passé sans paiement, la borne stricte habituelle reprend (limite connue : pas de recalage tant qu'aucun vrai paiement n'a eu lieu)", () => {
+    it("conserve les ajouts le jour de l'échéance, tant qu'aucun paiement n'a encore eu lieu", () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 8, 15)); // 15 septembre : après le 10
+      vi.setSystemTime(new Date(2026, 8, 10)); // 10 septembre : jour de l'échéance
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        intervalUnit: 'days',
+        everyN: 62,
+        startDate: '2026-09-10',
+        adjustments: [{ id: 'a1', amount: 100, date: '2026-07-15', note: '' }],
+      });
+      expect(provisionPot(p, '2026-09', [])).toBe(100);
+    });
+
+    it("écarte les ajouts d'un ancien cycle après le jour de l'échéance", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 15));
       const p = makeProvision({
         category: 'Électricité',
         owner: 'moi',
@@ -280,6 +296,59 @@ describe('provision.utils', () => {
         adjustments: [{ id: 'a1', amount: 100, date: '2026-07-15', note: '' }],
       });
       expect(provisionPot(p, '2026-09', [])).toBe(0);
+    });
+
+    it("soustrait le paiement et conserve le solde accumulé", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 10));
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        intervalUnit: 'days',
+        everyN: 62,
+        startDate: '2026-09-10',
+        adjustments: [{ id: 'a1', amount: 340, date: '2026-08-01', note: '' }],
+      });
+      const payment = makeExpense({ amount: 177.32, date: '2026-09-10' });
+      const carried = { id: 'a2', amount: 340, date: '2026-09-10', note: 'Surplus reporté du cycle précédent' };
+      expect(provisionPot({ ...p, adjustments: [...p.adjustments, carried] }, '2026-09', [payment]))
+        .toBeCloseTo(162.68, 2);
+    });
+
+    it("calcule le solde avant recalage avec les ajouts précédant l'ancre", () => {
+      const p = makeProvision({
+        intervalUnit: 'days',
+        startDate: '2026-09-10',
+        adjustments: [{ id: 'a1', amount: 340, date: '2026-08-01', note: '' }],
+      });
+      expect(provisionPotBeforeRecalibration(p, '2026-09', [], '2026-09-10')).toBe(340);
+    });
+
+    it("conserve les anciens ajouts après un nouvel ajout dans le cycle recalé", () => {
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        intervalUnit: 'days',
+        everyN: 60,
+        startDate: '2026-09-10',
+        adjustments: [
+          { id: 'a1', amount: 340, date: '2026-08-01', note: 'Ajout au fonds' },
+          { id: 'a2', amount: 85, date: '2026-09-12', note: 'Ajout au fonds' },
+        ],
+      });
+      const payment = makeExpense({ amount: 177.32, date: '2026-09-10' });
+      expect(provisionPot(p, '2026-09', [payment])).toBeCloseTo(247.68, 2);
+    });
+
+    it("affiche un versement daté avant l'ancre recalée dans l'historique", () => {
+      const p = makeProvision({
+        intervalUnit: 'days',
+        startDate: '2026-09-10',
+        adjustments: [
+          { id: 'a1', amount: 120, date: '2026-09-05', note: 'Versement de Madame' },
+        ],
+      });
+      expect(provisionAdjustmentsForDisplay(p, '2026-09')).toEqual(p.adjustments);
     });
   });
 
@@ -367,6 +436,29 @@ describe('provision.utils', () => {
       // ci-dessus) ; provisionUpcomingHit doit rester en janvier.
       expect(provisionNextHit(p, '2026-01')).toBe('2026-04');
       expect(provisionUpcomingHit(p, '2026-01')).toBe('2026-01');
+    });
+
+    it("avance à l'échéance suivante quand celle du mois a déjà été payée", () => {
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        startYM: '2026-09',
+        everyN: 3,
+      });
+      const payment = makeExpense({ amount: 177.32, date: '2026-09-10' });
+      expect(provisionUpcomingHit(p, '2026-09', [payment])).toBe('2026-12');
+    });
+
+    it("ajoute l'intervalle à la date du paiement pour une échéance en jours", () => {
+      const p = makeProvision({
+        category: 'Électricité',
+        owner: 'moi',
+        intervalUnit: 'days',
+        everyN: 60,
+        startDate: '2026-09-10',
+      });
+      const payment = makeExpense({ amount: 177.32, date: '2026-09-10' });
+      expect(provisionUpcomingHit(p, '2026-09', [payment])).toBe('2026-11-09');
     });
 
     it("provisionDaysUntilNext() ne doit plus jamais être artificiellement grand pour une échéance du mois affiché restée impayée", () => {

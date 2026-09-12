@@ -1,3 +1,18 @@
+/* Polices auto-hébergées (@fontsource) plutôt que Google Fonts en CDN —
+   voir index.html : le chargement en CDN faisait échouer `ng build` de
+   production (l'optimiseur Angular essaie d'inliner le CSS des polices au
+   moment du build, ce qui suppose un accès réseau à fonts.googleapis.com
+   depuis la machine qui build, pas seulement depuis le navigateur de
+   l'utilisateur final). L'auto-hébergement retire cette dépendance. */
+@import '@fontsource/fraunces/400.css';
+@import '@fontsource/fraunces/500.css';
+@import '@fontsource/fraunces/500-italic.css';
+@import '@fontsource/fraunces/600.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+
 /* ===================== Design global ===================== */
 /* Tokens de la refonte FINA (voir MODELE.md et plan-industrialisation.md,
    Phase 0). Principe : les NOMS de variables restent ceux de l'ancienne
@@ -140,8 +155,9 @@ select:focus {
   padding: 20px;
 }
 .card-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 16px;
 }
 
 .seg {

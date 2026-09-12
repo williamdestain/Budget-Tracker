@@ -1,66 +1,91 @@
-<div class="card cc-card">
-  <div class="cc-head">
-    <div class="card-title">{{ title }}</div>
-    <div class="cc-totals">
-      <div class="cc-balance" [class.cc-balance-credit]="balance() < 0">
-        <span>{{ balance() >= 0 ? 'Tu dois actuellement' : 'Crédit disponible' }}</span>
-        <span>{{ fmt(balance() < 0 ? -balance() : balance()) }}</span>
+<div class="cc-page">
+  <app-card size="lg" [accent]="balance() >= 0 ? 'var(--red)' : 'var(--accent)'">
+    <div class="cc-hero">
+      <div class="cc-stat">
+        <span class="cc-stat-label">
+          {{ balance() >= 0 ? 'Tu dois actuellement' : 'Crédit disponible' }}
+        </span>
+        <span class="cc-stat-value" [class.cc-stat-value--credit]="balance() < 0">
+          {{ fmt(balance() < 0 ? -balance() : balance()) }}
+        </span>
       </div>
       @if (showCombinedBalance) {
-        <div class="cc-balance cc-balance-combined">
-          <span title="Moi + Madame combinés">Total du foyer</span>
-          <span>{{ fmt(balanceAllOwners()) }}</span>
+        <div class="cc-stat cc-stat--muted">
+          <span class="cc-stat-label" title="Moi + Madame combinés">Total du foyer</span>
+          <span class="cc-stat-value">{{ fmt(balanceAllOwners()) }}</span>
         </div>
       }
+      <app-button (click)="togglePay()">
+        <app-icon name="card" [size]="14" />
+        {{ payOpen() ? 'Annuler' : 'Payer la carte' }}
+      </app-button>
     </div>
-  </div>
-
-  <div class="cc-pay-row">
-    <button class="btn-primary btn-pay-cc" (click)="togglePay()">
-      {{ payOpen() ? 'Annuler' : '💳 Payer la carte' }}
-    </button>
-  </div>
+  </app-card>
 
   @if (payOpen()) {
-    <form class="cc-pay-form" (ngSubmit)="submitPay()">
-      <div class="field">
-        <label>Montant</label>
-        <div class="input-money">
-          <input type="number" min="0" step="0.01" name="payAmount" [(ngModel)]="payAmount" required />
+    <app-card>
+      <form class="cc-pay-form" (ngSubmit)="submitPay()">
+        <div class="field">
+          <label>Montant</label>
+          <div class="input-money">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              name="payAmount"
+              [(ngModel)]="payAmount"
+              required
+            />
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label>Date</label>
-        <input type="date" name="payDate" [(ngModel)]="payDate" required />
-      </div>
-      <div class="field field-note">
-        <label>Note (optionnel)</label>
-        <input type="text" name="payNote" [(ngModel)]="payNote" placeholder="ex. paiement complet" />
-      </div>
-      <div class="field-actions">
-        <button type="submit" class="btn-primary" [disabled]="saving()">Confirmer le paiement</button>
-      </div>
-    </form>
+        <div class="field">
+          <label>Date</label>
+          <input type="date" name="payDate" [(ngModel)]="payDate" required />
+        </div>
+        <div class="field field-note">
+          <label>Note (optionnel)</label>
+          <input
+            type="text"
+            name="payNote"
+            [(ngModel)]="payNote"
+            placeholder="ex. paiement complet"
+          />
+        </div>
+        <div class="field-actions">
+          <app-button type="submit" [disabled]="saving()" [fullWidth]="true">
+            Confirmer le paiement
+          </app-button>
+        </div>
+      </form>
+    </app-card>
   }
 
-  @if (breakdown().entries.length === 0) {
-    <div class="cc-empty">Aucune dépense par carte pour cette période.</div>
-  } @else {
-    <div class="cc-breakdown">
-      @for (entry of breakdown().entries; track entry.category) {
-        <div class="cc-row">
-          <span class="cat-dot" [style.background]="colorFor(entry.category)"></span>
-          <span class="cc-cat">{{ entry.category }}</span>
-          <span class="cc-amt">{{ fmt(entry.amount) }}</span>
-          <span class="cc-pct">{{ entry.pct.toFixed(0) }}%</span>
-        </div>
-      }
-    </div>
-    <p class="cc-note">Dépenses passées par la carte ce mois-ci, classées par catégorie.</p>
-  }
+  <app-card>
+    <div class="card-title">Répartition par catégorie</div>
+    @if (breakdown().entries.length === 0) {
+      <div class="cc-empty">Aucune dépense par carte pour cette période.</div>
+    } @else {
+      <div class="cc-stack-bar">
+        @for (entry of breakdown().entries; track entry.category) {
+          <span [style.width.%]="entry.pct" [style.background]="colorFor(entry.category)"></span>
+        }
+      </div>
+      <div class="cc-breakdown">
+        @for (entry of breakdown().entries; track entry.category) {
+          <div class="cc-row">
+            <span class="cat-dot" [style.background]="colorFor(entry.category)"></span>
+            <span class="cc-cat">{{ entry.category }}</span>
+            <span class="cc-amt">{{ fmt(entry.amount) }}</span>
+            <span class="cc-pct">{{ entry.pct.toFixed(0) }}%</span>
+          </div>
+        }
+      </div>
+      <p class="cc-note">Dépenses passées par la carte ce mois-ci, classées par catégorie.</p>
+    }
+  </app-card>
 
-  <div class="cc-reimb">
-    <div class="cc-reimb-title">Paiements effectués ce mois-ci</div>
+  <app-card>
+    <div class="card-title">Paiements effectués ce mois-ci</div>
     @if (payments().length === 0) {
       <div class="cc-empty">Aucun paiement enregistré pour cette période.</div>
     } @else {
@@ -69,10 +94,12 @@
           <div class="cc-reimb-row">
             <span class="cc-reimb-date">{{ fmtDate(p.date) }}{{ p.note ? ' · ' + p.note : '' }}</span>
             <span class="cc-reimb-amt">{{ fmt(p.amount) }}</span>
-            <button class="cc-reimb-del" title="Supprimer" (click)="removePayment(p.id)">✕</button>
+            <button type="button" class="cc-reimb-del" title="Supprimer" (click)="removePayment(p.id)">
+              <app-icon name="close" [size]="13" />
+            </button>
           </div>
         }
       </div>
     }
-  </div>
+  </app-card>
 </div>
