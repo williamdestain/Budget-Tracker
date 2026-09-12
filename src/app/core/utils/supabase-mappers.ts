@@ -12,7 +12,40 @@ import {
   SavingsGoal,
   SavingsContribution,
   CreditCardPayment,
+  Account,
+  AccountBalanceSnapshot,
 } from '../models/budget.models';
+
+export function rowToAccount(row: any): Account {
+  return {
+    id: row.id,
+    memberId: row.member_id ?? null,
+    name: row.name,
+    institution: row.institution ?? null,
+    type: row.type,
+    archived: row.archived,
+  };
+}
+
+export function accountToRow(account: Omit<Account, 'id'>): any {
+  return {
+    member_id: account.memberId,
+    name: account.name,
+    institution: account.institution,
+    type: account.type,
+    archived: account.archived,
+  };
+}
+
+export function rowToAccountBalanceSnapshot(row: any): AccountBalanceSnapshot {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    date: row.date,
+    balance: Number(row.balance),
+    note: row.note ?? null,
+  };
+}
 
 export function rowToExpense(row: any): Expense {
   return {

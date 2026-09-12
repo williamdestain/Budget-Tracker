@@ -155,6 +155,25 @@ export interface CreditCardPayment {
   note: string;
 }
 
+export type AccountType = 'bank' | 'credit' | 'investment' | 'other';
+
+export interface Account {
+  id: string;
+  memberId: string | null;
+  name: string;
+  institution: string | null;
+  type: AccountType;
+  archived: boolean;
+}
+
+export interface AccountBalanceSnapshot {
+  id: string;
+  accountId: string;
+  date: string;
+  balance: number;
+  note: string | null;
+}
+
 // { owner: { "YYYY-MM": montant } }
 export type MonthlyAmountMap = Record<Owner, Record<string, number>>;
 

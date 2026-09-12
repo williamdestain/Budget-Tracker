@@ -1,0 +1,58 @@
+<div class="accounts-page">
+  <app-card size="lg" accent="var(--accent)">
+    <div class="accounts-hero">
+      <div>
+        <span class="accounts-label">Valeur nette suivie</span>
+        <strong>{{ fmt(netWorth()) }}</strong>
+      </div>
+      <app-button (click)="formOpen() ? formOpen.set(false) : openForm()">
+        {{ formOpen() ? 'Annuler' : 'Ajouter un compte' }}
+      </app-button>
+    </div>
+  </app-card>
+
+  @if (formOpen()) {
+    <app-card>
+      <form class="account-form" (ngSubmit)="submit()">
+        <label>Nom <input name="name" [(ngModel)]="name" required /></label>
+        <label>Institution (optionnel) <input name="institution" [(ngModel)]="institution" /></label>
+        <label>Type
+          <select name="type" [(ngModel)]="type">
+            <option value="bank">Bancaire</option>
+            <option value="credit">Carte de crédit</option>
+            <option value="investment">Investissement</option>
+            <option value="other">Autre</option>
+          </select>
+        </label>
+        <label>Solde initial (optionnel)
+          <input type="number" name="balance" step="0.01" [(ngModel)]="balance" />
+        </label>
+        <label>Date du solde
+          <input type="date" name="balanceDate" [(ngModel)]="balanceDate" required />
+        </label>
+        <app-button type="submit" [disabled]="saving()">Enregistrer</app-button>
+      </form>
+    </app-card>
+  }
+
+  <section class="account-list" aria-label="Comptes actifs">
+    @if (activeAccounts().length === 0) {
+      <app-card><p class="empty">Aucun compte ajouté.</p></app-card>
+    } @else {
+      @for (account of activeAccounts(); track account.id) {
+        <app-card>
+          <div class="account-row">
+            <div>
+              <h2>{{ account.name }}</h2>
+              <p>{{ account.institution || 'Institution non précisée' }} · {{ account.type }}</p>
+            </div>
+            <div class="account-actions">
+              <strong>{{ latestBalance(account.id) === null ? '—' : fmt(latestBalance(account.id)!) }}</strong>
+              <button type="button" (click)="archive(account.id)">Archiver</button>
+            </div>
+          </div>
+        </app-card>
+      }
+    }
+  </section>
+</div>

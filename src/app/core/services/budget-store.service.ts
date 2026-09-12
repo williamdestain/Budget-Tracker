@@ -15,6 +15,8 @@ import {
   Category,
   SavingsGoal,
   CreditCardPayment,
+  Account,
+  AccountBalanceSnapshot,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
@@ -59,6 +61,9 @@ import {
   savingsContributionToRow,
   rowToCreditCardPayment,
   creditCardPaymentToRow,
+  rowToAccount,
+  rowToAccountBalanceSnapshot,
+  accountToRow,
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
@@ -341,6 +346,8 @@ export class BudgetStore {
   // Paiements faits pour rembourser la carte de crédit — volontairement
   // indépendant des provisions (voir CreditCardPayment dans budget.models.ts).
   readonly creditCardPayments = signal<CreditCardPayment[]>([]);
+  readonly accounts = signal<Account[]>([]);
+  readonly accountBalanceSnapshots = signal<AccountBalanceSnapshot[]>([]);
   readonly savingsGoals = signal<SavingsGoal[]>([]);
   readonly recurringExpenses = signal<RecurringExpense[]>([]);
   // Modèles de revenus récurrents ("paies") — voir RecurringIncome dans
@@ -435,6 +442,8 @@ export class BudgetStore {
     this.incomes.set([]);
     this.provisions.set([]);
     this.creditCardPayments.set([]);
+    this.accounts.set([]);
+    this.accountBalanceSnapshots.set([]);
     this.savingsGoals.set([]);
     this.recurringExpenses.set([]);
     this.recurringIncomes.set([]);
@@ -466,6 +475,8 @@ export class BudgetStore {
       savingsContributionsRes,
       closedMonthsRes,
       creditCardPaymentsRes,
+      accountsRes,
+      accountSnapshotsRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
@@ -481,6 +492,8 @@ export class BudgetStore {
       client.from('savings_goal_contributions').select('*'),
       client.from('closed_months').select('*'),
       client.from('credit_card_payments').select('*').order('date'),
+      client.from('accounts').select('*').order('name'),
+      client.from('account_balance_snapshots').select('*').order('date'),
     ]);
 
     const failedTables = (
@@ -499,6 +512,8 @@ export class BudgetStore {
         ['savings_goal_contributions', savingsContributionsRes],
         ['closed_months', closedMonthsRes],
         ['credit_card_payments', creditCardPaymentsRes],
+        ['accounts', accountsRes],
+        ['account_balance_snapshots', accountSnapshotsRes],
       ] as const
     )
       .filter(([, res]) => res.error)
@@ -563,6 +578,10 @@ export class BudgetStore {
     }
     if (!creditCardPaymentsRes.error) {
       this.creditCardPayments.set((creditCardPaymentsRes.data ?? []).map(rowToCreditCardPayment));
+    }
+    if (!accountsRes.error) this.accounts.set((accountsRes.data ?? []).map(rowToAccount));
+    if (!accountSnapshotsRes.error) {
+      this.accountBalanceSnapshots.set((accountSnapshotsRes.data ?? []).map(rowToAccountBalanceSnapshot));
     }
     this.loading.set(false);
 
@@ -3167,6 +3186,56 @@ export class BudgetStore {
       .eq('id', id);
     if (error) throw error;
     this.creditCardPayments.update((list) => list.filter((p) => p.id !== id));
+  }
+
+  async addAccount(
+    account: Omit<Account, 'id'>,
+  ): Promise<Account> {
+    if (!account.name.trim()) throw new Error('Le nom du compte est obligatoire.');
+    const { data, error } = await this.supabase.client
+      .from('accounts')
+      .insert({ household_id: this.hid(), ...accountToRow(account) })
+      .select()
+      .single();
+    if (error) throw error;
+    const created = rowToAccount(data);
+    this.accounts.update((list) => [...list, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  }
+
+  async archiveAccount(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('accounts')
+      .update({ archived: true })
+      .eq('id', id);
+    if (error) throw error;
+    this.accounts.update((list) => list.map((account) =>
+      account.id === id ? { ...account, archived: true } : account,
+    ));
+  }
+
+  async addAccountBalanceSnapshot(
+    accountId: string,
+    balance: number,
+    date: string,
+    note: string | null,
+  ): Promise<AccountBalanceSnapshot> {
+    if (!Number.isFinite(balance)) throw new Error('Solde invalide.');
+    const { data, error } = await this.supabase.client
+      .from('account_balance_snapshots')
+      .upsert(
+        { household_id: this.hid(), account_id: accountId, balance, date, note },
+        { onConflict: 'account_id,date' },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    const snapshot = rowToAccountBalanceSnapshot(data);
+    this.accountBalanceSnapshots.update((list) => [
+      ...list.filter((item) => !(item.accountId === accountId && item.date === date)),
+      snapshot,
+    ]);
+    return snapshot;
   }
 
   // Sauvegarde complète en .json (téléchargement local), pour archive

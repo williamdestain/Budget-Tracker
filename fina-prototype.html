@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FINA — Prototype UI/UX (v2 fusionné)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F1F4EE;
+  --paper-deep:#E6EADF;
+  --card:#FFFFFF;
+  --line:#DEE3D6;
+  --ink:#1B241F;
+  --ink-soft:#5B665C;
+  --ink-faint:#93A091;
+  --primary:#1F6F54;
+  --primary-dark:#122B22;
+  --primary-soft:#E1EEE7;
+  --gold:#BF8F2E;
+  --gold-soft:#F5EAD2;
+  --danger:#B3432B;
+  --danger-soft:#F5E0D9;
+  --radius-lg:22px;
+  --radius-md:14px;
+  --font-display:'Fraunces', serif;
+  --font-body:'IBM Plex Sans', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:var(--font-body);background:#171A15;color:var(--ink);-webkit-font-smoothing:antialiased;}
+button,input,select{font-family:inherit;}
+
+/* ---------- Presentation chrome ---------- */
+.page{min-height:100vh;padding:44px 22px 70px;display:flex;flex-direction:column;align-items:center;gap:24px;}
+.intro{max-width:660px;text-align:center;}
+.intro h1{font-family:var(--font-display);font-weight:500;font-size:28px;color:#F5F3EC;margin:0 0 8px;letter-spacing:-0.01em;}
+.intro p{margin:0;color:#A8B0A0;font-size:14px;line-height:1.6;}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;}
+.device-toggle,.screen-tabs{display:flex;background:#1E221A;border:1px solid #333B2C;border-radius:999px;padding:4px;gap:2px;flex-wrap:wrap;justify-content:center;}
+.device-toggle button,.screen-tabs button{display:flex;align-items:center;gap:6px;border:none;background:transparent;color:#9BA593;font-size:12.5px;font-weight:500;padding:7px 13px;border-radius:999px;cursor:pointer;transition:background .15s ease,color .15s ease;white-space:nowrap;}
+.device-toggle button.active{background:var(--primary);color:#fff;}
+.screen-tabs button.active{background:var(--gold);color:#2A2007;}
+.device-toggle button:hover:not(.active),.screen-tabs button:hover:not(.active){color:#EEF0E8;}
+.caption{max-width:640px;text-align:center;color:#95A08D;font-size:13.5px;line-height:1.6;padding:0 8px;min-height:44px;}
+.stage-outer{width:100%;display:flex;justify-content:center;}
+.frame-scale-wrapper{position:relative;}
+#frame{position:absolute;top:0;left:0;transform-origin:top left;background:var(--paper);box-shadow:0 40px 90px -24px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;}
+#frame.desktop{width:1240px;height:770px;border-radius:14px;}
+#frame.mobile{width:380px;height:800px;border-radius:46px;padding:12px;background:#12140F;}
+.chrome-browser{flex-shrink:0;height:34px;display:flex;align-items:center;gap:10px;padding:0 14px;background:#EDEFE6;border-bottom:1px solid var(--line);}
+#frame.mobile .chrome-browser{display:none;}
+.chrome-dots{display:flex;gap:6px;}
+.chrome-dots span{width:8px;height:8px;border-radius:50%;background:#C9CFC0;}
+.chrome-url{flex:1;text-align:center;font-size:11px;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:6px;padding:3px 10px;}
+.device-screen{flex:1;position:relative;overflow:hidden;background:var(--paper);}
+#frame.mobile .device-screen{border-radius:34px;}
+.notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:96px;height:20px;background:#12140F;border-radius:12px;z-index:8;}
+#frame.desktop .notch{display:none;}
+.home-indicator{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:108px;height:4px;border-radius:3px;background:#C9CFC0;z-index:8;}
+#frame.desktop .home-indicator{display:none;}
+
+/* ---------- Dark theme (scoped to the simulated app only) ---------- */
+.device-screen[data-theme="dark"]{
+  --paper:#12140F; --paper-deep:#1B1F16; --card:#1B1F17; --line:#2B3126;
+  --ink:#ECEFE5; --ink-soft:#A8B29F; --ink-faint:#6E7866;
+  --primary-soft:#1E3A2E; --gold-soft:#3A2E14; --danger-soft:#3A2019;
+}
+
+/* ---------- App shell ---------- */
+.app-shell{position:absolute;inset:0;display:flex;}
+#frame.desktop .app-shell{flex-direction:row;}
+#frame.mobile .app-shell{flex-direction:column;}
+.sidebar{width:236px;flex-shrink:0;background:var(--primary-dark);display:flex;flex-direction:column;padding:20px 14px;}
+#frame.mobile .sidebar{display:none;}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:24px;padding:0 4px;}
+.brand-mark{width:32px;height:32px;border-radius:9px;background:var(--gold);display:flex;align-items:center;justify-content:center;color:var(--primary-dark);flex-shrink:0;}
+.brand-name{font-family:var(--font-display);font-weight:500;font-size:17px;color:#F5F3EC;}
+.nav-list{display:flex;flex-direction:column;gap:2px;flex:1;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;border:none;background:transparent;color:#B7C2B1;font-size:13px;font-weight:500;cursor:pointer;text-align:left;width:100%;}
+.nav-item svg{flex-shrink:0;}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#EDEFE6;}
+.nav-item.active{background:#1E4536;color:#fff;}
+.nav-item.active svg{color:var(--gold);}
+.sidebar-foot{display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid rgba(255,255,255,.09);}
+.nav-item.small{font-size:12px;color:#93A08E;padding:8px 10px;}
+.bottom-tabs{display:none;flex-shrink:0;border-top:1px solid var(--line);background:var(--card);padding:6px 4px 14px;align-items:flex-end;}
+#frame.mobile .bottom-tabs{display:flex;}
+.tab-item{display:flex;flex-direction:column;align-items:center;gap:3px;background:transparent;border:none;color:var(--ink-faint);font-size:9.5px;font-weight:600;cursor:pointer;padding:6px 2px;flex:1;}
+.tab-item.active{color:var(--primary);}
+.tab-item.fab-mid{margin-top:-22px;color:var(--ink-soft);}
+.tab-fab-circle{width:44px;height:44px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 22px rgba(0,0,0,.3);}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;}
+.topbar{flex-shrink:0;padding:16px 26px 14px;border-bottom:1px solid var(--line);background:var(--paper);}
+#frame.mobile .topbar{padding:22px 16px 12px;}
+.topbar-row1{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.topbar-title{font-family:var(--font-display);font-weight:500;font-size:20px;color:var(--ink);margin:0;}
+#frame.mobile .topbar-title{font-size:17px;}
+.topbar-right{display:flex;align-items:center;gap:8px;}
+#topbarActions{display:flex;}
+#frame.mobile #topbarActions{display:none;}
+.topbar-row2{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;}
+.month-nav{display:flex;align-items:center;gap:8px;}
+.month-label{font-weight:600;font-size:13px;min-width:78px;text-align:center;color:var(--ink);}
+.member-switch{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;gap:1px;max-width:220px;overflow-x:auto;}
+.member-switch button{border:none;background:transparent;font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:999px;cursor:pointer;color:var(--ink-soft);white-space:nowrap;flex-shrink:0;}
+.app-content{flex:1;overflow-y:auto;min-height:0;padding:20px 26px 40px;}
+#frame.mobile .app-content{padding:15px 15px 90px;}
+.screen{display:none;}
+.screen.active{display:block;}
+
+/* ---------- Shared components ---------- */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:17px 19px;}
+.panel-title{font-family:var(--font-display);font-weight:500;font-size:16px;margin:0 0 12px;color:var(--ink);}
+.btn-primary{display:inline-flex;align-items:center;gap:6px;background:var(--primary);color:#fff;border:none;padding:10px 17px;border-radius:999px;font-weight:600;font-size:13px;cursor:pointer;}
+.btn-primary:hover{background:#175A46;}
+.btn-primary.full{width:100%;justify-content:center;margin-top:6px;}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--ink);padding:8px 15px;border-radius:999px;font-size:12.5px;font-weight:600;cursor:pointer;}
+.btn-ghost:hover{border-color:var(--primary);color:var(--primary);}
+.icon-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);cursor:pointer;flex-shrink:0;}
+.icon-btn:hover{border-color:var(--primary);color:var(--primary);}
+.icon-btn.sm{width:26px;height:26px;border-radius:7px;}
+.cat-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.bar-track{height:8px;background:var(--paper-deep);border-radius:6px;overflow:hidden;}
+.bar-track.sm{height:6px;}
+.bar-fill{height:100%;background:var(--primary);border-radius:6px;}
+.positive{color:var(--primary);}
+.negative{color:var(--danger);}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin:22px 0 12px;}
+.section-head:first-child{margin-top:0;}
+.mini-heading{font-family:var(--font-display);font-size:13px;margin:16px 0 8px;color:var(--ink-soft);font-weight:500;}
+
+/* Hero ledger */
+.hero-ledger{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--member-accent, var(--primary));border-radius:var(--radius-lg);padding:22px 24px;display:flex;flex-direction:column;gap:15px;margin-bottom:18px;}
+.hero-top{display:flex;flex-direction:column;gap:4px;}
+.hero-label{font-family:var(--font-display);font-style:italic;font-weight:500;font-size:13.5px;color:var(--ink-soft);}
+.hero-amount{font-weight:700;font-size:38px;letter-spacing:-0.01em;font-variant-numeric:tabular-nums;line-height:1.05;}
+#frame.mobile .hero-amount{font-size:29px;}
+.hero-sub{font-size:12.5px;color:var(--ink-soft);}
+.hero-equation{display:flex;align-items:flex-end;gap:13px;flex-wrap:wrap;padding-top:9px;border-top:1px dashed var(--line);}
+.eq-item{display:flex;flex-direction:column;gap:2px;}
+.eq-value{font-weight:600;font-size:15.5px;font-variant-numeric:tabular-nums;color:var(--ink);}
+#frame.mobile .eq-value{font-size:13px;}
+.eq-key{font-size:10.5px;color:var(--ink-soft);}
+.eq-op{font-family:var(--font-display);font-size:18px;color:var(--ink-faint);padding-bottom:11px;}
+.eq-item.result .eq-value{color:var(--primary);}
+.hero-bar .bar-caption{font-size:11.5px;color:var(--ink-soft);margin-top:6px;display:block;}
+
+/* Dashboard grid */
+.dash-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;}
+#frame.mobile .dash-grid{grid-template-columns:1fr;}
+.dash-col-main,.dash-col-side{display:flex;flex-direction:column;gap:15px;}
+.alert-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);}
+.alert-row:last-child{border-bottom:none;padding-bottom:0;}
+.alert-row .icon{width:27px;height:27px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.alert-row.danger .icon{background:var(--danger-soft);color:var(--danger);}
+.alert-row.warn .icon{background:var(--gold-soft);color:var(--gold);}
+.alert-row.info .icon{background:var(--primary-soft);color:var(--primary);}
+.alert-row .msg{font-size:13px;color:var(--ink);line-height:1.4;padding-top:4px;}
+.forecast-text{font-size:13px;line-height:1.55;color:var(--ink);margin:0;}
+.mini-env-row{display:grid;grid-template-columns:1fr 80px 30px;align-items:center;gap:10px;padding:6px 0;font-size:12px;color:var(--ink);}
+.mini-env-pct{text-align:right;color:var(--ink-soft);}
+.agenda-list{display:flex;flex-direction:column;}
+.agenda-item{display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line);}
+.agenda-item:last-child{border-bottom:none;padding-bottom:0;}
+.agenda-date{width:40px;flex-shrink:0;text-align:center;background:var(--paper-deep);border-radius:8px;padding:5px 0;line-height:1.15;}
+.agenda-date b{display:block;font-size:13px;color:var(--ink);}
+.agenda-date span{font-size:9px;color:var(--ink-soft);text-transform:lowercase;}
+.agenda-body{flex:1;min-width:0;}
+.agenda-title{font-size:13px;font-weight:600;color:var(--ink);display:block;}
+.agenda-meta{font-size:11px;color:var(--ink-soft);}
+.agenda-amount{font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;align-self:center;}
+.nw-total{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);margin-bottom:8px;}
+.nw-row{display:flex;justify-content:space-between;padding:6px 0;font-size:12px;color:var(--ink-soft);border-bottom:1px solid var(--line);}
+.nw-row:last-child{border-bottom:none;}
+.nw-row b{color:var(--ink);font-variant-numeric:tabular-nums;}
+
+/* Transactions */
+.tx-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;flex-wrap:wrap;gap:8px;}
+.chip-row{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;gap:1px;}
+.chip-row .chip{border:none;background:transparent;padding:7px 13px;border-radius:999px;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer;}
+.chip-row .chip.active{background:var(--primary);color:#fff;}
+.tx-account-select{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--ink);}
+.tx-search{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 13px;color:var(--ink-faint);}
+#frame.mobile .tx-search{display:none;}
+.tx-search input{border:none;background:transparent;outline:none;font-size:12px;width:120px;color:var(--ink);}
+.tx-layout{display:grid;grid-template-columns:1fr 260px;gap:16px;}
+#frame.mobile .tx-layout{grid-template-columns:1fr;}
+#frame.mobile .tx-summary{display:none;}
+.tx-list{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:4px 17px;min-height:60px;}
+.tx-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);}
+.tx-row:last-child{border-bottom:none;}
+.tx-main{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.tx-title{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tx-meta{font-size:11px;color:var(--ink-soft);}
+.tx-amount{font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tx-amount.transfer{color:var(--ink-soft);}
+.summary-row{display:flex;justify-content:space-between;padding:6px 0;font-size:12.5px;color:var(--ink-soft);}
+.summary-row strong{color:var(--ink);font-variant-numeric:tabular-nums;}
+.summary-row.total{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;font-weight:600;}
+.tc-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;color:var(--ink);}
+.tc-row span:nth-child(2){flex:1;}
+.tc-row b{font-variant-numeric:tabular-nums;}
+
+/* Budget & enveloppes */
+.cat-budget-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px;}
+.cb-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:13px 15px;}
+.cb-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.cb-name{flex:1;font-size:12.5px;font-weight:600;color:var(--ink);}
+.cb-pct{font-size:11.5px;font-weight:600;color:var(--ink-soft);}
+.cb-pct.over{color:var(--danger);}
+.cb-foot{display:flex;gap:5px;margin-top:7px;font-size:11.5px;color:var(--ink);}
+.cb-foot .cb-of{color:var(--ink-soft);}
+.envelope-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));gap:13px;}
+.env-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:15px 17px;}
+.env-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:11px;}
+.env-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--primary-soft);color:var(--primary);}
+.env-card[data-status="soon"] .env-icon{background:var(--gold-soft);color:var(--gold);}
+.env-card[data-status="overdue"] .env-icon{background:var(--danger-soft);color:var(--danger);}
+.env-name-wrap{flex:1;min-width:0;}
+.env-name{display:block;font-size:13px;font-weight:600;color:var(--ink);}
+.env-cycle{font-size:11px;color:var(--ink-soft);}
+.env-status-pill{font-size:10px;font-weight:700;padding:4px 8px;border-radius:999px;white-space:nowrap;}
+.env-status-pill.soon{background:var(--gold-soft);color:var(--gold);}
+.env-status-pill.ready{background:var(--primary-soft);color:var(--primary);}
+.env-foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:12px;color:var(--ink-soft);}
+.env-foot strong{color:var(--ink);font-variant-numeric:tabular-nums;}
+.env-actions{display:flex;gap:6px;}
+
+/* Épargne & objectifs */
+.goal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:13px;}
+.goal-card{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:15px;}
+.goal-ring{width:56px;height:56px;border-radius:50%;flex-shrink:0;position:relative;}
+.goal-ring::before{content:"";position:absolute;inset:7px;background:var(--card);border-radius:50%;}
+.goal-pct{position:absolute;inset:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink);}
+.goal-info{flex:1;min-width:0;}
+.goal-info-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px;}
+.goal-name{font-size:13px;font-weight:600;color:var(--ink);}
+.goal-icon-tag{width:22px;height:22px;border-radius:7px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.goal-amounts{font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums;display:block;}
+.goal-of{color:var(--ink-soft);}
+.goal-meta{font-size:11px;color:var(--ink-soft);display:block;margin-top:2px;}
+
+/* Investissements & Comptes (partagent des styles) */
+.stat-hero{display:flex;align-items:center;gap:24px;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:var(--radius-lg);padding:20px 22px;flex-wrap:wrap;margin-bottom:16px;}
+.cc-stat{display:flex;flex-direction:column;gap:4px;}
+.cc-stat-label{font-size:11.5px;color:var(--ink-soft);}
+.cc-stat-value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);}
+.cc-stat-value.negative{color:var(--danger);}
+.cc-stat.muted .cc-stat-value{font-size:18px;color:var(--ink-soft);font-weight:600;}
+.stat-hero .btn-ghost,.stat-hero .btn-primary{margin-left:auto;}
+#frame.mobile .stat-hero .btn-ghost,#frame.mobile .stat-hero .btn-primary{margin-left:0;width:100%;justify-content:center;}
+.reports-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+#frame.mobile .reports-grid{grid-template-columns:1fr;}
+.reports-grid .span-2{grid-column:span 2;}
+#frame.mobile .reports-grid .span-2{grid-column:span 1;}
+.yearly-svg{width:100%;height:auto;display:block;}
+.chart-legend{display:flex;gap:15px;margin-top:9px;flex-wrap:wrap;}
+.chart-legend span{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft);}
+.chart-legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+.chart-legend i.line{border-radius:50%;}
+.donut-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+.donut{width:112px;height:112px;border-radius:50%;position:relative;flex-shrink:0;}
+.donut-center{position:absolute;inset:19px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--ink);background:var(--card);border-radius:50%;text-align:center;line-height:1.1;}
+.donut-legend{flex:1;min-width:125px;display:flex;flex-direction:column;gap:6px;}
+.dl-row{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-soft);}
+.dl-row .dl-name{flex:1;color:var(--ink);}
+.holding-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.holding-row:last-child{border-bottom:none;}
+.holding-row b{font-variant-numeric:tabular-nums;color:var(--ink);}
+.mc-total{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--ink-soft);padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:8px;}
+.mc-total strong{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums;}
+.mc-delta{font-size:11.5px;font-weight:600;margin-left:6px;}
+.mc-delta.up{color:var(--danger);}
+.mc-delta.down{color:var(--primary);}
+.mc-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px;}
+.mc-row:last-child{border-bottom:none;}
+.mc-name{flex:1;color:var(--ink);}
+.mc-now{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;width:60px;text-align:right;}
+
+/* Comptes */
+.acct-group-title{font-family:var(--font-display);font-size:13.5px;color:var(--ink-soft);margin:18px 0 8px;}
+.acct-group-title:first-child{margin-top:0;}
+.acct-row{display:flex;align-items:center;gap:13px;padding:13px 4px;border-bottom:1px solid var(--line);}
+.acct-row:last-child{border-bottom:none;}
+.acct-icon{width:36px;height:36px;border-radius:10px;background:var(--paper-deep);display:flex;align-items:center;justify-content:center;color:var(--ink-soft);flex-shrink:0;}
+.acct-body{flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.acct-name{font-size:13px;font-weight:600;color:var(--ink);}
+.acct-inst{font-size:11px;color:var(--ink-soft);display:block;}
+.acct-balance{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap;}
+.acct-balance.negative{color:var(--danger);}
+.acct-sync-badge{font-size:9.5px;font-weight:600;color:var(--ink-faint);border:1px dashed var(--line);padding:2px 7px;border-radius:999px;white-space:nowrap;}
+.acct-action{font-size:11.5px;font-weight:600;color:var(--primary);background:none;border:none;cursor:pointer;flex-shrink:0;}
+
+/* Paramètres */
+.settings-row{display:flex;align-items:center;gap:13px;padding:13px 4px;border-bottom:1px solid var(--line);}
+.settings-row:last-child{border-bottom:none;}
+.settings-icon{width:34px;height:34px;border-radius:9px;background:var(--paper-deep);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.settings-body{flex:1;min-width:0;}
+.settings-title{font-size:13px;font-weight:600;color:var(--ink);display:block;}
+.settings-sub{font-size:11.5px;color:var(--ink-soft);}
+.chev{color:var(--ink-faint);font-size:16px;}
+
+/* Forms / modal */
+#fab{display:none;}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+.field label{font-size:11px;font-weight:600;color:var(--ink-soft);}
+.field input,.field select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;color:var(--ink);background:#fff;}
+.input-money{position:relative;}
+.input-money::before{content:'$';position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink-soft);font-weight:600;}
+.input-money input{padding-left:24px;}
+.seg-toggle{display:flex;background:var(--paper-deep);border-radius:9px;padding:3px;gap:2px;margin-bottom:12px;}
+.seg-toggle button{flex:1;border:none;background:transparent;padding:8px;border-radius:7px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;}
+.seg-toggle button.active{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.seg-toggle.sm button{padding:6px;font-size:11.5px;}
+.field-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;}
+.field-row .field{margin-bottom:0;flex:1;}
+.check-chip{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--ink-soft);background:var(--paper-deep);padding:9px 12px;border-radius:9px;white-space:nowrap;}
+.more-row{display:flex;align-items:center;gap:14px;width:100%;padding:13px 6px;border:none;background:transparent;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;border-bottom:1px solid var(--line);text-align:left;}
+.more-row:last-child{border-bottom:none;}
+.modal-overlay{position:absolute;inset:0;background:rgba(15,20,15,.45);display:flex;align-items:center;justify-content:center;z-index:40;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+.modal-overlay.show{opacity:1;pointer-events:auto;}
+#frame.mobile .modal-overlay{align-items:flex-end;}
+.modal-panel{background:var(--card);width:380px;max-width:90%;border-radius:var(--radius-lg);padding:20px 22px 22px;box-shadow:0 25px 60px rgba(0,0,0,.3);transform:translateY(10px);opacity:0;transition:transform .2s ease,opacity .2s ease;max-height:80%;overflow-y:auto;}
+.modal-overlay.show .modal-panel{transform:translateY(0);opacity:1;}
+#frame.mobile .modal-panel{width:100%;max-width:100%;border-radius:24px 24px 0 0;padding:18px 18px 26px;}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.modal-head h3{font-family:var(--font-display);font-weight:500;font-size:16.5px;margin:0;color:var(--ink);}
+.toast{position:absolute;top:16px;right:16px;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;font-size:12px;font-weight:600;opacity:0;transform:translateY(-8px);transition:opacity .25s,transform .25s;pointer-events:none;z-index:50;max-width:260px;}
+.toast.show{opacity:1;transform:translateY(0);}
+#frame.mobile .toast{top:auto;bottom:96px;left:16px;right:16px;text-align:center;transform:translateY(8px);max-width:none;}
+#frame.mobile .toast.show{transform:translateY(0);}
+
+@media (max-width:480px){
+  .page{padding:28px 10px 46px;}
+  .intro h1{font-size:22px;}
+  .intro p{font-size:12.5px;}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>FINA — proposition fusionnée</h1>
+    <p>La direction visuelle distinctive de la première maquette, combinée à la portée plus large explorée avec ChatGPT (comptes, investissements, membres du foyer configurables) — pensée cette fois comme un vrai produit, du bureau au mobile.</p>
+  </div>
+
+  <div class="toolbar">
+    <div class="device-toggle">
+      <button data-device="desktop" class="active">Bureau</button>
+      <button data-device="mobile">Mobile</button>
+    </div>
+    <div class="screen-tabs">
+      <button class="nav-trigger" data-screen="dashboard">Tableau de bord</button>
+      <button class="nav-trigger" data-screen="transactions">Mouvements</button>
+      <button class="nav-trigger" data-screen="budget">Budget &amp; enveloppes</button>
+      <button class="nav-trigger" data-screen="savings">Épargne &amp; objectifs</button>
+      <button class="nav-trigger" data-screen="investments">Investissements</button>
+      <button class="nav-trigger" data-screen="accounts">Comptes</button>
+      <button class="nav-trigger" data-screen="reports">Rapports</button>
+      <button class="nav-trigger" data-screen="settings">Paramètres</button>
+    </div>
+  </div>
+
+  <div class="stage-outer" id="stageOuter">
+    <div class="frame-scale-wrapper" id="frameWrapper">
+      <div id="frame" class="desktop">
+        <div class="chrome-browser">
+          <div class="chrome-dots"><span></span><span></span><span></span></div>
+          <div class="chrome-url" id="chromeUrl">fina.app/tableau-de-bord</div>
+        </div>
+        <div class="device-screen">
+          <div class="notch"></div>
+
+          <div class="app-shell" id="appShell">
+            <aside class="sidebar">
+              <div class="brand"><span class="brand-mark" id="brandMark"></span><span class="brand-name">FINA</span></div>
+              <nav class="nav-list">
+                <button class="nav-item nav-trigger active" data-screen="dashboard" data-icon="dashboard">Tableau de bord</button>
+                <button class="nav-item nav-trigger" data-screen="transactions" data-icon="transactions">Mouvements</button>
+                <button class="nav-item nav-trigger" data-screen="budget" data-icon="envelopes">Budget &amp; enveloppes</button>
+                <button class="nav-item nav-trigger" data-screen="savings" data-icon="target">Épargne &amp; objectifs</button>
+                <button class="nav-item nav-trigger" data-screen="investments" data-icon="trending">Investissements</button>
+                <button class="nav-item nav-trigger" data-screen="accounts" data-icon="wallet">Comptes</button>
+                <button class="nav-item nav-trigger" data-screen="reports" data-icon="reports">Rapports</button>
+              </nav>
+              <div class="sidebar-foot">
+                <button class="nav-item small nav-trigger" data-screen="settings" data-icon="settings">Paramètres</button>
+                <button class="nav-item small" data-icon="logout">Se déconnecter</button>
+              </div>
+            </aside>
+
+            <div class="main">
+              <header class="topbar">
+                <div class="topbar-row1">
+                  <h2 class="topbar-title" id="screenTitle">Tableau de bord</h2>
+                  <div class="topbar-right">
+                    <div id="topbarActions"></div>
+                    <button class="icon-btn" id="themeToggleBtn" data-icon-btn="moon" title="Thème"></button>
+                  </div>
+                </div>
+                <div class="topbar-row2">
+                  <div class="month-nav">
+                    <button class="icon-btn" data-icon-btn="chevronLeft"></button>
+                    <span class="month-label">Août 2026</span>
+                    <button class="icon-btn" data-icon-btn="chevronRight"></button>
+                  </div>
+                  <div class="member-switch" id="memberSwitch"></div>
+                </div>
+              </header>
+
+              <div class="app-content">
+
+                <div class="screen active" data-screen="dashboard">
+                  <div class="hero-ledger">
+                    <div class="hero-top">
+                      <span class="hero-label">Solde net — Août 2026</span>
+                      <span class="hero-amount positive">+1 284,50 $</span>
+                      <span class="hero-sub">Après dépenses, provisions et versements</span>
+                    </div>
+                    <div class="hero-equation">
+                      <div class="eq-item"><span class="eq-value">5 230,00 $</span><span class="eq-key">Revenus</span></div>
+                      <span class="eq-op">−</span>
+                      <div class="eq-item"><span class="eq-value">3 945,50 $</span><span class="eq-key">Dépenses</span></div>
+                      <span class="eq-op">=</span>
+                      <div class="eq-item result"><span class="eq-value">1 284,50 $</span><span class="eq-key">Solde net</span></div>
+                    </div>
+                    <div class="hero-bar">
+                      <div class="bar-track"><div class="bar-fill" style="width:75%"></div></div>
+                      <span class="bar-caption">75 % du budget mensuel utilisé · 1 284,50 $ restants</span>
+                    </div>
+                  </div>
+                  <div class="dash-grid">
+                    <div class="dash-col-main">
+                      <section class="panel"><h3 class="panel-title">À surveiller</h3><div id="alertList"></div></section>
+                      <section class="panel"><h3 class="panel-title">Prévision de fin de mois</h3><p class="forecast-text">Au rythme actuel, le mois se terminera avec un surplus estimé de <strong>640,00&nbsp;$</strong> (environ 21&nbsp;$ par jour restant).</p></section>
+                      <section class="panel"><h3 class="panel-title">Enveloppes à surveiller</h3><div id="miniEnvelopes"></div></section>
+                    </div>
+                    <div class="dash-col-side">
+                      <section class="panel"><h3 class="panel-title">À venir</h3><div class="agenda-list" id="agendaList"></div></section>
+                      <section class="panel">
+                        <h3 class="panel-title">Aperçu du patrimoine</h3>
+                        <div class="nw-total" id="dashNwTotal"></div>
+                        <div id="dashNwRows"></div>
+                        <button class="btn-ghost nav-trigger" data-screen="accounts" style="margin-top:10px;width:100%;">Voir tous les comptes</button>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="screen" data-screen="transactions">
+                  <div class="tx-toolbar">
+                    <div class="chip-row" id="txFilters">
+                      <button class="chip active" data-filter="all">Tout</button>
+                      <button class="chip" data-filter="expense">Dépenses</button>
+                      <button class="chip" data-filter="income">Revenus</button>
+                    </div>
+                    <select class="tx-account-select" id="txAccountSelect"><option value="all">Tous les comptes</option></select>
+                    <div class="tx-search" data-icon-inline="search"><input type="text" id="txSearchInput" placeholder="Rechercher…"></div>
+                  </div>
+                  <div class="tx-layout">
+                    <div class="tx-list" id="txList"></div>
+                    <aside class="tx-summary panel">
+                      <h3 class="panel-title">Résumé du mois</h3>
+                      <div class="summary-row"><span>Revenus</span><strong class="positive">5 230,00 $</strong></div>
+                      <div class="summary-row"><span>Dépenses</span><strong class="negative">3 945,50 $</strong></div>
+                      <div class="summary-row total"><span>Solde net</span><strong class="positive">1 284,50 $</strong></div>
+                      <h4 class="mini-heading">Top catégories</h4>
+                      <div id="txTopCats"></div>
+                    </aside>
+                  </div>
+                </div>
+
+                <div class="screen" data-screen="budget">
+                  <div class="section-head"><h3 class="panel-title">Budgets par catégorie</h3></div>
+                  <div class="cat-budget-grid" id="catBudgetGrid"></div>
+                  <div class="section-head">
+                    <h3 class="panel-title">Enveloppes</h3>
+                    <button class="btn-ghost" id="splitVersementBtn">Répartir un versement</button>
+                  </div>
+                  <div class="envelope-grid" id="envelopeGrid"></div>
+                </div>
+
+                <div class="screen" data-screen="savings">
+                  <div class="section-head">
+                    <h3 class="panel-title">Objectifs d'épargne</h3>
+                    <button class="btn-ghost" id="addGoalBtn">+ Nouvel objectif</button>
+                  </div>
+                  <div class="goal-grid" id="goalGrid"></div>
+                </div>
+
+                <div class="screen" data-screen="investments">
+                  <div class="stat-hero">
+                    <div class="cc-stat"><span class="cc-stat-label">Valeur totale du portefeuille</span><span class="cc-stat-value" id="invTotal"></span></div>
+                    <div class="cc-stat muted"><span class="cc-stat-label">Performance (12 mois)</span><span class="cc-stat-value positive" id="invPerf"></span></div>
+                    <button class="btn-ghost" id="syncInvestBtn">Synchroniser</button>
+                  </div>
+                  <div class="reports-grid">
+                    <section class="panel span-2"><h3 class="panel-title">Évolution du portefeuille — 12 mois</h3><div id="investChart"></div></section>
+                    <section class="panel"><h3 class="panel-title">Allocation actuelle</h3>
+                      <div class="donut-wrap"><div class="donut" id="investDonut"><span class="donut-center" id="investDonutCenter"></span></div><div class="donut-legend" id="investLegend"></div></div>
+                    </section>
+                    <section class="panel"><h3 class="panel-title">Comptes d'investissement</h3><div id="investHoldings"></div></section>
+                  </div>
+                </div>
+
+                <div class="screen" data-screen="accounts">
+                  <section class="panel" style="margin-bottom:15px;">
+                    <h3 class="panel-title">Valeur nette</h3>
+                    <div class="nw-total" id="nwTotal"></div>
+                    <div id="nwRows"></div>
+                  </section>
+                  <div class="acct-group-title">Comptes bancaires</div>
+                  <div class="panel" id="acctBank"></div>
+                  <div class="acct-group-title">Cartes de crédit</div>
+                  <div class="panel" id="acctCredit"></div>
+                  <div class="acct-group-title">Investissements</div>
+                  <div class="panel" id="acctInvest"></div>
+                  <div style="margin-top:16px;"><button class="btn-ghost" id="addAcctBtn">+ Ajouter un compte</button></div>
+                </div>
+
+                <div class="screen" data-screen="reports">
+                  <div class="section-head" style="margin-top:0;">
+                    <h3 class="panel-title" style="margin:0;">Analyse</h3>
+                    <div style="display:flex;gap:8px;">
+                      <button class="btn-ghost" id="exportCsvBtn">Exporter CSV</button>
+                      <button class="btn-ghost" id="exportPdfBtn">Exporter PDF</button>
+                    </div>
+                  </div>
+                  <div class="reports-grid">
+                    <section class="panel span-2">
+                      <h3 class="panel-title">Vue annuelle &amp; flux de trésorerie 2026</h3>
+                      <div id="yearlyChart"></div>
+                      <div class="chart-legend"><span><i style="background:#1F6F54"></i>Revenus</span><span><i style="background:#93A091"></i>Dépenses</span><span><i class="line" style="background:#BF8F2E"></i>Solde net</span></div>
+                    </section>
+                    <section class="panel"><h3 class="panel-title">Répartition par catégorie</h3>
+                      <div class="donut-wrap"><div class="donut" id="donutChart"><span class="donut-center">1 070 $</span></div><div class="donut-legend" id="donutLegend"></div></div>
+                    </section>
+                    <section class="panel"><h3 class="panel-title">Comparaison — Août vs Juillet</h3>
+                      <div class="mc-total"><span>Total des dépenses</span><strong>3 945,50 $<span class="mc-delta up">▲ 3,5 %</span></strong></div>
+                      <div id="mcRows"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <div class="screen" data-screen="settings">
+                  <div class="section-head" style="margin-top:0;"><h3 class="panel-title" style="margin:0;">Apparence</h3></div>
+                  <section class="panel" style="margin-bottom:18px;">
+                    <div class="seg-toggle theme-seg" style="margin-bottom:0;">
+                      <button type="button" data-theme="light" class="active">Clair</button>
+                      <button type="button" data-theme="dark">Sombre</button>
+                    </div>
+                  </section>
+                  <div class="section-head"><h3 class="panel-title">Général</h3></div>
+                  <section class="panel" id="settingsGroups"></section>
+                </div>
+
+              </div>
+            </div>
+
+            <nav class="bottom-tabs">
+              <button class="tab-item nav-trigger active" data-screen="dashboard" data-icon="dashboard"><span></span>Accueil</button>
+              <button class="tab-item nav-trigger" data-screen="transactions" data-icon="transactions"><span></span>Mouvements</button>
+              <button class="tab-item fab-mid" id="tabFab"><span class="tab-fab-circle" data-icon-btn="plus"></span>Ajouter</button>
+              <button class="tab-item nav-trigger" data-screen="budget" data-icon="envelopes"><span></span>Budget</button>
+              <button class="tab-item" id="tabMore" data-icon="settings"><span></span>Plus</button>
+            </nav>
+          </div>
+
+          <button id="fab"></button>
+          <div class="modal-overlay" id="modalOverlay">
+            <div class="modal-panel">
+              <div class="modal-head"><h3 id="modalTitle"></h3><button class="icon-btn" id="modalClose" data-icon-btn="close"></button></div>
+              <div id="modalBody"></div>
+            </div>
+          </div>
+          <div class="toast" id="toast"></div>
+          <div class="home-indicator"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption" id="caption"></div>
+</div>
+
+<script>
+/* ---------------- Icons ---------------- */
+const ICONS = {
+  dashboard:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="15" y2="12"/><line x1="4" y1="17" x2="19" y2="17"/>',
+  transactions:'<path d="M7 3v15"/><path d="M4 6l3-3 3 3"/><path d="M17 21V6"/><path d="M14 18l3 3 3-3"/>',
+  envelopes:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5L12 13l8.5-6.5"/>',
+  card:'<rect x="2" y="5" width="20" height="14" rx="2.5"/><line x1="2" y1="10" x2="22" y2="10"/>',
+  reports:'<rect x="4" y="12" width="3.6" height="8" rx="0.6"/><rect x="10.2" y="7" width="3.6" height="13" rx="0.6"/><rect x="16.4" y="3" width="3.6" height="17" rx="0.6"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+  chevronLeft:'<path d="M15 6l-6 6 6 6"/>',
+  chevronRight:'<path d="M9 6l6 6-6 6"/>',
+  plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  close:'<line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/>',
+  alert:'<path d="M12 3.5l9.5 16.5h-19z"/><line x1="12" y1="9.5" x2="12" y2="14"/><circle cx="12" cy="16.8" r="0.6" fill="currentColor" stroke="none"/>',
+  search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+  trending:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  wallet:'<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="17" cy="14.5" r="1.1" fill="currentColor" stroke="none"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>',
+  moon:'<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',
+  users:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 13.2c2.6.4 4.5 2.4 4.5 4.8"/>',
+  tag:'<path d="M20 13.5 12.5 21 3 11.5V3h8.5z"/><circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
+  home:'<path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/>',
+  plane:'<path d="M21 3 3 10.5l7 2.5 2 7L21 3z"/><path d="M12.5 14 21 3"/>',
+  bank:'<path d="M3 10l9-6 9 6"/><path d="M5 10v9M9 10v9M15 10v9M19 10v9"/><path d="M3 21h18"/>'
+};
+function icon(name,size=18,sw=1.75){ return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`; }
+const fmt = n => new Intl.NumberFormat('fr-CA',{style:'currency',currency:'CAD',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+
+/* ---------------- Mock data ---------------- */
+const MEMBERS=[
+  {id:'tous',name:'Tous',color:'#1F6F54'},
+  {id:'alex',name:'Alex',color:'#4A6FA1'},
+  {id:'sam',name:'Sam',color:'#A15385'},
+];
+let activeMember='tous';
+const ACCOUNTS=[
+  {id:'cheq',name:'Compte chèque',institution:'Desjardins',type:'bank',balance:2340.00},
+  {id:'eparg',name:'Épargne à intérêt élevé',institution:'Desjardins',type:'bank',balance:8120.00},
+  {id:'cc',name:'Carte de crédit Visa',institution:'Desjardins',type:'credit',balance:-842.30},
+  {id:'courtage',name:'Compte de courtage',institution:'Wealthsimple',type:'invest',balance:14680.00},
+  {id:'celi',name:'CELI',institution:'Wealthsimple',type:'invest',balance:9250.00},
+];
+const CATEGORY_BUDGETS=[
+  {name:'Épicerie',color:'#4C7A66',budget:700,spent:512},
+  {name:'Transport',color:'#4A6FA1',budget:250,spent:180},
+  {name:'Restaurants',color:'#C07A3E',budget:200,spent:224},
+  {name:'Loisirs',color:'#A15385',budget:150,spent:96},
+  {name:'Abonnements',color:'#B0576B',budget:60,spent:58},
+];
+const ENVELOPES=[
+  {name:'Assurance auto',color:'#6B5B95',cycle:'Tous les 6 mois · Assurance',target:620,pot:410,due:'15 nov. 2026',status:'normal',pill:null},
+  {name:'Immatriculation véhicule',color:'#4A6FA1',cycle:'Tous les 12 mois · Transport',target:180,pot:180,due:'8 sept. 2026',status:'soon',pill:'Dans 4 jours'},
+  {name:'Cadeaux de Noël',color:'#A15385',cycle:'Tous les 12 mois · Loisirs',target:800,pot:250,due:'1 déc. 2026',status:'normal',pill:null},
+  {name:'Entretien maison',color:'#8A6D3B',cycle:'Tous les 3 mois · Logement',target:300,pot:300,due:'1 oct. 2026',status:'ready',pill:'Prête'},
+];
+const GOALS=[
+  {name:"Fonds d'urgence",icon:'shield',target:5000,saved:3120,contrib:200},
+  {name:'Rénovation cuisine',icon:'home',target:8000,saved:1450,contrib:150},
+  {name:'Voyage en Gaspésie',icon:'plane',target:2500,saved:980,contrib:100},
+];
+const TRANSACTIONS=[
+  {date:'3 sept 2026',cat:'Épicerie',color:'#4C7A66',note:'IGA',ownerId:'alex',accountId:'cc',type:'expense',amount:86.40},
+  {date:'2 sept 2026',cat:'Salaire',color:'#1F6F54',note:'Paie',ownerId:'sam',accountId:'cheq',type:'income',amount:2340.00},
+  {date:'1 sept 2026',cat:'Restaurants',color:'#C07A3E',note:'Sushi Shop',ownerId:'sam',accountId:'cheq',type:'expense',amount:54.20},
+  {date:'31 août 2026',cat:'Transport',color:'#4A6FA1',note:'Essence',ownerId:'alex',accountId:'cc',type:'expense',amount:62.10},
+  {date:'30 août 2026',cat:'Versement → Sam',color:'#BF8F2E',note:'Transfert interne',ownerId:'alex',accountId:'cheq',type:'transfer',amount:500.00},
+  {date:'29 août 2026',cat:'Assurance auto',color:'#6B5B95',note:'Enveloppe',ownerId:'alex',accountId:'cheq',type:'expense',amount:103.33},
+  {date:'28 août 2026',cat:'Abonnements',color:'#B0576B',note:'Netflix + Spotify',ownerId:'sam',accountId:'cc',type:'expense',amount:28.97},
+  {date:'27 août 2026',cat:'Salaire',color:'#1F6F54',note:'Paie',ownerId:'alex',accountId:'cheq',type:'income',amount:2180.00},
+  {date:'26 août 2026',cat:'Épicerie',color:'#4C7A66',note:'Costco',ownerId:'sam',accountId:'cc',type:'expense',amount:142.18},
+  {date:'24 août 2026',cat:'Loisirs',color:'#A15385',note:'Cinéma',ownerId:'alex',accountId:'cheq',type:'expense',amount:34.00},
+];
+const CC_BREAKDOWN=[
+  {name:'Épicerie',color:'#4C7A66',pct:45,amount:379.04},
+  {name:'Restaurants',color:'#C07A3E',pct:30,amount:252.69},
+  {name:'Loisirs',color:'#A15385',pct:15,amount:126.35},
+  {name:'Transport',color:'#4A6FA1',pct:10,amount:84.23},
+];
+const CC_PAYMENTS=[{date:'3 sept 2026 · Paiement partiel',amount:300.00},{date:'18 août 2026',amount:200.00}];
+const ALERTS=[
+  {sev:'danger',msg:'Restaurants dépasse son budget de 24,00 $ ce mois-ci.'},
+  {sev:'warn',msg:'Immatriculation véhicule est due dans 4 jours — la cagnotte est prête.'},
+  {sev:'info',msg:'Dépenses 12 % plus élevées que la moyenne des 3 derniers mois.'},
+];
+const AGENDA=[
+  {day:'8',month:'sept',title:'Immatriculation véhicule',meta:'Enveloppe prête',amount:180.00},
+  {day:'15',month:'sept',title:'Loyer',meta:'Dépense récurrente à confirmer',amount:1450.00},
+  {day:'15',month:'nov',title:'Assurance auto',meta:"Prochain versement vers l'enveloppe",amount:103.33},
+];
+const DONUT=[
+  {name:'Épicerie',color:'#4C7A66',pct:40},{name:'Restaurants',color:'#C07A3E',pct:22},
+  {name:'Transport',color:'#4A6FA1',pct:17},{name:'Loisirs',color:'#A15385',pct:12},{name:'Abonnements',color:'#B0576B',pct:9},
+];
+const MONTH_COMPARISON=[
+  {name:'Épicerie',color:'#4C7A66',now:512,prev:480},{name:'Restaurants',color:'#C07A3E',now:224,prev:165},
+  {name:'Transport',color:'#4A6FA1',now:180,prev:210},{name:'Loisirs',color:'#A15385',now:96,prev:110},{name:'Abonnements',color:'#B0576B',now:58,prev:58},
+];
+const YEARLY={
+  months:['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'],
+  revenus:[9200,9200,9450,9200,9600,9200,9200,9210,9200,9200,9450,10200],
+  depenses:[8100,7850,8400,7950,8700,8050,8320,8500,7900,8200,8850,9600],
+};
+const INVEST={
+  total:23930.00, perfPct:8.4,
+  history:[20500,20800,21100,20900,21400,21800,22100,22600,22300,22950,23400,23930],
+  allocation:[{name:'Actions',color:'#4C7A66',pct:58},{name:'Obligations / FNB',color:'#4A6FA1',pct:24},{name:'Crypto',color:'#BF8F2E',pct:8},{name:'Liquidités',color:'#93A091',pct:10}],
+  holdings:[{name:'Compte de courtage — Wealthsimple',value:14680.00},{name:'CELI — Wealthsimple',value:9250.00}],
+};
+const SETTINGS_GROUPS=[
+  {icon:'settings',title:'Profil',sub:'Nom, courriel, mot de passe'},
+  {icon:'users',title:'Foyer & membres',sub:'Alex, Sam — gérer qui a accès'},
+  {icon:'tag',title:'Catégories',sub:'Personnaliser les catégories de dépenses'},
+  {icon:'settings',title:'Automatisations',sub:'Revenus récurrents, rappels, alertes'},
+  {icon:'reports',title:'Données',sub:'Export, sauvegarde, suppression'},
+  {icon:'lock',title:'Sécurité',sub:'Authentification, appareils connectés'},
+];
+const SCREEN_META={
+  dashboard:{title:'Tableau de bord',url:'/tableau-de-bord',caption:'« Où en suis-je ? » Le solde net du mois comme une ligne comptable, un aperçu du patrimoine total, et ce qui s\'en vient — sans faire défiler vingt sections.'},
+  transactions:{title:'Mouvements',url:'/mouvements',action:'Ajouter',caption:'« Qu\'est-ce qui s\'est passé ? » Un seul fil de mouvements, filtrable par type et par compte — inspiré de Copilot Money et Monarch — plutôt que des listes séparées.'},
+  budget:{title:'Budget & enveloppes',url:'/budget',caption:'« Comment organiser mon argent ? » Budgets par catégorie et enveloppes à échéance, avec un code couleur selon l\'urgence.'},
+  savings:{title:'Épargne & objectifs',url:'/epargne',caption:'« Qu\'est-ce que je veux atteindre ? » Chaque objectif affiche sa contribution mensuelle et son évolution récente, pour rester motivant plutôt que purement comptable.'},
+  investments:{title:'Investissements',url:'/investissements',caption:'« Vais-je dans la bonne direction ? » Un suivi patrimonial volontairement simple : valeur, performance, répartition — pas une plateforme de trading.'},
+  accounts:{title:'Comptes',url:'/comptes',caption:"La vue d'ensemble qui prépare la synchronisation bancaire à venir : chaque compte est une donnée structurée, prête à être connectée plus tard sans tout reconstruire."},
+  reports:{title:'Rapports',url:'/rapports',caption:"L'espace d'analyse historique : vue annuelle, comparaison des mois, export — pendant que le tableau de bord reste centré sur l'instant présent."},
+  settings:{title:'Paramètres',url:'/parametres',caption:'Les réglages regroupés par catégorie plutôt qu\'empilés sur une seule longue page, y compris la gestion des membres du foyer.'},
+};
+
+/* ---------------- Render ---------------- */
+function renderMemberSwitch(){
+  const el=document.getElementById('memberSwitch');
+  el.innerHTML = MEMBERS.map(m=>`<button data-member="${m.id}">${m.name}</button>`).join('');
+  updateMemberStyles();
+  el.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click',()=>{ activeMember=btn.dataset.member; updateMemberStyles(); });
+  });
+}
+function updateMemberStyles(){
+  const m = MEMBERS.find(x=>x.id===activeMember);
+  document.querySelectorAll('#memberSwitch button').forEach(btn=>{
+    const mm = MEMBERS.find(x=>x.id===btn.dataset.member);
+    if(btn.dataset.member===activeMember){ btn.style.color=mm.color; btn.style.background=`color-mix(in srgb, ${mm.color} 16%, white)`; }
+    else { btn.style.color=''; btn.style.background='transparent'; }
+  });
+  document.getElementById('appShell').style.setProperty('--member-accent', m.color);
+}
+function renderAlerts(){
+  document.getElementById('alertList').innerHTML = ALERTS.map(a=>`<div class="alert-row ${a.sev}"><span class="icon">${icon('alert',15)}</span><span class="msg">${a.msg}</span></div>`).join('');
+}
+function renderMiniEnvelopes(){
+  document.getElementById('miniEnvelopes').innerHTML = ENVELOPES.slice(0,3).map(e=>{
+    const pct=Math.min(100,Math.round(e.pot/e.target*100));
+    const color = e.status==='soon' ? '#BF8F2E' : '#1F6F54';
+    return `<div class="mini-env-row"><span>${e.name}</span><div class="bar-track sm"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="mini-env-pct">${pct}%</span></div>`;
+  }).join('');
+}
+function renderAgenda(){
+  document.getElementById('agendaList').innerHTML = AGENDA.map(a=>`
+    <div class="agenda-item"><div class="agenda-date"><b>${a.day}</b><span>${a.month}</span></div>
+    <div class="agenda-body"><span class="agenda-title">${a.title}</span><span class="agenda-meta">${a.meta}</span></div>
+    <span class="agenda-amount">${fmt(a.amount)}</span></div>`).join('');
+}
+function netWorthBreakdown(){
+  const bank = ACCOUNTS.filter(a=>a.type==='bank').reduce((s,a)=>s+a.balance,0);
+  const invest = ACCOUNTS.filter(a=>a.type==='invest').reduce((s,a)=>s+a.balance,0);
+  const debt = ACCOUNTS.filter(a=>a.type==='credit').reduce((s,a)=>s+a.balance,0);
+  return {bank, invest, debt, net: bank+invest+debt};
+}
+function renderNetWorth(){
+  const nw = netWorthBreakdown();
+  const rowsHtml = `<div class="nw-row"><span>Comptes bancaires</span><b>${fmt(nw.bank)}</b></div><div class="nw-row"><span>Investissements</span><b>${fmt(nw.invest)}</b></div><div class="nw-row"><span>Cartes de crédit</span><b class="negative">${fmt(nw.debt)}</b></div>`;
+  document.getElementById('nwTotal').textContent = fmt(nw.net);
+  document.getElementById('nwRows').innerHTML = rowsHtml;
+  document.getElementById('dashNwTotal').textContent = fmt(nw.net);
+  document.getElementById('dashNwRows').innerHTML = rowsHtml;
+}
+function renderCatBudgets(){
+  document.getElementById('catBudgetGrid').innerHTML = CATEGORY_BUDGETS.map(c=>{
+    const pct=Math.round(c.spent/c.budget*100), over=pct>100;
+    return `<div class="cb-card"><div class="cb-top"><span class="cat-dot" style="background:${c.color}"></span><span class="cb-name">${c.name}</span><span class="cb-pct ${over?'over':''}">${pct}%</span></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.min(pct,100)}%;background:${over?'#B3432B':c.color}"></div></div>
+    <div class="cb-foot"><span>${fmt(c.spent)}</span><span class="cb-of">/ ${fmt(c.budget)}</span></div></div>`;
+  }).join('');
+}
+function renderEnvelopes(){
+  document.getElementById('envelopeGrid').innerHTML = ENVELOPES.map(e=>{
+    const pct=Math.min(100,Math.round(e.pot/e.target*100));
+    const barColor = e.status==='soon' ? '#BF8F2E' : '#1F6F54';
+    return `<div class="env-card" data-status="${e.status}">
+      <div class="env-top"><span class="env-icon">${icon('envelopes',16)}</span>
+      <div class="env-name-wrap"><span class="env-name">${e.name}</span><span class="env-cycle">${e.cycle}</span></div>
+      ${e.pill?`<span class="env-status-pill ${e.status}">${e.pill}</span>`:''}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      <div class="env-foot"><span>Cagnotte : <strong>${fmt(e.pot)}</strong> / ${fmt(e.target)} · ${e.due}</span>
+      <div class="env-actions"><button class="icon-btn sm" title="Marquer payé">${icon('card',13)}</button><button class="icon-btn sm" title="Ajouter">${icon('plus',13)}</button></div></div></div>`;
+  }).join('');
+}
+function renderGoals(){
+  document.getElementById('goalGrid').innerHTML = GOALS.map(g=>{
+    const pct=Math.round(g.saved/g.target*100);
+    return `<div class="goal-card">
+      <div class="goal-ring" style="background:conic-gradient(#1F6F54 ${pct}%, var(--paper-deep) 0)"><span class="goal-pct">${pct}%</span></div>
+      <div class="goal-info"><div class="goal-info-top"><span class="goal-name">${g.name}</span><span class="goal-icon-tag">${icon(g.icon,13)}</span></div>
+      <span class="goal-amounts">${fmt(g.saved)} <span class="goal-of">/ ${fmt(g.target)}</span></span>
+      <span class="goal-meta">${fmt(g.contrib)} / mois · <span class="positive">+${fmt(g.contrib)} ce mois-ci</span></span></div></div>`;
+  }).join('');
+}
+let txState={type:'all',account:'all',query:''};
+function renderTransactions(){
+  const rows = TRANSACTIONS.filter(t=>{
+    if(txState.type!=='all' && t.type!==txState.type) return false;
+    if(txState.account!=='all' && t.accountId!==txState.account) return false;
+    if(txState.query && !(t.cat+' '+t.note).toLowerCase().includes(txState.query.toLowerCase())) return false;
+    return true;
+  });
+  document.getElementById('txList').innerHTML = rows.map(t=>{
+    const sign = t.type==='income' ? '+' : '−';
+    const cls = t.type==='income' ? 'positive' : t.type==='transfer' ? 'transfer' : 'negative';
+    const m = MEMBERS.find(x=>x.id===t.ownerId);
+    const acct = ACCOUNTS.find(a=>a.id===t.accountId);
+    return `<div class="tx-row"><span class="cat-dot" style="background:${t.color}"></span>
+      <div class="tx-main"><span class="tx-title">${t.cat}${t.note?' · '+t.note:''}</span>
+      <span class="tx-meta">${t.date} · <span style="color:${m.color};font-weight:600">${m.name}</span> · ${acct?acct.name:''}</span></div>
+      <span class="tx-amount ${cls}">${sign}${fmt(t.amount)}</span></div>`;
+  }).join('') || `<div style="padding:20px;text-align:center;color:var(--ink-soft);font-size:13px;">Aucun mouvement pour ce filtre.</div>`;
+}
+function renderTxTopCats(){
+  const top=[...CATEGORY_BUDGETS].sort((a,b)=>b.spent-a.spent).slice(0,3);
+  document.getElementById('txTopCats').innerHTML = top.map(c=>`<div class="tc-row"><span class="cat-dot" style="background:${c.color}"></span><span>${c.name}</span><b>${fmt(c.spent)}</b></div>`).join('');
+}
+function ccDetailModalBody(){
+  const stack = CC_BREAKDOWN.map(c=>`<span style="width:${c.pct}%;background:${c.color}"></span>`).join('');
+  const list = CC_BREAKDOWN.map(c=>`<div class="mc-row"><span class="cat-dot" style="background:${c.color}"></span><span class="mc-name">${c.name}</span><span class="mc-now">${fmt(c.amount)}</span><span style="width:34px;text-align:right;color:var(--ink-soft);font-size:11px;">${c.pct}%</span></div>`).join('');
+  const pays = CC_PAYMENTS.map(p=>`<div class="mc-row"><span class="mc-name">${p.date}</span><span class="mc-now">${fmt(p.amount)}</span></div>`).join('');
+  return `<p style="font-size:12px;color:var(--ink-soft);margin:0 0 10px;">Répartition par catégorie — Août 2026</p>
+    <div class="bar-track" style="display:flex;height:12px;overflow:hidden;">${stack}</div><div style="margin-top:10px;">${list}</div>
+    <h4 class="mini-heading">Paiements effectués ce mois-ci</h4>${pays}
+    <button type="button" class="btn-primary full" data-toast="Paiement enregistré ✓" style="margin-top:14px;">Payer la carte</button>`;
+}
+function renderAccounts(){
+  const groups={bank:[],credit:[],invest:[]};
+  ACCOUNTS.forEach(a=>groups[a.type].push(a));
+  const rowHtml = a => `<div class="acct-row"><span class="acct-icon">${icon(a.type==='bank'?'bank':a.type==='credit'?'card':'trending',17)}</span>
+    <div class="acct-body"><div><span class="acct-name">${a.name}</span><span class="acct-inst">${a.institution}</span></div>
+    ${a.type==='bank'?'<span class="acct-sync-badge">Sync bancaire : bientôt</span>':''}</div>
+    <span class="acct-balance ${a.balance<0?'negative':''}">${fmt(a.balance)}</span>
+    ${a.type==='credit'?`<button class="acct-action" data-goto-modal="cc">Voir le détail</button>`:''}</div>`;
+  document.getElementById('acctBank').innerHTML = groups.bank.map(rowHtml).join('');
+  document.getElementById('acctCredit').innerHTML = groups.credit.map(rowHtml).join('');
+  document.getElementById('acctInvest').innerHTML = groups.invest.map(rowHtml).join('');
+}
+function buildLineChart(values, color, w=724, h=200){
+  const min=Math.min(...values)*0.97, max=Math.max(...values)*1.03;
+  const top=10, base=h-24, plotH=base-top, stepX=(w-24)/(values.length-1);
+  const pts = values.map((v,i)=>[12+i*stepX, base-((v-min)/(max-min))*plotH]);
+  const poly=`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round"/>`;
+  const dots=pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${color}"/>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" class="yearly-svg">${poly}${dots}</svg>`;
+}
+function buildYearlyChart(){
+  const {months,revenus,depenses}=YEARLY;
+  const max=Math.max(...revenus,...depenses);
+  const top=14, base=196, plotH=base-top, groupW=700/12;
+  let bars='', pts=[];
+  months.forEach((m,i)=>{
+    const cx=12+groupW*i+groupW/2;
+    const rH=(revenus[i]/max)*plotH, dH=(depenses[i]/max)*plotH;
+    bars+=`<rect x="${cx-15}" y="${base-rH}" width="13" height="${rH}" rx="2" fill="#1F6F54" opacity="0.9"/>`;
+    bars+=`<rect x="${cx+2}" y="${base-dH}" width="13" height="${dH}" rx="2" fill="#93A091"/>`;
+    bars+=`<text x="${cx}" y="213" font-size="9" text-anchor="middle" fill="#5B665C">${m}</text>`;
+    pts.push([cx, base-((revenus[i]-depenses[i])/max)*plotH]);
+  });
+  const poly=`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#BF8F2E" stroke-width="2.2" stroke-linejoin="round"/>`;
+  const dots=pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="#BF8F2E"/>`).join('');
+  return `<svg viewBox="0 0 724 222" class="yearly-svg">${bars}${poly}${dots}</svg>`;
+}
+function buildDonutInto(data, elId, centerId, centerText){
+  let acc=0;
+  const stops=data.map(d=>{const start=acc;acc+=d.pct;return `${d.color} ${start}% ${acc}%`;}).join(', ');
+  document.getElementById(elId).style.background=`conic-gradient(${stops})`;
+  if(centerId) document.getElementById(centerId).textContent=centerText;
+  return data.map(d=>`<div class="dl-row"><span class="cat-dot" style="background:${d.color}"></span><span class="dl-name">${d.name}</span><span>${d.pct}%</span></div>`).join('');
+}
+function renderMonthComparison(){
+  document.getElementById('mcRows').innerHTML = MONTH_COMPARISON.map(c=>{
+    const delta=((c.now-c.prev)/c.prev*100), up=delta>=0;
+    return `<div class="mc-row"><span class="cat-dot" style="background:${c.color}"></span><span class="mc-name">${c.name}</span><span class="mc-now">${fmt(c.now)}</span><span class="mc-delta ${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs(delta).toFixed(1)} %</span></div>`;
+  }).join('');
+}
+function renderInvestments(){
+  document.getElementById('invTotal').textContent = fmt(INVEST.total);
+  document.getElementById('invPerf').textContent = '+'+INVEST.perfPct+' %';
+  document.getElementById('investChart').innerHTML = buildLineChart(INVEST.history, '#1F6F54');
+  document.getElementById('investLegend').innerHTML = buildDonutInto(INVEST.allocation, 'investDonut', 'investDonutCenter', '100 %');
+  document.getElementById('investHoldings').innerHTML = INVEST.holdings.map(h=>`<div class="holding-row"><span>${h.name}</span><b>${fmt(h.value)}</b></div>`).join('');
+}
+function renderSettings(){
+  document.getElementById('settingsGroups').innerHTML = SETTINGS_GROUPS.map(s=>`
+    <div class="settings-row"><span class="settings-icon">${icon(s.icon,16)}</span>
+    <div class="settings-body"><span class="settings-title">${s.title}</span><span class="settings-sub">${s.sub}</span></div>
+    <span class="chev">›</span></div>`).join('');
+}
+function renderAccountSelect(){
+  const sel=document.getElementById('txAccountSelect');
+  ACCOUNTS.forEach(a=>{ const o=document.createElement('option'); o.value=a.id; o.textContent=a.name; sel.appendChild(o); });
+}
+
+/* ---------------- Modals & toast ---------------- */
+function openModal(title, bodyHtml){
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('show'); }
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2400);
+}
+function addTxModalBody(){
+  const acctOptions = ACCOUNTS.map(a=>`<option>${a.name}</option>`).join('');
+  return `<div class="seg-toggle"><button type="button" class="active">Dépense</button><button type="button">Revenu</button></div>
+  <div class="field"><label>Montant</label><div class="input-money"><input type="text" value="42,00"></div></div>
+  <div class="field"><label>Catégorie</label><select><option>Épicerie</option><option>Transport</option><option>Restaurants</option><option>Loisirs</option></select></div>
+  <div class="field"><label>Compte</label><select>${acctOptions}</select></div>
+  <div class="field"><label>Date</label><input type="text" value="5 sept. 2026"></div>
+  <div class="field-row"><div class="field"><label>Membre</label><div class="seg-toggle sm"><button type="button" class="active">Alex</button><button type="button">Sam</button></div></div></div>
+  <button type="button" class="btn-primary full" data-toast="Transaction ajoutée ✓">Ajouter</button>`;
+}
+function splitModalBody(){
+  return ENVELOPES.slice(0,3).map(e=>`<div class="field-row"><div class="field"><label>${e.name}</label><div class="input-money"><input type="text" value="0,00"></div></div></div>`).join('')
+    + `<button type="button" class="btn-primary full" data-toast="Versement réparti ✓">Répartir</button>`;
+}
+function moreSheetBody(){
+  const items=[
+    {id:'savings',label:'Épargne & objectifs',icon:'target'},
+    {id:'investments',label:'Investissements',icon:'trending'},
+    {id:'accounts',label:'Comptes',icon:'wallet'},
+    {id:'reports',label:'Rapports',icon:'reports'},
+    {id:'settings',label:'Paramètres',icon:'settings'},
+  ];
+  return items.map(it=>`<button type="button" class="more-row" data-goto="${it.id}">${icon(it.icon,18)}<span>${it.label}</span></button>`).join('');
+}
+
+/* ---------------- Theme ---------------- */
+function setTheme(mode){
+  document.querySelector('.device-screen').setAttribute('data-theme', mode);
+  document.getElementById('themeToggleBtn').innerHTML = icon(mode==='dark'?'sun':'moon',15);
+  document.querySelectorAll('.theme-seg button').forEach(b=>b.classList.toggle('active', b.dataset.theme===mode));
+}
+
+/* ---------------- Scaling ---------------- */
+function applyScale(){
+  const frame=document.getElementById('frame');
+  const isMobile=frame.classList.contains('mobile');
+  const naturalW=isMobile?380:1240, naturalH=isMobile?800:770;
+  const stage=document.getElementById('stageOuter');
+  const available=stage.clientWidth-24;
+  let scale=Math.min(1, available/naturalW);
+  scale=Math.max(scale,0.3);
+  frame.style.width=naturalW+'px';
+  frame.style.height=naturalH+'px';
+  frame.style.transform=`scale(${scale})`;
+  const wrapper=document.getElementById('frameWrapper');
+  wrapper.style.width=(naturalW*scale)+'px';
+  wrapper.style.height=(naturalH*scale)+'px';
+}
+
+/* ---------------- Screen switching ---------------- */
+function switchScreen(name){
+  document.querySelectorAll('[data-screen]').forEach(el=>{ el.classList.toggle('active', el.dataset.screen===name); });
+  const meta=SCREEN_META[name];
+  document.getElementById('screenTitle').textContent=meta.title;
+  document.getElementById('chromeUrl').textContent='fina.app'+meta.url;
+  document.getElementById('caption').textContent=meta.caption;
+  const actions=document.getElementById('topbarActions');
+  actions.innerHTML = meta.action ? `<button class="btn-primary" id="addTxBtn">${icon('plus',14)} ${meta.action}</button>` : '';
+  const addBtn=document.getElementById('addTxBtn');
+  if(addBtn) addBtn.addEventListener('click',()=>openModal('Ajouter une transaction', addTxModalBody()));
+}
+
+/* ---------------- Icon injection ---------------- */
+function injectIcons(){
+  document.querySelectorAll('[data-icon]').forEach(el=>{ el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, el.classList.contains('tab-item')?19:18)); });
+  document.querySelectorAll('[data-icon-btn]').forEach(el=>{ el.innerHTML = icon(el.dataset.iconBtn, 16); });
+  document.querySelectorAll('[data-icon-inline]').forEach(el=>{ el.insertAdjacentHTML('afterbegin', icon(el.dataset.iconInline,15)); });
+  document.getElementById('brandMark').innerHTML = icon('reports',16);
+}
+
+/* ---------------- Events ---------------- */
+function bindEvents(){
+  document.querySelectorAll('.device-toggle button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.device-toggle button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const frame=document.getElementById('frame');
+      frame.classList.remove('desktop','mobile');
+      frame.classList.add(btn.dataset.device);
+      applyScale();
+    });
+  });
+  document.querySelectorAll('.nav-trigger').forEach(el=>{ el.addEventListener('click',()=>switchScreen(el.dataset.screen)); });
+  document.getElementById('tabFab').addEventListener('click',()=>openModal('Ajouter une transaction', addTxModalBody()));
+  document.getElementById('tabMore').addEventListener('click',()=>openModal('Plus', moreSheetBody()));
+  document.getElementById('splitVersementBtn').addEventListener('click',()=>openModal('Répartir un versement', splitModalBody()));
+  document.getElementById('addGoalBtn').addEventListener('click',()=>showToast('Nouvel objectif — bientôt disponible'));
+  document.getElementById('addAcctBtn').addEventListener('click',()=>showToast('Ajout de compte — bientôt disponible'));
+  document.getElementById('syncInvestBtn').addEventListener('click',()=>showToast('Synchronisation bancaire — bientôt disponible'));
+  document.getElementById('exportCsvBtn').addEventListener('click',()=>showToast('Export CSV — bientôt disponible'));
+  document.getElementById('exportPdfBtn').addEventListener('click',()=>showToast('Export PDF — bientôt disponible'));
+  document.getElementById('themeToggleBtn').addEventListener('click',()=>{
+    const cur=document.querySelector('.device-screen').getAttribute('data-theme')||'light';
+    setTheme(cur==='dark'?'light':'dark');
+  });
+  document.querySelectorAll('.theme-seg button').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.theme)));
+  document.querySelectorAll('#txFilters .chip').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#txFilters .chip').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active'); txState.type=btn.dataset.filter; renderTransactions();
+    });
+  });
+  document.getElementById('txAccountSelect').addEventListener('change', e=>{ txState.account=e.target.value; renderTransactions(); });
+  document.getElementById('txSearchInput').addEventListener('input', e=>{ txState.query=e.target.value; renderTransactions(); });
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+  document.getElementById('modalBody').addEventListener('click', e=>{
+    const seg=e.target.closest('.seg-toggle button');
+    if(seg){ seg.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active')); seg.classList.add('active'); }
+    const goto=e.target.closest('[data-goto]');
+    if(goto){ closeModal(); switchScreen(goto.dataset.goto); }
+    const submit=e.target.closest('[data-toast]');
+    if(submit){ closeModal(); showToast(submit.dataset.toast); }
+  });
+  document.body.addEventListener('click', e=>{
+    const ccBtn=e.target.closest('[data-goto-modal="cc"]');
+    if(ccBtn){ openModal('Carte de crédit Visa', ccDetailModalBody()); }
+  });
+}
+
+/* ---------------- Init ---------------- */
+function init(){
+  renderMemberSwitch();
+  renderAlerts(); renderMiniEnvelopes(); renderAgenda(); renderNetWorth();
+  renderCatBudgets(); renderEnvelopes(); renderGoals();
+  renderAccountSelect(); renderTransactions(); renderTxTopCats();
+  renderAccounts(); renderInvestments(); renderSettings();
+  document.getElementById('yearlyChart').innerHTML = buildYearlyChart();
+  document.getElementById('donutLegend').innerHTML = buildDonutInto(DONUT, 'donutChart', null, '');
+  renderMonthComparison();
+  injectIcons();
+  bindEvents();
+  switchScreen('dashboard');
+  applyScale();
+}
+window.addEventListener('load', init);
+window.addEventListener('resize', applyScale);
+</script>
+</body>
+</html>
