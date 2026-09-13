@@ -406,18 +406,23 @@ Une migration en une seule transaction Supabase (jamais en plusieurs
 Aucune perte de données à aucune étape — uniquement un renommage de
 valeurs et l'ajout d'un champ sur les versements historiques.
 
-### 6.4 État au 12 septembre 2026
+### 6.4 État au 13 septembre 2026
 
-Le script est écrit (`supabase/migration-024-owner-to-member.sql`) et
+**Exécutée et validée sur le projet Supabase réel le 13 septembre 2026.**
+Historique complet des étapes 6.4.1 à 6.4.3 ci-dessous.
+
+#### 6.4.1 Écriture et test local (12 septembre 2026)
+
+Le script (`supabase/migration-024-owner-to-member.sql`) a été écrit et
 **testé sur une base Postgres locale** (schéma complet + jeu de données
-factice). Il n'est pas encore exécuté sur le projet Supabase réel.
+factice) avant toute exécution sur le projet réel.
 
 Le code TypeScript a été adapté en mode transitoire : `Member` et
 `memberId` sont disponibles, le store charge les membres dynamiques et
 agrège la vue globale sur N membres, tandis que les mappings et écritures
-gardent un repli `owner` tant que la migration distante n'est pas faite.
-Cette compatibilité doit être retirée après validation de la migration
-024 en production.
+gardent un repli `owner` selon que `useMemberSchema()` détecte ou non le
+nouveau schéma. Cette compatibilité doit être retirée après une courte
+période de rodage en production (voir section 9).
 
 Décision d'implémentation, à noter ici pour la suite : le script crée une
 **table `members` séparée** (plutôt que de généraliser `household_members`
@@ -437,10 +442,54 @@ deuxième personne rejoigne réellement — `join_household()` (voir 6.2) a
 été réécrite pour reconnaître ce cas et relier le compte au membre
 existant plutôt que d'en créer un second.
 
-Testé concrètement (pas seulement relu) : création de foyer, jonction
-d'un foyer (y compris le cas du membre fantôme ci-dessus), répartition de
-versement, import de sauvegarde, et l'arrivée d'un vrai 3ᵉ membre dans un
-foyer qui en avait déjà deux — les 6 scénarios passent.
+Testé concrètement en local (pas seulement relu) : création de foyer,
+jonction d'un foyer (y compris le cas du membre fantôme ci-dessus),
+répartition de versement, import de sauvegarde, et l'arrivée d'un vrai 3ᵉ
+membre dans un foyer qui en avait déjà deux — les 6 scénarios passent.
+
+#### 6.4.2 Exécution en production (13 septembre 2026)
+
+Après exécution de `migration-023-accounts.sql` puis
+`migration-024-owner-to-member.sql` sur le projet Supabase réel, l'API
+(PostgREST) a continué à renvoyer des 404 sur `accounts`,
+`account_balance_snapshots` et `members` malgré des tables bien créées
+(confirmé directement via `information_schema.tables` et
+`pg_constraint`, indépendamment du cache) : cache de schéma PostgREST pas
+rafraîchi automatiquement après la migration. Réglé par
+`notify pgrst, 'reload schema';` — **à faire systématiquement après toute
+migration qui crée ou renomme une table**, ce n'est pas automatique côté
+Supabase.
+
+Effet de bord sans rapport avec la migration elle-même : deux foyers
+existaient dans la base (un vrai avec les données, un second vide, issu
+des tests manuels de `create_household()` faits pendant la validation
+locale). Nettoyé manuellement après coup — la migration n'a strictement
+rien créé en double, `on conflict (household_id, display_name) do
+nothing` a fonctionné comme prévu dans chacun des deux foyers.
+
+#### 6.4.3 Validation post-exécution (13 septembre 2026)
+
+Vérifié directement en production, pas seulement en local :
+
+- `members` contient exactement les 2 membres historiques (« Moi »,
+  « Madame ») avec les bonnes couleurs, pour le vrai foyer.
+- Zéro ligne orpheline (`member_id is null`) sur les 10 tables migrées.
+- Le compte connecté est bien rattaché au foyer qui a les données (pas au
+  foyer de test).
+- Tableau de bord identique à avant la migration (mêmes soldes, mêmes
+  totaux) — le repli `owner`/nouveau schéma n'a rien changé côté affichage.
+- Ajout d'une dépense réelle : enregistrée et affichée avec le bon nom et
+  la bonne couleur de membre.
+- **Répartition de versement testée de bout en bout** (le chemin de code
+  le plus délicat de toute la migration, celui qui contourne la limite à
+  2 membres de la RPC `split_versement_into_provisions` en créant la
+  dépense côté client avant d'appeler la RPC — voir 6.2) : versement
+  créé, réparti sur une provision existante, montant de la provision
+  augmenté correctement, flèche « de → vers » correcte dans la liste des
+  dépenses.
+
+Aucune régression trouvée. La migration est considérée complète et
+validée, pas seulement exécutée.
 
 ---
 
@@ -482,8 +531,8 @@ souvent.
 | Tous les calculs de la section 4 | ✅ Existe, vérifié dans le code |
 | Account, AccountBalanceSnapshot, InvestmentAllocation | ✅ Schéma Supabase construit (`migration-023-accounts.sql`) ; ⬜ écran `/comptes` à l'état de brouillon non commité, en pause (voir `plan-industrialisation.md`, vague B) |
 | Valeur nette, Performance de portefeuille | 🆕 Conçu ici, rien construit |
-| Member généralisé, Role, Invitation | ✅ Schéma Supabase construit et testé localement (`migration-024-owner-to-member.sql`, section 6.4) ; ⬜ pas encore exécuté sur Supabase ; ✅ support TypeScript transitoire |
-| Migration Owner → Member (section 6.2/6.3) | ✅ Script écrit et testé (section 6.4) ; ✅ bascule applicative transitoire ; ⬜ exécution sur Supabase puis retrait du repli legacy |
+| Member généralisé, Role, Invitation | ✅ Schéma Supabase construit, **exécuté et validé en production** (`migration-024-owner-to-member.sql`, section 6.4) ; ✅ support TypeScript |
+| Migration Owner → Member (section 6.2/6.3) | ✅ Écrite, testée localement, **exécutée et validée en production le 13 septembre 2026** (section 6.4) ; ⬜ retrait du repli legacy `owner`/`useMemberSchema()` après une courte période de rodage |
 | Rappel de mois non clôturé | 🆕 Conçu ici, rien construit |
 
 ---
@@ -494,20 +543,31 @@ souvent.
    Supabase.
 2. ✅ Écrire et tester la migration Owner → Member (section 6) — prérequis
    pour Comptes (5.1, `memberId`), à faire dans cet ordre, pas en
-   parallèle. **Fait le 12 septembre 2026** (section 6.4) : script écrit
-   et testé sur Postgres local, pas encore exécuté sur Supabase.
+   parallèle. **Fait le 12 septembre 2026** (section 6.4.1).
 3. ✅ Préparer la bascule TypeScript Owner → Member avec une compatibilité
    transitoire avant la migration distante : modèles, mappings, store,
    setup-household, sélecteur et formulaires sont adaptés; les tests et le
    build passent.
-4. **Prochaine étape réelle** — dans cet ordre :
-   1. Exécuter `migration-024-owner-to-member.sql` sur le projet Supabase
-      réel après sauvegarde.
-   2. Vérifier les membres, les références `member_id`, les versements et
-      les RPC sur le projet réel.
-   3. Retirer le repli `owner` legacy, puis reprendre l'écran `/comptes`.
-   4. Reprendre le brouillon `/comptes` (mis en pause, voir
-      `plan-industrialisation.md`) une fois les 3 points ci-dessus faits.
-4. Une fois tout ce qui précède fait, ce document devient la référence
+4. ✅ Exécuter `migration-024-owner-to-member.sql` sur le projet Supabase
+   réel et valider en production. **Fait le 13 septembre 2026**
+   (section 6.4.2/6.4.3) — schéma, données, écritures et répartition de
+   versement tous vérifiés en conditions réelles, aucune régression.
+5. **Prochaine étape réelle** — dans cet ordre :
+   1. Courte période de rodage en usage normal avant de retirer la
+      compatibilité transitoire (pas de délai fixé — le temps de voir
+      l'appli utilisée normalement quelques jours).
+   2. Retirer le repli `owner`/`useMemberSchema()` dans
+      `budget-store.service.ts`/`supabase-mappers.ts`/`budget.models.ts`
+      une fois ce rodage jugé suffisant.
+   3. Ajouter les tests qui manquent sur le nouveau schéma (le chemin
+      `useMemberSchema() === true` n'a aucune couverture automatisée
+      actuellement — tout ce qui a été vérifié l'a été manuellement en
+      production, voir 6.4.3).
+   4. Écrire les RPC manquantes pour un futur écran Paramètres (renommer
+      un membre, changer sa couleur, le désactiver, gérer une invitation)
+      — `members`/`invitations` existent mais rien ne les modifie encore.
+   5. Reprendre pour de vrai le brouillon `/comptes` (mis en pause, voir
+      `plan-industrialisation.md`) une fois les points ci-dessus faits.
+6. Une fois tout ce qui précède fait, ce document devient la référence
    unique que `plan-industrialisation.md` (vague B) doit suivre pour le
    schéma Supabase et les nouveaux écrans.

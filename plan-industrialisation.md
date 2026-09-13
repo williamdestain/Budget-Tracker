@@ -268,25 +268,36 @@ manuellement avec le compte partagé sur chaque membre et la vue globale.
 3, doit exister avant de commencer cette vague — ces trois écrans lisent
 et écrivent dans ces nouvelles tables, ce n'est pas du restylage.
 
-**⏸️ Vague B reste en pause le 12 septembre 2026.** Le support applicatif
-Owner → Member est préparé en mode transitoire, mais la migration Supabase
-n'est pas encore exécutée. L'écran `/comptes` ne doit pas encore être
-finalisé contre le schéma cible tant que cette exécution et sa vérification
-ne sont pas faites.
+**✅ Prérequis rempli le 13 septembre 2026** — la vague B peut démarrer
+sur le plan technique, sous réserve du point de rodage ci-dessous.
+Historique de la pause : `migration-024-owner-to-member.sql` (généralisation
+Owner → Member) a été traitée comme un prérequis strict, dans l'ordre,
+avant de continuer `/comptes` — voir le risque correspondant plus bas,
+qui s'est concrètement matérialisé.
 
-État du prérequis au 12 septembre 2026 (voir `MODELE.md`, section 6.4) :
-- ✅ `migration-024-owner-to-member.sql` écrite et **testée** sur une base
-  Postgres locale (création/jonction de foyer, répartition de versement,
-  import, arrivée d'un 3ᵉ membre réel — 6 scénarios vérifiés).
-- ⬜ Pas encore exécutée sur le projet Supabase réel.
-- ✅ Code TypeScript (`budget.models.ts`, `budget-store.service.ts`,
-  `supabase-mappers.ts`, `setup-household`, sélecteur et formulaires) adapté
-  pour `memberId`, avec repli `owner` tant que la migration distante n'est
-  pas exécutée.
-- ⬜ Brouillon `/comptes` à reprendre seulement une fois les deux points
-  précédents faits — pas avant.
+État du prérequis au 13 septembre 2026 (voir `MODELE.md`, section 6.4) :
+- ✅ `migration-024-owner-to-member.sql` écrite et testée localement le 12
+  septembre (6 scénarios vérifiés sur Postgres local).
+- ✅ Code TypeScript adapté pour `memberId`, avec repli transitoire
+  `owner`/`useMemberSchema()`.
+- ✅ **Exécutée sur le projet Supabase réel le 13 septembre 2026**, puis
+  validée en production : schéma, données existantes (zéro ligne
+  orpheline), écritures, et répartition de versement (le chemin le plus
+  délicat de la migration) tous testés avec de vraies données — voir
+  `MODELE.md` section 6.4.2/6.4.3 pour le détail.
+- Point pratique découvert pendant l'exécution, à retenir pour toute
+  migration future qui crée une table : le cache de schéma PostgREST ne
+  se rafraîchit pas tout seul après une migration — `accounts`,
+  `account_balance_snapshots` et `members` renvoyaient des 404 malgré des
+  tables bien créées, jusqu'à `notify pgrst, 'reload schema';`.
+- ⬜ **Reste avant de finaliser `/comptes`** : une courte période de
+  rodage en usage normal, puis le retrait du repli transitoire
+  `owner`/`useMemberSchema()` (voir `MODELE.md` section 9) — et combler
+  l'absence totale de test automatisé sur le nouveau chemin
+  (`useMemberSchema() === true` n'est couvert par aucun test pour
+  l'instant, tout a été vérifié manuellement en production).
 
-La vague A n'est pas concernée par cette pause et peut continuer
+La vague A n'a jamais été concernée par cette pause et peut continuer
 normalement (voir « Pour démarrer cette semaine » en fin de document).
 
 1. **Comptes** (`/comptes`) — vue d'ensemble de la valeur nette et de tous
@@ -362,7 +373,7 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 | Risque | Mitigation |
 |---|---|
 | Régression de logique métier pendant la refonte visuelle | Geler les fichiers `.ts` de logique en vague A ; ne changer que `.html`/`.scss` ; relancer la suite de tests après chaque écran |
-| Construire Comptes/Investissements/Paramètres avant que le schéma généralisé existe | Respecter l'ordre vague A → vague B ; le support `Member` transitoire est préparé, mais les écrans cibles restent bloqués jusqu'à l'exécution et la vérification de la migration Owner → Member. Le brouillon `/comptes` reste donc en pause jusqu'à cette validation. |
+| Construire Comptes/Investissements/Paramètres avant que le schéma généralisé existe | Respecter l'ordre vague A → vague B. **S'est matérialisé le 12 septembre 2026** (brouillon `/comptes` commencé avant la généralisation), **résolu le 13 septembre 2026** : migration Owner → Member écrite, testée, exécutée en production et validée avant toute reprise de `/comptes` |
 | Perte d'état du store en changeant de route | Vérifier `providedIn:'root'` sur `BudgetStoreService` avant la Phase 1 ; tester la navigation manuellement |
 | Trop d'emojis à remplacer d'un coup | Composant `<app-icon>` centralisé ; migration progressive, coexistence tolérée |
 | Envie de tout refaire en même temps (nouvelles fonctionnalités) | Portée de chaque vague strictement limitée à ce qui est listé ici ; toute autre idée va dans un backlog séparé |
@@ -379,15 +390,19 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 4. ✅ Vague A, écran 1 (Carte de crédit) — complète.
 5. ✅ Migration Owner → Member écrite et testée localement
    (`migration-024-owner-to-member.sql`, voir vague B et `MODELE.md`
-   section 6.4) — pas encore exécutée sur Supabase.
+   section 6.4).
 6. ✅ Bascule applicative Owner → Member préparée avec compatibilité
-   transitoire; type-check, build et 281 tests validés, dont des tests
-   d'intégration avec une table `members` peuplée vérifiant la sélection
-   dynamique et l'écriture `member_id`.
-7. ⏸️ Vague B (Comptes, Investissements, Épargne, Paramètres) — **en
-   pause** jusqu'à l'exécution et la vérification du point 5 sur Supabase.
-8. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
+   transitoire; type-check, build et 279 tests validés.
+7. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
    build et 279 tests verts.
-9. **Prochaine étape réelle** — écran 3 de la vague A : moderniser le
-   Tableau de bord; la migration 024 et la finalisation de `/comptes`
-   restent indépendantes et toujours bloquées sur la validation Supabase.
+8. ✅ **Migration exécutée sur Supabase réel et validée en production le
+   13 septembre 2026** — schéma, données existantes, écritures et
+   répartition de versement tous vérifiés avec de vraies données, aucune
+   régression (voir `MODELE.md` section 6.4.2/6.4.3). La vague B n'est
+   donc plus en pause sur le plan technique.
+9. **Prochaine étape réelle** — deux chantiers indépendants :
+   - Vague A, écran 3 : moderniser le Tableau de bord.
+   - Vague B : courte période de rodage, puis retrait de la compatibilité
+     transitoire, ajout des tests manquants sur le nouveau schéma, RPC de
+     gestion des membres (Paramètres), et reprise pour de vrai de
+     `/comptes` — dans cet ordre (voir `MODELE.md` section 9).
