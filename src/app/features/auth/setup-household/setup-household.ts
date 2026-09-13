@@ -3,7 +3,6 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { AuthService } from '../../../core/services/auth.service';
-import { Owner } from '../../../core/models/budget.models';
 
 type Mode = 'choose' | 'create' | 'join' | 'created';
 
@@ -19,7 +18,7 @@ export class SetupHousehold {
   readonly error = signal<string | null>(null);
   readonly joinCode = signal<string | null>(null); // affiché après création
 
-  ownerLabel: Owner = 'moi';
+  displayName = 'Moi';
   codeInput = '';
 
   constructor(
@@ -32,7 +31,7 @@ export class SetupHousehold {
     this.error.set(null);
     this.loading.set(true);
     try {
-      const { joinCode } = await this.store.createHousehold(this.ownerLabel);
+      const { joinCode } = await this.store.createHousehold(this.displayName.trim());
       this.joinCode.set(joinCode);
       this.mode.set('created');
     } catch (err) {
@@ -47,7 +46,7 @@ export class SetupHousehold {
     if (!this.codeInput.trim()) return;
     this.loading.set(true);
     try {
-      await this.store.joinHousehold(this.codeInput, this.ownerLabel);
+      await this.store.joinHousehold(this.codeInput, this.displayName.trim());
       this.router.navigate(['/']);
     } catch (err) {
       this.error.set(err instanceof Error ? err.message : 'Une erreur est survenue.');

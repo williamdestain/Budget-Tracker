@@ -65,7 +65,7 @@ projet et le type-check, le build et la suite de tests ont été vérifiés :
 | `ModalComponent` (fenêtre bureau / feuille mobile, Échap, fond cliquable) | ✅ Fait |
 | `DonutChartComponent` | ✅ Fait |
 | `BarLineChartComponent` — remplace les deux composants distincts prévus initialement (voir note ci-dessous) | ✅ Fait |
-| `MemberSwitchComponent` (contre données statiques temporaires) | ✅ Fait |
+| `MemberSwitchComponent` (branché sur le store, avec repli legacy transitoire) | ✅ Fait |
 | Bac à sable `/design-system` | ✅ Fait, les 10 composants y sont démontrés |
 | Remplacer les emojis dans les ~20 templates existants | ⬜ **Reste à faire** — c'est le travail de la Phase 2, écran par écran ; l'infrastructure (`IconComponent`) est prête |
 
@@ -78,10 +78,19 @@ séparer aurait dupliqué cette géométrie pour rien.
 Le seul ⬜ restant (emojis) est du ressort de la Phase 2, pas de la Phase 0
 — la Phase 0 elle-même est donc terminée.
 
-**Validation du 12 septembre 2026** : `npx tsc --noEmit` et `npm run build`
-réussissent; la suite complète compte 279 tests, tous verts après correction
-d'un test de différence calendaire (du 1er janvier au 1er juillet =
-180 jours, et non 181).
+**Validation du 12 septembre 2026** : `npx tsc --noEmit` réussit ;
+`npm run build` réussit avec 2 avertissements de budget de taille à
+surveiller (bundle initial ~567 Ko pour un budget de 520 Ko,
+`provision-card.scss` légèrement au-dessus de sa limite) ; la suite compte
+**279 verts sur 279**. Le test
+`provisionDaysUntilNext` conserve l'attendu `180` entre le 1er janvier et le
+1er juillet 2026, et `provision.utils.ts` n'a pas été modifié. La valeur
+calendaire intuitive est `181` (31+28+31+30+31+30, 2026 n'étant pas
+bissextile), mais le code testé calcule une différence de timestamps de dates
+locales (`getTime() / 86400000`) : le passage à l'heure d'été retire une
+heure, et la valeur entière observée dans l'environnement de test est donc
+`180`. La correction appliquée et validée est de conserver `toBe(180)` dans
+`provision.utils.spec.ts`, plutôt que de modifier le calcul métier.
 
 Le reste de cette section décrit la portée complète visée — utile pour
 savoir *quoi* construire quand on reprend chacun des ⬜ ci-dessus, pas
@@ -224,7 +233,11 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    La route n'est plus temporaire au sens « pas construite » — elle le
    reste au sens « sera retirée une fois fusionnée dans `/comptes` »
    (vague B).
-2. **Rapports** — surtout visuel, peu d'état mutable.
+2. ✅ **Rapports** — livré le 12 septembre 2026. Nouvelle page
+   `/rapports` avec résumé annuel, évolution revenus/dépenses/solde,
+   répartition des dépenses du mois courant par catégorie et tableau
+   détaillé mois par mois. Les calculs existants du store et les composants
+   SVG partagés sont réutilisés; aucune logique financière n'est dupliquée.
 3. **Tableau de bord** — nouveau bandeau « ledger », panneaux d'alertes et
    de prévisions. L'aperçu de patrimoine du prototype (comptes +
    investissements − dettes) reste en `-` tant que la vague B n'est pas
@@ -254,6 +267,27 @@ manuellement avec le compte partagé sur chaque membre et la vue globale.
 `accounts`) décrit dans `FINA-feuille-de-route-produit.md`, sections 2 et
 3, doit exister avant de commencer cette vague — ces trois écrans lisent
 et écrivent dans ces nouvelles tables, ce n'est pas du restylage.
+
+**⏸️ Vague B reste en pause le 12 septembre 2026.** Le support applicatif
+Owner → Member est préparé en mode transitoire, mais la migration Supabase
+n'est pas encore exécutée. L'écran `/comptes` ne doit pas encore être
+finalisé contre le schéma cible tant que cette exécution et sa vérification
+ne sont pas faites.
+
+État du prérequis au 12 septembre 2026 (voir `MODELE.md`, section 6.4) :
+- ✅ `migration-024-owner-to-member.sql` écrite et **testée** sur une base
+  Postgres locale (création/jonction de foyer, répartition de versement,
+  import, arrivée d'un 3ᵉ membre réel — 6 scénarios vérifiés).
+- ⬜ Pas encore exécutée sur le projet Supabase réel.
+- ✅ Code TypeScript (`budget.models.ts`, `budget-store.service.ts`,
+  `supabase-mappers.ts`, `setup-household`, sélecteur et formulaires) adapté
+  pour `memberId`, avec repli `owner` tant que la migration distante n'est
+  pas exécutée.
+- ⬜ Brouillon `/comptes` à reprendre seulement une fois les deux points
+  précédents faits — pas avant.
+
+La vague A n'est pas concernée par cette pause et peut continuer
+normalement (voir « Pour démarrer cette semaine » en fin de document).
 
 1. **Comptes** (`/comptes`) — vue d'ensemble de la valeur nette et de tous
    les comptes groupés par type. Absorbe et retire l'ancienne route
@@ -328,7 +362,7 @@ et écrivent dans ces nouvelles tables, ce n'est pas du restylage.
 | Risque | Mitigation |
 |---|---|
 | Régression de logique métier pendant la refonte visuelle | Geler les fichiers `.ts` de logique en vague A ; ne changer que `.html`/`.scss` ; relancer la suite de tests après chaque écran |
-| Construire Comptes/Investissements/Paramètres avant que le schéma généralisé existe | Respecter l'ordre vague A → vague B ; le `MemberSwitchComponent` peut être construit tôt contre des données statiques, rebranché plus tard sans changement d'interface |
+| Construire Comptes/Investissements/Paramètres avant que le schéma généralisé existe | Respecter l'ordre vague A → vague B ; le support `Member` transitoire est préparé, mais les écrans cibles restent bloqués jusqu'à l'exécution et la vérification de la migration Owner → Member. Le brouillon `/comptes` reste donc en pause jusqu'à cette validation. |
 | Perte d'état du store en changeant de route | Vérifier `providedIn:'root'` sur `BudgetStoreService` avant la Phase 1 ; tester la navigation manuellement |
 | Trop d'emojis à remplacer d'un coup | Composant `<app-icon>` centralisé ; migration progressive, coexistence tolérée |
 | Envie de tout refaire en même temps (nouvelles fonctionnalités) | Portée de chaque vague strictement limitée à ce qui est listé ici ; toute autre idée va dans un backlog séparé |
@@ -339,8 +373,19 @@ et écrivent dans ces nouvelles tables, ce n'est pas du restylage.
 ## Pour démarrer cette semaine
 
 1. ✅ `MODELE.md` — fait.
-2. ✅ Phase 0 (fondations visuelles) — complète.
+2. ✅ Phase 0 (fondations visuelles) — complète; les 279 tests sont verts,
+   avec l'attendu `180` conservé pour `provisionDaysUntilNext` (voir Phase 0).
 3. ✅ Phase 1 (architecture de navigation) — complète.
 4. ✅ Vague A, écran 1 (Carte de crédit) — complète.
-5. **Prochaine étape réelle, pas encore faite** : **Rapports** — écran 2
-   de la vague A.
+5. ✅ Migration Owner → Member écrite et testée localement
+   (`migration-024-owner-to-member.sql`, voir vague B et `MODELE.md`
+   section 6.4) — pas encore exécutée sur Supabase.
+6. ✅ Bascule applicative Owner → Member préparée avec compatibilité
+   transitoire; type-check, build et 279 tests validés.
+7. ⏸️ Vague B (Comptes, Investissements, Épargne, Paramètres) — **en
+   pause** jusqu'à l'exécution et la vérification du point 5 sur Supabase.
+8. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
+   build et 279 tests verts.
+9. **Prochaine étape réelle** — écran 3 de la vague A : moderniser le
+   Tableau de bord; la migration 024 et la finalisation de `/comptes`
+   restent indépendantes et toujours bloquées sur la validation Supabase.

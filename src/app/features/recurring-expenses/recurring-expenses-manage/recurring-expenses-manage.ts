@@ -31,7 +31,7 @@ export class RecurringExpensesManage {
     // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame).
     effect(() => {
       const active = this.store.activeOwner();
-      if (active === 'moi' || active === 'madame') this.owner = active;
+      if (active !== 'global') this.owner = active;
     });
     // Catégories chargées dynamiquement depuis le store.
     effect(() => {

@@ -40,13 +40,13 @@ export class IncomeForm {
 
   readonly saving = signal(false);
 
-  constructor(private store: BudgetStore, private toast: ToastService) {
+  constructor(public store: BudgetStore, private toast: ToastService) {
     // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame),
     // y compris si on change d'onglet après l'ouverture de la page — pas
     // seulement au premier chargement.
     effect(() => {
       const active = this.store.activeOwner();
-      if (active === 'moi' || active === 'madame') this.owner = active;
+      if (active !== 'global') this.owner = active;
     });
   }
 

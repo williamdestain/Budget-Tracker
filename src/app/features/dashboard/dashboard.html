@@ -6,20 +6,15 @@
     </div>
 
     <div class="tabs">
-      <button
-        class="tab"
-        [class.active]="store.activeOwner() === 'moi'"
-        (click)="setOwner('moi')"
-      >
-        Moi
-      </button>
-      <button
-        class="tab"
-        [class.active]="store.activeOwner() === 'madame'"
-        (click)="setOwner('madame')"
-      >
-        Madame
-      </button>
+      @for (member of store.memberOptions(); track member.id) {
+        <button
+          class="tab"
+          [class.active]="store.activeOwner() === member.id"
+          (click)="setOwner(member.id)"
+        >
+          {{ member.name }}
+        </button>
+      }
       <button
         class="tab"
         [class.active]="store.activeOwner() === 'global'"

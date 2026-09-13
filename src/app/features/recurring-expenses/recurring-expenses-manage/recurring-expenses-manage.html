@@ -63,8 +63,9 @@
       <div class="field">
         <label>Profil</label>
         <select name="owner" [(ngModel)]="owner">
-          <option value="moi">Moi</option>
-          <option value="madame">Madame</option>
+          @for (member of store.memberOptions(); track member.id) {
+            <option [value]="member.id">{{ member.name }}</option>
+          }
         </select>
       </div>
       <label class="check-label">

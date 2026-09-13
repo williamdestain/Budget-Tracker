@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ActivatedRoute,
@@ -11,7 +11,6 @@ import {
 import { filter, map } from 'rxjs';
 import { AuthService } from '../../../core/services/auth.service';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { OWNERS } from '../../../core/utils/categories';
 import { monthLabel, nextYM, prevYM } from '../../../core/utils/date.utils';
 import { Icon } from '../../ui/icon/icon';
 import type { IconName } from '../../ui/icon/icon-names';
@@ -97,15 +96,17 @@ export class AppShell {
     return (r?.snapshot?.data?.['navTitle'] as string | undefined) ?? '';
   }
 
-  // Tableau statique temporaire — reproduit "Moi"/"Madame"/"Global" en
-  // attendant la vraie table `members` (MODELE.md section 6). Les couleurs
-  // référencent les tokens existants (--owner-moi, --pink, --accent), pas
-  // des valeurs figées, donc le mode sombre s'applique automatiquement.
-  readonly members: SwitchMember[] = [
-    { id: 'moi', name: OWNERS['moi'], color: 'var(--owner-moi)' },
-    { id: 'madame', name: OWNERS['madame'], color: 'var(--pink)' },
-    { id: 'global', name: 'Global', color: 'var(--accent)' },
-  ];
+  // Membres configurables chargés par BudgetStore, avec repli historique
+  // avant l'exécution de migration 024.
+  readonly members = computed<SwitchMember[]>(() => {
+    const options = (this.store as BudgetStore & {
+      memberOptions?: () => SwitchMember[];
+    }).memberOptions?.() ?? [
+      { id: 'moi', name: 'Moi', color: 'var(--owner-moi)' },
+      { id: 'madame', name: 'Madame', color: 'var(--pink)' },
+    ];
+    return [...options, { id: 'global', name: 'Global', color: 'var(--accent)' }];
+  });
 
   get monthLabel(): string {
     return monthLabel(this.store.current());
@@ -120,7 +121,7 @@ export class AppShell {
   }
 
   selectMember(id: string): void {
-    this.store.activeOwner.set(id as 'moi' | 'madame' | 'global');
+    this.store.activeOwner.set(id);
   }
 
   logout(): void {

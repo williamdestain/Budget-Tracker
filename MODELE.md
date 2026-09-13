@@ -4,15 +4,12 @@
 
 Ce document a deux couches, clairement séparées :
 
-- **Sections 3 et 4** : l'état réel du code aujourd'hui (vérifié le 6
-  septembre 2026, dans `budget-store.service.ts`, `provision.utils.ts`,
-  `date.utils.ts`, `budget.models.ts`). Rien n'y est inventé — chaque règle
-  cite la fonction qui l'implémente, pour rester vérifiable.
-- **Sections 5, 6 et 7** : des entités et des changements qui **n'existent
-  pas encore** dans le code. Ce sont des décisions de conception prises
-  pour préparer les écrans Comptes, Investissements, et la généralisation
-  des membres du foyer — à valider en les relisant avant de coder, pas des
-  faits déjà vérifiés.
+- **Sections 3 et 4** : l'état réel du code métier historique, avec la
+  compatibilité `Owner` conservée pendant la transition.
+- **Sections 5, 6 et 7** : le modèle cible et l'état de sa mise en œuvre.
+  La migration Owner → Member et le support TypeScript transitoire sont
+  maintenant écrits; la migration SQL n'est pas encore exécutée sur
+  Supabase.
 
 Toute divergence future entre ce document et le code doit être traitée
 comme un bug de l'un des deux — jamais un flou qu'on tolère.
@@ -56,16 +53,26 @@ Clôture de mois (MonthClosure)
 
 ## 3. Entités existantes aujourd'hui dans le code
 
-### 3.1 Member (aujourd'hui : `Owner`, figé à deux valeurs)
+### 3.1 Member (transition depuis `Owner`)
 
 ```ts
-type Owner = 'moi' | 'madame';
+type Owner = string; // alias de compatibilité
 type OwnerOrGlobal = Owner | 'global';
+
+interface Member {
+  id: string;
+  householdId: string;
+  displayName: string;
+  color: string;
+  role: 'owner' | 'member';
+  active: boolean;
+}
 ```
 
-`'global'` n'est pas un troisième profil : c'est une vue agrégée qui, pour
-chaque calcul, additionne les deux profils fixes. Voir section 6 pour la
-généralisation à des membres configurables.
+`memberId` est le champ cible des entités métier. L'ancien champ `owner`
+reste présent dans les interfaces et les mappings pour les exports et pour
+fonctionner avant l'exécution de la migration 024. `'global'` n'est pas un
+profil : c'est une vue agrégée calculée sur tous les membres actifs.
 
 ### 3.2 Category
 
@@ -132,7 +139,7 @@ l'utilisateur change la date avant de confirmer.
 
 ### 3.6 RecurringIncome (gabarit)
 
-M�mes champs que `RecurringExpense` (sans `cc`), plus `startDate` toujours
+M�mes champs que `RecurringExpense` (sans `cc`), plus `startDate` toujours
 requis (sert aussi de borne de départ pour tous les intervalles, pas
 seulement `weekly`/`biweekly`).
 
@@ -399,6 +406,42 @@ Une migration en une seule transaction Supabase (jamais en plusieurs
 Aucune perte de données à aucune étape — uniquement un renommage de
 valeurs et l'ajout d'un champ sur les versements historiques.
 
+### 6.4 État au 12 septembre 2026
+
+Le script est écrit (`supabase/migration-024-owner-to-member.sql`) et
+**testé sur une base Postgres locale** (schéma complet + jeu de données
+factice). Il n'est pas encore exécuté sur le projet Supabase réel.
+
+Le code TypeScript a été adapté en mode transitoire : `Member` et
+`memberId` sont disponibles, le store charge les membres dynamiques et
+agrège la vue globale sur N membres, tandis que les mappings et écritures
+gardent un repli `owner` tant que la migration distante n'est pas faite.
+Cette compatibilité doit être retirée après validation de la migration
+024 en production.
+
+Décision d'implémentation, à noter ici pour la suite : le script crée une
+**table `members` séparée** (plutôt que de généraliser `household_members`
+en place). `household_members` garde son rôle actuel — relier un compte
+connecté (`user_id`) à un foyer — et gagne une colonne `member_id` vers
+cette nouvelle table. `members` porte `display_name`/`color`/`role`/
+`active`, exactement le schéma de 6.1. Une table `invitations` (6.1) est
+également créée, structurellement prête, mais sans RPC pour l'utiliser
+pour l'instant (aucune fonctionnalité d'invitation n'existe encore côté
+appli).
+
+Cas particulier géré par le script : pour un foyer où un seul compte
+s'est déjà inscrit (`household_members` n'a qu'une ligne), la migration
+crée quand même les deux membres historiques « Moi » et « Madame », le
+second restant non relié à un compte (« fantôme ») jusqu'à ce que la
+deuxième personne rejoigne réellement — `join_household()` (voir 6.2) a
+été réécrite pour reconnaître ce cas et relier le compte au membre
+existant plutôt que d'en créer un second.
+
+Testé concrètement (pas seulement relu) : création de foyer, jonction
+d'un foyer (y compris le cas du membre fantôme ci-dessus), répartition de
+versement, import de sauvegarde, et l'arrivée d'un vrai 3ᵉ membre dans un
+foyer qui en avait déjà deux — les 6 scénarios passent.
+
 ---
 
 ## 7. Nouvelle alerte : rappel de mois non clôturé
@@ -437,21 +480,34 @@ souvent.
 | Provision, ProvisionAdjustment, CreditCardPayment | ✅ Existe, vérifié dans le code |
 | SavingsGoal, SavingsContribution, Clôture de mois | ✅ Existe, vérifié dans le code |
 | Tous les calculs de la section 4 | ✅ Existe, vérifié dans le code |
-| Account, AccountBalanceSnapshot, InvestmentAllocation | 🆕 Conçu ici, rien construit |
+| Account, AccountBalanceSnapshot, InvestmentAllocation | ✅ Schéma Supabase construit (`migration-023-accounts.sql`) ; ⬜ écran `/comptes` à l'état de brouillon non commité, en pause (voir `plan-industrialisation.md`, vague B) |
 | Valeur nette, Performance de portefeuille | 🆕 Conçu ici, rien construit |
-| Member généralisé, Role, Invitation | 🆕 Conçu ici, rien construit |
-| Migration Owner → Member (section 6.2/6.3) | 🆕 Conçu ici, rien construit |
+| Member généralisé, Role, Invitation | ✅ Schéma Supabase construit et testé localement (`migration-024-owner-to-member.sql`, section 6.4) ; ⬜ pas encore exécuté sur Supabase ; ✅ support TypeScript transitoire |
+| Migration Owner → Member (section 6.2/6.3) | ✅ Script écrit et testé (section 6.4) ; ✅ bascule applicative transitoire ; ⬜ exécution sur Supabase puis retrait du repli legacy |
 | Rappel de mois non clôturé | 🆕 Conçu ici, rien construit |
 
 ---
 
 ## 9. Prochaines étapes
 
-1. Relire ce document en entier avant d'écrire la moindre migration
-   Supabase — c'est le moment de corriger une décision de conception, pas
-   après avoir codé dessus.
-2. La migration Owner → Member (section 6) est un prérequis pour Comptes
-   (5.1, `memberId`) — à faire dans cet ordre, pas en parallèle.
-3. Une fois validé, ce document devient la référence unique que
-   `plan-industrialisation.md` (vague B) doit suivre pour le schéma
-   Supabase et les nouveaux écrans.
+1. ✅ Relire ce document en entier avant d'écrire la moindre migration
+   Supabase.
+2. ✅ Écrire et tester la migration Owner → Member (section 6) — prérequis
+   pour Comptes (5.1, `memberId`), à faire dans cet ordre, pas en
+   parallèle. **Fait le 12 septembre 2026** (section 6.4) : script écrit
+   et testé sur Postgres local, pas encore exécuté sur Supabase.
+3. ✅ Préparer la bascule TypeScript Owner → Member avec une compatibilité
+   transitoire avant la migration distante : modèles, mappings, store,
+   setup-household, sélecteur et formulaires sont adaptés; les tests et le
+   build passent.
+4. **Prochaine étape réelle** — dans cet ordre :
+   1. Exécuter `migration-024-owner-to-member.sql` sur le projet Supabase
+      réel après sauvegarde.
+   2. Vérifier les membres, les références `member_id`, les versements et
+      les RPC sur le projet réel.
+   3. Retirer le repli `owner` legacy, puis reprendre l'écran `/comptes`.
+   4. Reprendre le brouillon `/comptes` (mis en pause, voir
+      `plan-industrialisation.md`) une fois les 3 points ci-dessus faits.
+4. Une fois tout ce qui précède fait, ce document devient la référence
+   unique que `plan-industrialisation.md` (vague B) doit suivre pour le
+   schéma Supabase et les nouveaux écrans.

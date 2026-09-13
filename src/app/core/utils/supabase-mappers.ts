@@ -16,6 +16,14 @@ import {
   AccountBalanceSnapshot,
 } from '../models/budget.models';
 
+const rowMemberId = (row: any): string => row.member_id ?? row.owner;
+
+function memberColumn(value: { memberId?: string; owner?: string }, useMemberSchema: boolean): any {
+  return useMemberSchema
+    ? { member_id: value.memberId ?? value.owner }
+    : { owner: value.owner ?? value.memberId };
+}
+
 export function rowToAccount(row: any): Account {
   return {
     id: row.id,
@@ -48,35 +56,41 @@ export function rowToAccountBalanceSnapshot(row: any): AccountBalanceSnapshot {
 }
 
 export function rowToExpense(row: any): Expense {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     amount: Number(row.amount),
     category: row.category,
     date: row.date,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     cc: row.cc,
     recurringSourceId: row.recurring_source_id ?? null,
+    versementToMemberId: row.versement_to_member_id ?? null,
   };
 }
 
-export function expenseToRow(e: Omit<Expense, 'id'> | Expense): any {
+export function expenseToRow(e: Omit<Expense, 'id'> | Expense, useMemberSchema = false): any {
   return {
     amount: e.amount,
     category: e.category,
     date: e.date,
-    owner: e.owner,
+    ...memberColumn(e, useMemberSchema),
     cc: e.cc,
     recurring_source_id: e.recurringSourceId ?? null,
+    ...(useMemberSchema ? { versement_to_member_id: e.versementToMemberId ?? null } : {}),
   };
 }
 
 export function rowToRecurringExpense(row: any): RecurringExpense {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     name: row.name,
     amount: Number(row.amount),
     category: row.category,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     // Rétrocompatibilité : les lignes créées avant la migration-009
     // n'ont pas encore cette colonne — 'monthly' préserve leur
     // comportement d'origine à l'identique.
@@ -91,12 +105,13 @@ export function rowToRecurringExpense(row: any): RecurringExpense {
 
 export function recurringExpenseToRow(
   r: Omit<RecurringExpense, 'id'> | RecurringExpense,
+  useMemberSchema = false,
 ): any {
   return {
     name: r.name,
     amount: r.amount,
     category: r.category,
-    owner: r.owner,
+    ...memberColumn(r, useMemberSchema),
     interval: r.interval,
     day_of_month: r.dayOfMonth,
     second_day_of_month: r.secondDayOfMonth ?? null,
@@ -107,12 +122,14 @@ export function recurringExpenseToRow(
 }
 
 export function rowToIncome(row: any): Income {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     amount: Number(row.amount),
     type: row.type,
     date: row.date,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     note: row.note ?? '',
     recurring: row.recurring,
     recurringInterval: row.recurring_interval,
@@ -121,12 +138,12 @@ export function rowToIncome(row: any): Income {
   };
 }
 
-export function incomeToRow(i: Omit<Income, 'id'> | Income): any {
+export function incomeToRow(i: Omit<Income, 'id'> | Income, useMemberSchema = false): any {
   return {
     amount: i.amount,
     type: i.type,
     date: i.date,
-    owner: i.owner,
+    ...memberColumn(i, useMemberSchema),
     note: i.note,
     recurring: i.recurring,
     recurring_interval: i.recurringInterval,
@@ -155,11 +172,13 @@ export function categoryToRow(c: Omit<Category, 'id'> | Category): any {
 }
 
 export function rowToRecurringIncome(row: any): RecurringIncome {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     amount: Number(row.amount),
     type: row.type,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     note: row.note ?? '',
     interval: row.interval,
     dayOfMonth: row.day_of_month,
@@ -171,11 +190,12 @@ export function rowToRecurringIncome(row: any): RecurringIncome {
 
 export function recurringIncomeToRow(
   r: Omit<RecurringIncome, 'id'> | RecurringIncome,
+  useMemberSchema = false,
 ): any {
   return {
     amount: r.amount,
     type: r.type,
-    owner: r.owner,
+    ...memberColumn(r, useMemberSchema),
     note: r.note,
     interval: r.interval,
     day_of_month: r.dayOfMonth,
@@ -189,8 +209,10 @@ export function recurringIncomeToRow(
 export function rowsToMonthlyMap(rows: any[]): MonthlyAmountMap {
   const map: MonthlyAmountMap = { moi: {}, madame: {} };
   rows.forEach((row) => {
-    const owner = row.owner as Owner;
-    map[owner][row.ym] = Number(row.amount);
+    const memberId = rowMemberId(row);
+    if (!memberId) return;
+    if (!map[memberId]) map[memberId] = {};
+    map[memberId][row.ym] = Number(row.amount);
   });
   return map;
 }
@@ -199,9 +221,11 @@ export function rowsToMonthlyMap(rows: any[]): MonthlyAmountMap {
 export function rowsToCategoryBudgetMap(rows: any[]): CategoryBudgetMap {
   const map: CategoryBudgetMap = { moi: {}, madame: {} };
   rows.forEach((row) => {
-    const owner = row.owner as Owner;
-    if (!map[owner][row.ym]) map[owner][row.ym] = {};
-    map[owner][row.ym][row.category] = Number(row.amount);
+    const memberId = rowMemberId(row);
+    if (!memberId) return;
+    if (!map[memberId]) map[memberId] = {};
+    if (!map[memberId][row.ym]) map[memberId][row.ym] = {};
+    map[memberId][row.ym][row.category] = Number(row.amount);
   });
   return map;
 }
@@ -217,18 +241,23 @@ export function rowToProvisionAdjustment(row: any): ProvisionAdjustment {
 }
 
 export function rowToCreditCardPayment(row: any): CreditCardPayment {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     amount: Number(row.amount),
     date: row.date,
     note: row.note ?? '',
   };
 }
 
-export function creditCardPaymentToRow(p: Omit<CreditCardPayment, 'id'>): any {
+export function creditCardPaymentToRow(
+  p: Omit<CreditCardPayment, 'id'>,
+  useMemberSchema = false,
+): any {
   return {
-    owner: p.owner,
+    ...memberColumn(p, useMemberSchema),
     amount: p.amount,
     date: p.date,
     note: p.note,
@@ -251,6 +280,7 @@ export function adjustmentToRow(
 // Une provision est reconstituée à partir de sa ligne `provisions` et de ses
 // lignes `provision_adjustments` associées (jointes séparément).
 export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     name: row.name,
@@ -260,7 +290,8 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
     startYM: row.start_ym ?? '',
     startDate: row.start_date ?? '',
     category: row.category,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     autoRecalibrate: row.auto_recalibrate,
     allocationPercent: Number(row.allocation_percent ?? 0),
     rollingCount: row.rolling_count,
@@ -273,7 +304,10 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
   };
 }
 
-export function provisionToRow(p: Omit<Provision, 'id' | 'adjustments'>): any {
+export function provisionToRow(
+  p: Omit<Provision, 'id' | 'adjustments'>,
+  useMemberSchema = false,
+): any {
   return {
     name: p.name,
     amount: p.amount,
@@ -282,7 +316,7 @@ export function provisionToRow(p: Omit<Provision, 'id' | 'adjustments'>): any {
     start_ym: p.startYM || null,
     start_date: p.startDate || null,
     category: p.category,
-    owner: p.owner,
+    ...memberColumn(p, useMemberSchema),
     auto_recalibrate: p.autoRecalibrate,
     allocation_percent: p.allocationPercent,
     rolling_count: p.rollingCount,
@@ -315,23 +349,28 @@ export function savingsContributionToRow(
 // et de ses lignes `savings_goal_contributions` associées (jointes
 // séparément), comme les provisions et leurs ajustements.
 export function rowToSavingsGoal(row: any, contributionRows: any[]): SavingsGoal {
+  const memberId = rowMemberId(row);
   return {
     id: row.id,
     name: row.name,
     targetAmount: Number(row.target_amount),
     targetDate: row.target_date ?? null,
-    owner: row.owner,
+    owner: memberId,
+    memberId,
     contributions: contributionRows
       .filter((c) => c.savings_goal_id === row.id)
       .map(rowToSavingsContribution),
   };
 }
 
-export function savingsGoalToRow(g: Omit<SavingsGoal, 'id' | 'contributions'>): any {
+export function savingsGoalToRow(
+  g: Omit<SavingsGoal, 'id' | 'contributions'>,
+  useMemberSchema = false,
+): any {
   return {
     name: g.name,
     target_amount: g.targetAmount,
     target_date: g.targetDate || null,
-    owner: g.owner,
+    ...memberColumn(g, useMemberSchema),
   };
 }

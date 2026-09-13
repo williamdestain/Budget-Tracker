@@ -89,9 +89,7 @@ export const routes: Routes = [
       {
         path: 'rapports',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/reports/reports').then((m) => m.Reports),
         data: { navTitle: 'Rapports' },
       },
       {
