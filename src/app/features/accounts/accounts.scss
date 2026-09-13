@@ -1,0 +1,70 @@
+.accounts-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounts-hero,
+.account-row {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.accounts-label {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+.accounts-hero strong {
+  font-size: 2rem;
+}
+
+.account-form {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.account-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.account-form input,
+.account-form select {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+}
+
+.account-row h2,
+.account-row p {
+  margin: 0;
+}
+
+.account-row p {
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.account-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.account-actions button {
+  background: none;
+  border: 0;
+  color: var(--red);
+  cursor: pointer;
+}
+
+.empty {
+  color: var(--text-muted);
+  margin: 0;
+}

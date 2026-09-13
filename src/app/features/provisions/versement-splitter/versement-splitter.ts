@@ -38,7 +38,11 @@ export class VersementSplitter {
   }
 
   get senderLabel(): string {
-    return this.store.activeOwner() === 'moi' ? 'Madame' : 'Moi';
+    const receiver = this.store.activeOwner();
+    const existing = this.existingVersements.find((e) => e.id === this.existingExpenseId);
+    const sender = existing?.owner ??
+      this.store.memberOptions().find((m) => m.id !== receiver)?.id;
+    return this.store.memberName(sender);
   }
 
   get existingVersements() {

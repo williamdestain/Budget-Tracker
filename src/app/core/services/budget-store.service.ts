@@ -15,6 +15,9 @@ import {
   Category,
   SavingsGoal,
   CreditCardPayment,
+  Account,
+  AccountBalanceSnapshot,
+  Member,
 } from '../models/budget.models';
 import { incomeAppliesToMonth, incomeForMonth } from '../utils/income.utils';
 import { occurrencesInMonth } from '../utils/recurring-expense.utils';
@@ -59,6 +62,9 @@ import {
   savingsContributionToRow,
   rowToCreditCardPayment,
   creditCardPaymentToRow,
+  rowToAccount,
+  rowToAccountBalanceSnapshot,
+  accountToRow,
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
@@ -105,7 +111,6 @@ export interface RemainingBudget {
 // tentatives successives.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const YM_RE = /^\d{4}-\d{2}$/;
-const VALID_OWNERS = ['moi', 'madame'];
 const VALID_RECURRING_INTERVALS = ['once', 'monthly', 'weekly', 'biweekly', 'semimonthly'];
 const VALID_PROVISION_INTERVAL_UNITS = ['days', 'months'];
 const VALID_RECURRING_EXPENSE_INTERVALS = ['monthly', 'weekly', 'biweekly', 'semimonthly'];
@@ -126,7 +131,7 @@ function validateImportPayload(data: any): string[] {
     if (!isFiniteNumber(e?.amount) || e.amount <= 0) errors.push(`${label} : montant invalide (${e?.amount})`);
     if (!isNonEmptyString(e?.category)) errors.push(`${label} : catégorie manquante`);
     if (!isNonEmptyString(e?.date) || !DATE_RE.test(e.date)) errors.push(`${label} : date invalide (${e?.date})`);
-    if (!VALID_OWNERS.includes(e?.owner)) errors.push(`${label} : profil invalide (${e?.owner})`);
+    if (!isNonEmptyString(e?.memberId ?? e?.owner)) errors.push(`${label} : membre invalide (${e?.memberId ?? e?.owner})`);
   });
 
   (data.incomes as unknown[]).forEach((raw, i) => {
@@ -135,7 +140,7 @@ function validateImportPayload(data: any): string[] {
     if (!isFiniteNumber(inc?.amount) || inc.amount <= 0) errors.push(`${label} : montant invalide (${inc?.amount})`);
     if (!isNonEmptyString(inc?.type)) errors.push(`${label} : type manquant`);
     if (!isNonEmptyString(inc?.date) || !DATE_RE.test(inc.date)) errors.push(`${label} : date invalide (${inc?.date})`);
-    if (!VALID_OWNERS.includes(inc?.owner)) errors.push(`${label} : profil invalide (${inc?.owner})`);
+    if (!isNonEmptyString(inc?.memberId ?? inc?.owner)) errors.push(`${label} : membre invalide (${inc?.memberId ?? inc?.owner})`);
     if (inc?.recurring && !VALID_RECURRING_INTERVALS.includes(inc?.recurringInterval)) {
       errors.push(`${label} : fréquence de récurrence invalide (${inc?.recurringInterval})`);
     }
@@ -153,7 +158,7 @@ function validateImportPayload(data: any): string[] {
       errors.push(`${label} : mois de départ invalide (${p?.startYM})`);
     }
     if (!isNonEmptyString(p?.category)) errors.push(`${label} : catégorie manquante`);
-    if (!VALID_OWNERS.includes(p?.owner)) errors.push(`${label} : profil invalide (${p?.owner})`);
+    if (!isNonEmptyString(p?.memberId ?? p?.owner)) errors.push(`${label} : membre invalide (${p?.memberId ?? p?.owner})`);
     if (
       p?.allocationPercent != null &&
       (!isFiniteNumber(p.allocationPercent) || p.allocationPercent < 0 || p.allocationPercent > 100)
@@ -174,7 +179,7 @@ function validateImportPayload(data: any): string[] {
       const label = `recurringExpenses[${i}]`;
       if (!isFiniteNumber(r?.amount) || r.amount <= 0) errors.push(`${label} : montant invalide (${r?.amount})`);
       if (!isNonEmptyString(r?.category)) errors.push(`${label} : catégorie manquante`);
-      if (!VALID_OWNERS.includes(r?.owner)) errors.push(`${label} : profil invalide (${r?.owner})`);
+      if (!isNonEmptyString(r?.memberId ?? r?.owner)) errors.push(`${label} : membre invalide (${r?.memberId ?? r?.owner})`);
       if (r?.interval != null && !VALID_RECURRING_EXPENSE_INTERVALS.includes(r.interval)) {
         errors.push(`${label} : fréquence invalide (${r.interval})`);
       }
@@ -187,7 +192,7 @@ function validateImportPayload(data: any): string[] {
       const label = `recurringIncomes[${i}]`;
       if (!isFiniteNumber(r?.amount) || r.amount <= 0) errors.push(`${label} : montant invalide (${r?.amount})`);
       if (!isNonEmptyString(r?.type)) errors.push(`${label} : type manquant`);
-      if (!VALID_OWNERS.includes(r?.owner)) errors.push(`${label} : profil invalide (${r?.owner})`);
+      if (!isNonEmptyString(r?.memberId ?? r?.owner)) errors.push(`${label} : membre invalide (${r?.memberId ?? r?.owner})`);
       if (!isNonEmptyString(r?.startDate) || !DATE_RE.test(r.startDate)) {
         errors.push(`${label} : date de départ invalide (${r?.startDate})`);
       }
@@ -205,7 +210,7 @@ function validateImportPayload(data: any): string[] {
         errors.push(`${label} : montant cible invalide (${g?.targetAmount})`);
       }
       if (!isNonEmptyString(g?.name)) errors.push(`${label} : nom manquant`);
-      if (!VALID_OWNERS.includes(g?.owner)) errors.push(`${label} : profil invalide (${g?.owner})`);
+      if (!isNonEmptyString(g?.memberId ?? g?.owner)) errors.push(`${label} : membre invalide (${g?.memberId ?? g?.owner})`);
       (g?.contributions || []).forEach((raw2: unknown, j: number) => {
         const c = raw2 as any;
         const label2 = `${label}.contributions[${j}]`;
@@ -221,7 +226,7 @@ function validateImportPayload(data: any): string[] {
       const label = `creditCardPayments[${i}]`;
       if (!isFiniteNumber(p?.amount) || p.amount <= 0) errors.push(`${label} : montant invalide (${p?.amount})`);
       if (!isNonEmptyString(p?.date) || !DATE_RE.test(p.date)) errors.push(`${label} : date invalide (${p?.date})`);
-      if (!VALID_OWNERS.includes(p?.owner)) errors.push(`${label} : profil invalide (${p?.owner})`);
+      if (!isNonEmptyString(p?.memberId ?? p?.owner)) errors.push(`${label} : membre invalide (${p?.memberId ?? p?.owner})`);
     });
   }
 
@@ -252,7 +257,49 @@ export class BudgetStore {
   // code). `null` = pas encore résolu OU compte sans foyer (voir
   // needsHouseholdSetup ci-dessous, qui pilote l'écran d'accueil dédié).
   readonly householdId = signal<string | null>(null);
+  /** Legacy display/owner value; memberId is preferred after migration 024. */
   readonly myOwnerLabel = signal<Owner | null>(null);
+  readonly myMemberId = signal<string | null>(null);
+  readonly members = signal<Member[]>([]);
+  private readonly memberSchema = signal(false);
+
+  readonly activeMembers = computed(() => {
+    const configured = this.members().filter((m) => m.active);
+    return configured.length
+      ? configured
+      : [
+          { id: 'moi', householdId: this.householdId() ?? '', displayName: 'Moi', color: 'var(--owner-moi)', role: 'owner' as const, active: true },
+          { id: 'madame', householdId: this.householdId() ?? '', displayName: 'Madame', color: 'var(--pink)', role: 'member' as const, active: true },
+        ];
+  });
+
+  readonly memberOptions = computed(() =>
+    this.activeMembers().map((m) => ({ id: m.id, name: m.displayName, color: m.color })),
+  );
+
+  memberName(id: string | null | undefined): string {
+    if (!id) return 'Membre';
+    return this.members().find((m) => m.id === id)?.displayName ??
+      ({ moi: 'Moi', madame: 'Madame' }[id] ?? id);
+  }
+
+  memberColor(id: string | null | undefined): string {
+    return this.members().find((m) => m.id === id)?.color ??
+      ({ moi: 'var(--owner-moi)', madame: 'var(--pink)' }[id ?? ''] ?? 'var(--accent)');
+  }
+
+  private memberIds(): string[] {
+    return this.activeMembers().map((m) => m.id);
+  }
+
+  private memberOf(value: { memberId?: string; owner?: string }): string {
+    return value.memberId ?? value.owner ?? '';
+  }
+
+  private useMemberSchema(): boolean {
+    return this.memberSchema() ||
+      this.members().some((member) => member.id !== 'moi' && member.id !== 'madame');
+  }
   // Vrai une fois qu'on sait avec certitude que le compte connecté n'a
   // ENCORE aucun foyer — distinct de householdId()===null pendant le court
   // instant où la résolution est en cours (évite un flash de l'écran
@@ -279,18 +326,31 @@ export class BudgetStore {
   // dans la migration SQL) et résout immédiatement householdId/myOwnerLabel
   // — pas besoin d'un second aller-retour réseau après.
   async createHousehold(ownerLabel: Owner, name = 'Mon foyer'): Promise<{ joinCode: string }> {
-    const { data, error } = await this.supabase.client.rpc('create_household', {
-      p_owner_label: ownerLabel,
-      p_name: name,
+    let { data, error } = await this.supabase.client.rpc('create_household', {
+      p_display_name: ownerLabel,
+      p_household_name: name,
     });
+    if (error) {
+      // Compatibility window: migration 024 changes both parameter names and
+      // the member model. Retry the legacy RPC before reporting the failure.
+      ({ data, error } = await this.supabase.client.rpc('create_household', {
+        p_owner_label: ownerLabel.toLowerCase() === 'madame' ? 'madame' : 'moi',
+        p_name: name,
+      }));
+    }
     if (error) throw error;
     // Une fonction Postgres RETURNS TABLE renvoie un tableau (même à une
     // seule ligne) tant qu'on n'appelle pas .single() — évité ici pour
     // rester compatible avec le faux client de test, qui ne simule pas le
     // chaînage .single() de PostgREST.
-    const row = (Array.isArray(data) ? data[0] : data) as { household_id: string; join_code: string };
+    const row = (Array.isArray(data) ? data[0] : data) as {
+      household_id: string;
+      join_code: string;
+      member_id?: string;
+    };
     this.householdId.set(row.household_id);
     this.myOwnerLabel.set(ownerLabel);
+    this.myMemberId.set(row.member_id ?? ownerLabel);
     this.needsHouseholdSetup.set(false);
     return { joinCode: row.join_code };
   }
@@ -298,13 +358,20 @@ export class BudgetStore {
   // Rejoint un foyer existant via son code (voir join_household() dans la
   // migration SQL).
   async joinHousehold(code: string, ownerLabel: Owner): Promise<void> {
-    const { data, error } = await this.supabase.client.rpc('join_household', {
+    let { data, error } = await this.supabase.client.rpc('join_household', {
       p_code: code,
-      p_owner_label: ownerLabel,
+      p_display_name: ownerLabel,
     });
+    if (error) {
+      ({ data, error } = await this.supabase.client.rpc('join_household', {
+        p_code: code,
+        p_owner_label: ownerLabel.toLowerCase() === 'madame' ? 'madame' : 'moi',
+      }));
+    }
     if (error) throw error;
     this.householdId.set(data as string);
     this.myOwnerLabel.set(ownerLabel);
+    this.myMemberId.set(ownerLabel);
     this.needsHouseholdSetup.set(false);
   }
 
@@ -322,7 +389,7 @@ export class BudgetStore {
     if (!userId) throw new Error('Session introuvable — reconnecte-toi.');
     const { data, error } = await this.supabase.client
       .from('household_members')
-      .select('household_id, owner_label')
+      .select('*')
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
@@ -331,7 +398,8 @@ export class BudgetStore {
       return;
     }
     this.householdId.set(data.household_id);
-    this.myOwnerLabel.set(data.owner_label as Owner);
+    this.myOwnerLabel.set((data.member_id ?? data.owner_label) as Owner);
+    this.myMemberId.set(data.member_id ?? data.owner_label);
     this.needsHouseholdSetup.set(false);
   }
 
@@ -341,6 +409,8 @@ export class BudgetStore {
   // Paiements faits pour rembourser la carte de crédit — volontairement
   // indépendant des provisions (voir CreditCardPayment dans budget.models.ts).
   readonly creditCardPayments = signal<CreditCardPayment[]>([]);
+  readonly accounts = signal<Account[]>([]);
+  readonly accountBalanceSnapshots = signal<AccountBalanceSnapshot[]>([]);
   readonly savingsGoals = signal<SavingsGoal[]>([]);
   readonly recurringExpenses = signal<RecurringExpense[]>([]);
   // Modèles de revenus récurrents ("paies") — voir RecurringIncome dans
@@ -430,11 +500,17 @@ export class BudgetStore {
   private clearAllState(): void {
     this.householdId.set(null);
     this.myOwnerLabel.set(null);
+    this.myMemberId.set(null);
+    this.members.set([]);
+    this.memberSchema.set(false);
+    this.activeOwner.set('moi');
     this.needsHouseholdSetup.set(false);
     this.expenses.set([]);
     this.incomes.set([]);
     this.provisions.set([]);
     this.creditCardPayments.set([]);
+    this.accounts.set([]);
+    this.accountBalanceSnapshots.set([]);
     this.savingsGoals.set([]);
     this.recurringExpenses.set([]);
     this.recurringIncomes.set([]);
@@ -466,6 +542,9 @@ export class BudgetStore {
       savingsContributionsRes,
       closedMonthsRes,
       creditCardPaymentsRes,
+      accountsRes,
+      accountSnapshotsRes,
+      membersRes,
     ] = await Promise.all([
       client.from('expenses').select('*').order('date'),
       client.from('incomes').select('*').order('date'),
@@ -481,6 +560,9 @@ export class BudgetStore {
       client.from('savings_goal_contributions').select('*'),
       client.from('closed_months').select('*'),
       client.from('credit_card_payments').select('*').order('date'),
+      client.from('accounts').select('*').order('name'),
+      client.from('account_balance_snapshots').select('*').order('date'),
+      client.from('members').select('*').order('display_name'),
     ]);
 
     const failedTables = (
@@ -499,6 +581,8 @@ export class BudgetStore {
         ['savings_goal_contributions', savingsContributionsRes],
         ['closed_months', closedMonthsRes],
         ['credit_card_payments', creditCardPaymentsRes],
+        ['accounts', accountsRes],
+        ['account_balance_snapshots', accountSnapshotsRes],
       ] as const
     )
       .filter(([, res]) => res.error)
@@ -513,6 +597,37 @@ export class BudgetStore {
     }
     this.loadError.set(failedTables.length ? failedTables : []);
 
+    // Migration 024 is deliberately optional during rollout. A missing
+    // members table (or an empty fake/legacy schema) keeps the old owner
+    // contract active; a populated members table switches all writes to
+    // member_id.
+    const hasMemberSchema = !membersRes.error && (membersRes.data ?? []).length > 0;
+    this.memberSchema.set(hasMemberSchema);
+    if (hasMemberSchema) {
+      this.members.set((membersRes.data ?? []).map((row: any) => ({
+        id: row.id,
+        householdId: row.household_id,
+        displayName: row.display_name,
+        color: row.color,
+        role: row.role,
+        active: row.active,
+      })));
+      const preferred =
+        this.members().find((m) => m.id === this.myMemberId() || m.displayName === this.myOwnerLabel())?.id ??
+        this.members().find((m) => m.active)?.id;
+      if (preferred) this.activeOwner.set(preferred);
+    } else {
+      const legacyMembers = ['moi', 'madame'].map((id) => ({
+          id,
+          householdId: this.householdId() ?? '',
+          displayName: id === 'moi' ? 'Moi' : 'Madame',
+          color: id === 'moi' ? 'var(--owner-moi)' : 'var(--pink)',
+          role: id === 'moi' ? 'owner' as const : 'member' as const,
+          active: true,
+        }));
+      this.members.set(legacyMembers);
+    }
+
     // Chaque table n'est mise à jour que si sa requête a réussi — en cas
     // d'erreur, on garde l'ancienne valeur du signal plutôt que de la
     // remplacer par une liste vide qui ferait croire à des données
@@ -525,7 +640,7 @@ export class BudgetStore {
       this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
       this.categoryBudgetUpdatedAt = new Map(
         (categoryBudgetsRes.data ?? []).map((row: any) => [
-          this.cbKey(row.owner, row.ym, row.category),
+          this.cbKey(row.member_id ?? row.owner, row.ym, row.category),
           row.updated_at,
         ]),
       );
@@ -564,6 +679,10 @@ export class BudgetStore {
     if (!creditCardPaymentsRes.error) {
       this.creditCardPayments.set((creditCardPaymentsRes.data ?? []).map(rowToCreditCardPayment));
     }
+    if (!accountsRes.error) this.accounts.set((accountsRes.data ?? []).map(rowToAccount));
+    if (!accountSnapshotsRes.error) {
+      this.accountBalanceSnapshots.set((accountSnapshotsRes.data ?? []).map(rowToAccountBalanceSnapshot));
+    }
     this.loading.set(false);
 
     // Génère les paies manquantes (aujourd'hui ou avant) pour tous les
@@ -581,7 +700,7 @@ export class BudgetStore {
   // (même logique que le budget global = somme des deux profils).
   rolloverFor(owner: OwnerOrGlobal, ym: string): number {
     if (owner === 'global') {
-      return this.rolloverFor('moi', ym) + this.rolloverFor('madame', ym);
+      return this.memberIds().reduce((sum, memberId) => sum + this.rolloverFor(memberId, ym), 0);
     }
     return this.rollovers()[owner]?.[ym] ?? 0;
   }
@@ -667,23 +786,23 @@ export class BudgetStore {
     });
   }
 
-  // Versements reçus de l'autre profil (un versement envoyé par l'autre
-  // augmente le budget de celle qui le reçoit). 0 au niveau Global : ce
-  // n'est qu'un transfert interne qui s'annule.
-  versementsRecus(owner: OwnerOrGlobal, ym: string | null): number {
+  private recipientForLegacySender(sender: string): string | null {
+    return this.memberIds().find((id) => id !== sender) ?? null;
+  }
+
+  // A transfer is attributed to its explicit destination after migration
+  // 024. The fallback preserves historical rows and pre-024 servers.
+  versementsRecus(memberId: OwnerOrGlobal, ym: string | null): number {
     const inMonth = (e: Expense) =>
       e.category === 'Versement' && (!ym || e.date.startsWith(ym));
-    if (owner === 'moi') {
-      return this.expenses()
-        .filter((e) => inMonth(e) && e.owner === 'madame')
-        .reduce((s, e) => s + e.amount, 0);
-    }
-    if (owner === 'madame') {
-      return this.expenses()
-        .filter((e) => inMonth(e) && e.owner === 'moi')
-        .reduce((s, e) => s + e.amount, 0);
-    }
-    return 0;
+    if (memberId === 'global') return 0;
+    return this.expenses()
+      .filter((e) => {
+        if (!inMonth(e)) return false;
+        const recipient = e.versementToMemberId ?? this.recipientForLegacySender(this.memberOf(e));
+        return recipient === memberId;
+      })
+      .reduce((s, e) => s + e.amount, 0);
   }
 
   // Barre résumé toujours visible : revenus + versements reçus + report,
@@ -707,7 +826,7 @@ export class BudgetStore {
     this.incomes().forEach((i) => {
       if (owner !== 'global' && i.owner !== owner) return;
       if (!incomeAppliesToMonth(i, ym)) return;
-      const badge = i.owner === 'moi' ? 'Moi' : 'Mme';
+      const badge = this.memberName(this.memberOf(i));
       const label = i.recurring
         ? `${i.type} • ${badge}`
         : `${i.type} • ${fmtDate(i.date)} • ${badge}`;
@@ -720,19 +839,17 @@ export class BudgetStore {
     });
 
     if (owner !== 'global') {
-      const sender: Owner = owner === 'moi' ? 'madame' : 'moi';
-      const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
       this.expenses()
         .filter(
           (e) =>
             e.category === 'Versement' &&
-            e.owner === sender &&
+            (e.versementToMemberId ?? this.recipientForLegacySender(this.memberOf(e))) === owner &&
             e.date.startsWith(ym),
         )
         .forEach((e) => {
           entries.push({
             key: `versement-${e.id}`,
-            label: `↔ Versement reçu de ${senderLabel} • ${fmtDate(e.date)}`,
+            label: `↔ Versement reçu de ${this.memberName(this.memberOf(e))} • ${fmtDate(e.date)}`,
             date: e.date,
             amount: e.amount,
             isVersement: true,
@@ -881,7 +998,7 @@ export class BudgetStore {
     const provisions = this.provisions();
     const expenses = this.expenses();
     const incomes = this.incomes();
-    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const owners: Owner[] = owner === 'global' ? this.memberIds() : [owner];
     const todayYm = ymOf(new Date());
 
     const relevantProvisions =
@@ -1321,7 +1438,7 @@ export class BudgetStore {
   readonly categoryBudgetRows = computed(() => {
     const owner = this.activeOwner();
     const ym = this.current();
-    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const owners: Owner[] = owner === 'global' ? this.memberIds() : [owner];
 
     const spentByCategory: Record<string, number> = {};
     this.countedExpensesList().forEach((e) => {
@@ -1391,7 +1508,7 @@ export class BudgetStore {
         .from('category_budgets')
         .update({ amount })
         .eq('household_id', this.hid())
-        .eq('owner', owner)
+        .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
         .eq('ym', ym)
         .eq('category', category)
         .eq('updated_at', localUpdatedAt)
@@ -1404,7 +1521,13 @@ export class BudgetStore {
       // simple répétition d'une action déjà faite par nous.
       ({ data, error } = await client
         .from('category_budgets')
-        .insert({ household_id: this.hid(), owner, ym, category, amount })
+        .insert({
+          household_id: this.hid(),
+          ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+          ym,
+          category,
+          amount,
+        })
         .select('updated_at')
         .maybeSingle());
     }
@@ -1429,8 +1552,8 @@ export class BudgetStore {
 
     this.categoryBudgetUpdatedAt.set(key, data.updated_at);
     this.categoryBudgets.update((map) => {
-      const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
-      copy[owner] = { ...copy[owner], [ym]: { ...copy[owner][ym], [category]: amount } };
+      const copy: CategoryBudgetMap = { ...map, [owner]: { ...(map[owner] ?? {}) } };
+      copy[owner] = { ...copy[owner], [ym]: { ...(copy[owner][ym] ?? {}), [category]: amount } };
       return copy;
     });
   }
@@ -1443,7 +1566,7 @@ export class BudgetStore {
       .from('category_budgets')
       .delete()
       .eq('household_id', this.hid())
-      .eq('owner', owner)
+      .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
       .eq('ym', ym)
       .eq('category', category);
     // Compare-and-swap : si on connaît le `updated_at` de la dernière
@@ -1461,8 +1584,8 @@ export class BudgetStore {
     }
     this.categoryBudgetUpdatedAt.delete(key);
     this.categoryBudgets.update((map) => {
-      const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
-      if (copy[owner][ym]) {
+      const copy: CategoryBudgetMap = { ...map, [owner]: { ...(map[owner] ?? {}) } };
+      if (copy[owner]?.[ym]) {
         const catMap = { ...copy[owner][ym] };
         delete catMap[category];
         copy[owner] = { ...copy[owner], [ym]: catMap };
@@ -1485,7 +1608,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('expenses')
-      .insert({ household_id: this.hid(), ...expenseToRow(expense) })
+      .insert({ household_id: this.hid(), ...expenseToRow(expense, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -1564,7 +1687,16 @@ export class BudgetStore {
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
     if (changes.date !== undefined) row['date'] = changes.date;
-    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (this.useMemberSchema()) {
+      if (changes.memberId !== undefined || changes.owner !== undefined) {
+        row['member_id'] = changes.memberId ?? changes.owner;
+      }
+      if (changes.versementToMemberId !== undefined) {
+        row['versement_to_member_id'] = changes.versementToMemberId;
+      }
+    } else if (changes.owner !== undefined) {
+      row['owner'] = changes.owner;
+    }
     if (changes.cc !== undefined) row['cc'] = changes.cc;
     if (changes.recurringSourceId !== undefined) {
       row['recurring_source_id'] = changes.recurringSourceId;
@@ -1589,7 +1721,7 @@ export class BudgetStore {
       // modifiée sans son recalage de provision.
       const { error: rollbackError } = await this.supabase.client
         .from('expenses')
-        .update(expenseToRow(existing))
+        .update(expenseToRow(existing, this.useMemberSchema()))
         .eq('id', id);
       this.expenses.update((list) => list.map((e) => (e.id === id ? existing : e)));
       if (rollbackError) {
@@ -1662,7 +1794,7 @@ export class BudgetStore {
   async addRecurringExpense(r: Omit<RecurringExpense, 'id'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('recurring_expenses')
-      .insert({ household_id: this.hid(), ...recurringExpenseToRow(r) })
+      .insert({ household_id: this.hid(), ...recurringExpenseToRow(r, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -1947,7 +2079,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('provisions')
-      .insert({ household_id: this.hid(), ...provisionToRow(provision) })
+      .insert({ household_id: this.hid(), ...provisionToRow(provision, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -2002,7 +2134,7 @@ export class BudgetStore {
   async addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'contributions'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('savings_goals')
-      .insert({ household_id: this.hid(), ...savingsGoalToRow(goal) })
+      .insert({ household_id: this.hid(), ...savingsGoalToRow(goal, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -2183,14 +2315,17 @@ export class BudgetStore {
   readonly unsplitVersements = computed(() => {
     const receiver = this.activeOwner();
     if (receiver === 'global') return [];
-    const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
     const linkedIds = new Set(
       this.provisions().flatMap((p) =>
         p.adjustments.map((a) => a.versementExpenseId).filter((id): id is string => !!id),
       ),
     );
     return this.expenses()
-      .filter((e) => e.category === 'Versement' && e.owner === sender && !linkedIds.has(e.id))
+      .filter((e) =>
+        e.category === 'Versement' &&
+        (e.versementToMemberId ?? this.recipientForLegacySender(this.memberOf(e))) === receiver &&
+        !linkedIds.has(e.id),
+      )
       .sort((a, b) => b.date.localeCompare(a.date));
   });
 
@@ -2213,14 +2348,39 @@ export class BudgetStore {
   ): Promise<void> {
     const receiver = this.activeOwner();
     if (receiver === 'global') {
-      throw new Error('Choisis le profil Moi ou Madame avant de répartir un versement.');
+      throw new Error('Choisis le membre destinataire avant de répartir un versement.');
     }
-    const sender: Owner = receiver === 'moi' ? 'madame' : 'moi';
-    const senderLabel = sender === 'moi' ? 'Moi' : 'Madame';
+    const sender = this.expenses().find((e) =>
+      e.id === existingExpenseId &&
+      e.category === 'Versement' &&
+      (e.versementToMemberId ?? this.recipientForLegacySender(this.memberOf(e))) === receiver,
+    )?.owner ?? this.memberIds().find((id) => id !== receiver);
+    if (!sender) throw new Error('Aucun membre émetteur disponible pour ce versement.');
+    const senderLabel = this.memberName(sender);
     this.assertMonthOpen(date.slice(0, 7));
     // Défense en profondeur (audit BUG-013) : voir setCategoryBudget().
     if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
       throw new Error(`Montant de versement invalide : ${totalAmount}. Doit être un nombre > 0.`);
+    }
+
+    // The 024 RPC keeps a historical two-member default when it creates a
+    // versement itself. For a new dynamic-member versement, create the
+    // explicitly addressed expense first, then ask the RPC to attach the
+    // provision adjustments to it.
+    let rpcExpenseId = existingExpenseId;
+    let createdExpenseId: string | null = null;
+    if (this.useMemberSchema() && !rpcExpenseId) {
+      const created = await this.addExpense({
+        amount: totalAmount,
+        category: 'Versement',
+        date,
+        owner: sender,
+        memberId: sender,
+        versementToMemberId: receiver,
+        cc: false,
+      });
+      rpcExpenseId = created.id;
+      createdExpenseId = created.id;
     }
 
     // Transactionnel côté serveur (plan d'action #7, migration-021) :
@@ -2229,11 +2389,23 @@ export class BudgetStore {
     // écrit, soit rien ne l'est. Remplace l'ancienne approche (inserts
     // indépendants + rollback applicatif "de compensation" qui pouvait
     // lui-même échouer, voir BUG-010).
-    const { error } = await this.supabase.client.rpc('split_versement_into_provisions', {
+    const { error } = await this.supabase.client.rpc('split_versement_into_provisions', this.useMemberSchema() ? {
+      p_sender_member_id: sender,
+      p_total_amount: totalAmount,
+      p_date: date,
+      p_existing_expense_id: rpcExpenseId ?? null,
+      p_allocations: allocations
+        .filter((a) => a.amount > 0)
+        .map((a) => ({
+          provision_id: a.provisionId,
+          amount: a.amount,
+          note: `Versement de ${senderLabel}`,
+        })),
+    } : {
       p_sender: sender,
       p_total_amount: totalAmount,
       p_date: date,
-      p_existing_expense_id: existingExpenseId ?? null,
+      p_existing_expense_id: rpcExpenseId ?? null,
       p_allocations: allocations
         .filter((a) => a.amount > 0)
         .map((a) => ({
@@ -2243,6 +2415,9 @@ export class BudgetStore {
         })),
     });
     if (error) {
+      if (createdExpenseId) {
+        await this.removeExpense(createdExpenseId).catch(() => undefined);
+      }
       throw new Error(`Échec de la répartition du versement : ${error.message}. Rien n'a été modifié, tu peux réessayer.`);
     }
 
@@ -2385,7 +2560,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('incomes')
-      .insert({ household_id: this.hid(), ...incomeToRow(income) })
+      .insert({ household_id: this.hid(), ...incomeToRow(income, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -2455,7 +2630,7 @@ export class BudgetStore {
   async addRecurringIncome(r: Omit<RecurringIncome, 'id'>): Promise<RecurringIncome> {
     const { data, error } = await this.supabase.client
       .from('recurring_incomes')
-      .insert({ household_id: this.hid(), ...recurringIncomeToRow(r) })
+      .insert({ household_id: this.hid(), ...recurringIncomeToRow(r, this.useMemberSchema()) })
       .select()
       .single();
     if (error) throw error;
@@ -2669,7 +2844,7 @@ export class BudgetStore {
     // Budgets par catégorie — mois ouverts uniquement. Upsert la nouvelle
     // clé AVANT de retirer l'ancienne, pour ne jamais perdre le montant si
     // une des deux requêtes échoue en cours de route.
-    for (const owner of ['moi', 'madame'] as Owner[]) {
+    for (const owner of this.memberIds()) {
       const budgetsForOwner = this.categoryBudgets()[owner];
       const yms = Object.keys(budgetsForOwner).filter(
         (ym) => !this.isMonthClosed(ym) && budgetsForOwner[ym]?.[oldName] !== undefined,
@@ -2679,8 +2854,18 @@ export class BudgetStore {
         const { data: upData, error: upErr } = await this.supabase.client
           .from('category_budgets')
           .upsert(
-            { household_id: this.hid(), owner, ym, category: trimmed, amount },
-            { onConflict: 'household_id,owner,ym,category' },
+            {
+              household_id: this.hid(),
+              ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+              ym,
+              category: trimmed,
+              amount,
+            },
+            {
+              onConflict: this.useMemberSchema()
+                ? 'household_id,member_id,ym,category'
+                : 'household_id,owner,ym,category',
+            },
           )
           .select('updated_at')
           .single();
@@ -2688,7 +2873,7 @@ export class BudgetStore {
         const { error: delErr } = await this.supabase.client
           .from('category_budgets')
           .delete()
-          .eq('owner', owner)
+          .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
           .eq('ym', ym)
           .eq('category', oldName);
         if (delErr) throw delErr;
@@ -2699,8 +2884,8 @@ export class BudgetStore {
         this.categoryBudgetUpdatedAt.set(this.cbKey(owner, ym, trimmed), upData.updated_at);
         this.categoryBudgetUpdatedAt.delete(this.cbKey(owner, ym, oldName));
         this.categoryBudgets.update((map) => {
-          const copy: CategoryBudgetMap = { moi: { ...map.moi }, madame: { ...map.madame } };
-          const catMap = { ...copy[owner][ym] };
+          const copy: CategoryBudgetMap = { ...map, [owner]: { ...(map[owner] ?? {}) } };
+          const catMap = { ...(copy[owner]?.[ym] ?? {}) };
           delete catMap[oldName];
           catMap[trimmed] = amount;
           copy[owner] = { ...copy[owner], [ym]: catMap };
@@ -2746,8 +2931,9 @@ export class BudgetStore {
       this.expenses().some((e) => e.category === cat.name) ||
       this.provisions().some((p) => p.category === cat.name) ||
       this.recurringExpenses().some((r) => r.category === cat.name) ||
-      Object.values(this.categoryBudgets().moi).some((m) => cat.name in m) ||
-      Object.values(this.categoryBudgets().madame).some((m) => cat.name in m);
+      Object.values(this.categoryBudgets()).some((memberMap) =>
+        Object.values(memberMap).some((m) => cat.name in m),
+      );
     if (inUse) {
       throw new Error(
         `"${cat.name}" est encore utilisée quelque part — impossible de la supprimer ` +
@@ -2764,13 +2950,13 @@ export class BudgetStore {
   // Global affiché n'est que leur somme, jamais stocké séparément).
   async removeRollover(owner: OwnerOrGlobal, ym: string): Promise<void> {
     this.assertMonthOpen(ym);
-    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const owners: Owner[] = owner === 'global' ? this.memberIds() : [owner];
     const results = await Promise.all(
       owners.map((o) =>
         this.supabase.client
           .from('rollovers')
           .delete()
-          .eq('owner', o)
+          .eq(this.useMemberSchema() ? 'member_id' : 'owner', o)
           .eq('ym', ym),
       ),
     );
@@ -2784,11 +2970,11 @@ export class BudgetStore {
     const failed = results.filter((r) => r.error);
 
     this.rollovers.update((map) => {
-      const copy: MonthlyAmountMap = {
-        moi: { ...map.moi },
-        madame: { ...map.madame },
-      };
-      succeededOwners.forEach((o) => delete copy[o][ym]);
+      const copy: MonthlyAmountMap = { ...map };
+      succeededOwners.forEach((o) => {
+        copy[o] = { ...(copy[o] ?? {}) };
+        delete copy[o][ym];
+      });
       return copy;
     });
 
@@ -2805,7 +2991,19 @@ export class BudgetStore {
     this.assertMonthOpen(ym);
     const { error } = await this.supabase.client
       .from('rollovers')
-      .upsert({ household_id: this.hid(), owner, ym, amount }, { onConflict: 'household_id,owner,ym' });
+      .upsert(
+        {
+          household_id: this.hid(),
+          ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+          ym,
+          amount,
+        },
+        {
+          onConflict: this.useMemberSchema()
+            ? 'household_id,member_id,ym'
+            : 'household_id,owner,ym',
+        },
+      );
     if (error) throw error;
     this.rollovers.update((map) => ({
       ...map,
@@ -2978,6 +3176,14 @@ export class BudgetStore {
     await this.loadAll();
   }
 
+  private importMemberId(value: string | undefined): string {
+    if (!this.useMemberSchema()) return value ?? 'moi';
+    const configured = this.memberIds();
+    if (value && configured.includes(value)) return value;
+    if (value === 'madame') return configured.find((id) => id !== configured[0]) ?? configured[0];
+    return configured[0] ?? value ?? '';
+  }
+
   // Construit les tableaux jsonb attendus par la RPC import_household_data()
   // à partir du fichier importé : mapping TS -> colonnes SQL (mappers
   // dédiés), génération de vrais UUID pour les identifiants courts de
@@ -2996,7 +3202,11 @@ export class BudgetStore {
     const provisionRows = (data.provisions as Provision[]).map((p) => {
       const newId = idFor(p.id);
       provisionIdMap.set(String(p.id), newId);
-      return { id: newId, household_id: hid, ...provisionToRow(p) };
+      return {
+        id: newId,
+        household_id: hid,
+        ...provisionToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }, this.useMemberSchema()),
+      };
     });
     const provisionAdjustmentRows = (data.provisions as Provision[]).flatMap((p) =>
       (p.adjustments || []).map((a) => ({
@@ -3016,7 +3226,11 @@ export class BudgetStore {
     const savingsGoalRows = savingsGoals.map((g) => {
       const newId = idFor(g.id);
       goalIdMap.set(String(g.id), newId);
-      return { id: newId, household_id: hid, ...savingsGoalToRow(g) };
+      return {
+        id: newId,
+        household_id: hid,
+        ...savingsGoalToRow({ ...g, memberId: this.importMemberId(g.memberId ?? g.owner) }, this.useMemberSchema()),
+      };
     });
     const savingsGoalContributionRows = savingsGoals.flatMap((g) =>
       (g.contributions || []).map((c) => ({
@@ -3034,11 +3248,19 @@ export class BudgetStore {
     // l'import d'un fichier plus ancien qui ne les contient pas.
     const recurringExpenseRows = (
       Array.isArray(data.recurringExpenses) ? (data.recurringExpenses as RecurringExpense[]) : []
-    ).map((r) => ({ id: idFor(r.id), household_id: hid, ...recurringExpenseToRow(r) }));
+    ).map((r) => ({
+      id: idFor(r.id),
+      household_id: hid,
+      ...recurringExpenseToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }, this.useMemberSchema()),
+    }));
 
     const recurringIncomeRows = (
       Array.isArray(data.recurringIncomes) ? (data.recurringIncomes as RecurringIncome[]) : []
-    ).map((r) => ({ id: idFor(r.id), household_id: hid, ...recurringIncomeToRow(r) }));
+    ).map((r) => ({
+      id: idFor(r.id),
+      household_id: hid,
+      ...recurringIncomeToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }, this.useMemberSchema()),
+    }));
 
     // Optionnel : absent des sauvegardes exportées avant l'ajout des
     // catégories dynamiques (migration-016). Un compte a déjà les
@@ -3056,37 +3278,57 @@ export class BudgetStore {
     // de carte de crédit (migration-012).
     const creditCardPaymentRows = (
       Array.isArray(data.creditCardPayments) ? (data.creditCardPayments as CreditCardPayment[]) : []
-    ).map((p) => ({ id: idFor(p.id), household_id: hid, ...creditCardPaymentToRow(p) }));
+    ).map((p) => ({
+      id: idFor(p.id),
+      household_id: hid,
+      ...creditCardPaymentToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }, this.useMemberSchema()),
+    }));
 
     const expenseRows = (data.expenses as Expense[]).map((e) => ({
       id: idFor(e.id),
       household_id: hid,
-      ...expenseToRow(e),
+      ...expenseToRow({ ...e, memberId: this.importMemberId(e.memberId ?? e.owner) }, this.useMemberSchema()),
     }));
     const incomeRows = (data.incomes as Income[]).map((i) => ({
       id: idFor(i.id),
       household_id: hid,
-      ...incomeToRow(i),
+      ...incomeToRow({ ...i, memberId: this.importMemberId(i.memberId ?? i.owner) }, this.useMemberSchema()),
     }));
 
-    const ownersList: Owner[] = ['moi', 'madame'];
+    const ownersList: Owner[] = this.memberIds();
     const budgetRows: any[] = [];
     ownersList.forEach((o) => {
       Object.entries(data.budgets?.[o] || {}).forEach(([ym, amount]) => {
-        budgetRows.push({ household_id: hid, owner: o, ym, amount });
+        budgetRows.push({
+          household_id: hid,
+          ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+          ym,
+          amount,
+        });
       });
     });
     const rolloverRows: any[] = [];
     ownersList.forEach((o) => {
       Object.entries(data.rollovers?.[o] || {}).forEach(([ym, amount]) => {
-        rolloverRows.push({ household_id: hid, owner: o, ym, amount });
+        rolloverRows.push({
+          household_id: hid,
+          ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+          ym,
+          amount,
+        });
       });
     });
     const categoryBudgetRows: any[] = [];
     ownersList.forEach((o) => {
       Object.entries(data.categoryBudgets?.[o] || {}).forEach(([ym, catMap]: [string, any]) => {
         Object.entries(catMap || {}).forEach(([category, amount]) => {
-          categoryBudgetRows.push({ household_id: hid, owner: o, ym, category, amount });
+          categoryBudgetRows.push({
+            household_id: hid,
+            ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+            ym,
+            category,
+            amount,
+          });
         });
       });
     });
@@ -3123,7 +3365,7 @@ export class BudgetStore {
   // "Remboursement Carte Crédit" pour ne pas mélanger l'historique de
   // l'ancien système avec le nouveau solde.
   creditCardBalance(owner: OwnerOrGlobal): number {
-    const owners: Owner[] = owner === 'global' ? ['moi', 'madame'] : [owner];
+    const owners: Owner[] = owner === 'global' ? this.memberIds() : [owner];
     const charged = this.expenses()
       .filter(
         (e) =>
@@ -3151,7 +3393,10 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('credit_card_payments')
-      .insert({ household_id: this.hid(), ...creditCardPaymentToRow({ owner, amount, date, note }) })
+      .insert({
+        household_id: this.hid(),
+        ...creditCardPaymentToRow({ owner, amount, date, note }, this.useMemberSchema()),
+      })
       .select()
       .single();
     if (error) throw error;
@@ -3167,6 +3412,56 @@ export class BudgetStore {
       .eq('id', id);
     if (error) throw error;
     this.creditCardPayments.update((list) => list.filter((p) => p.id !== id));
+  }
+
+  async addAccount(
+    account: Omit<Account, 'id'>,
+  ): Promise<Account> {
+    if (!account.name.trim()) throw new Error('Le nom du compte est obligatoire.');
+    const { data, error } = await this.supabase.client
+      .from('accounts')
+      .insert({ household_id: this.hid(), ...accountToRow(account) })
+      .select()
+      .single();
+    if (error) throw error;
+    const created = rowToAccount(data);
+    this.accounts.update((list) => [...list, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  }
+
+  async archiveAccount(id: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('accounts')
+      .update({ archived: true })
+      .eq('id', id);
+    if (error) throw error;
+    this.accounts.update((list) => list.map((account) =>
+      account.id === id ? { ...account, archived: true } : account,
+    ));
+  }
+
+  async addAccountBalanceSnapshot(
+    accountId: string,
+    balance: number,
+    date: string,
+    note: string | null,
+  ): Promise<AccountBalanceSnapshot> {
+    if (!Number.isFinite(balance)) throw new Error('Solde invalide.');
+    const { data, error } = await this.supabase.client
+      .from('account_balance_snapshots')
+      .upsert(
+        { household_id: this.hid(), account_id: accountId, balance, date, note },
+        { onConflict: 'account_id,date' },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    const snapshot = rowToAccountBalanceSnapshot(data);
+    this.accountBalanceSnapshots.update((list) => [
+      ...list.filter((item) => !(item.accountId === accountId && item.date === date)),
+      snapshot,
+    ]);
+    return snapshot;
   }
 
   // Sauvegarde complète en .json (téléchargement local), pour archive

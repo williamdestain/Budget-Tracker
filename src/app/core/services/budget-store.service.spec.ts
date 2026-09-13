@@ -126,6 +126,67 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.loadAll();
       expect(store.loadError()).toEqual([]);
     });
+
+    it('active le schéma Member quand la table members est peuplée', async () => {
+      fakeClient.seed('members', [
+        {
+          id: 'member-alex',
+          household_id: TEST_HOUSEHOLD_ID,
+          display_name: 'Alex',
+          color: '#2563eb',
+          role: 'owner',
+          active: true,
+        },
+        {
+          id: 'member-sam',
+          household_id: TEST_HOUSEHOLD_ID,
+          display_name: 'Sam',
+          color: '#db2777',
+          role: 'member',
+          active: true,
+        },
+      ]);
+
+      await store.loadAll();
+
+      expect(store.members().map((member) => member.id)).toEqual(['member-alex', 'member-sam']);
+      expect(store.memberOptions()).toEqual([
+        { id: 'member-alex', name: 'Alex', color: '#2563eb' },
+        { id: 'member-sam', name: 'Sam', color: '#db2777' },
+      ]);
+      expect(store.activeMembers().map((member) => member.id)).toEqual([
+        'member-alex',
+        'member-sam',
+      ]);
+    });
+
+    it('écrit member_id, jamais owner, lorsque le schéma Member est actif', async () => {
+      fakeClient.seed('members', [
+        {
+          id: 'member-alex',
+          household_id: TEST_HOUSEHOLD_ID,
+          display_name: 'Alex',
+          color: '#2563eb',
+          role: 'owner',
+          active: true,
+        },
+      ]);
+      await store.loadAll();
+
+      const created = await store.addExpense({
+        amount: 42,
+        category: 'Courses',
+        date: '2026-07-15',
+        owner: 'member-alex',
+        memberId: 'member-alex',
+        cc: false,
+      });
+
+      expect(fakeClient.tables['expenses'][0]).toMatchObject({ member_id: 'member-alex' });
+      expect(fakeClient.tables['expenses'][0]).not.toHaveProperty('owner');
+      expect(created.memberId).toBe('member-alex');
+      expect(created.owner).toBe('member-alex');
+    });
   });
 
   // Audit BUG-013 : les formulaires empêchent les montants négatifs, mais

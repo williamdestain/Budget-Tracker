@@ -24,6 +24,19 @@
       </select>
     </div>
 
+    @if (category === 'Versement') {
+      <div class="field">
+        <label for="exp-versement-recipient">Destinataire</label>
+        <select id="exp-versement-recipient" name="versementToMemberId" [(ngModel)]="versementToMemberId">
+          @for (member of store.memberOptions(); track member.id) {
+            @if (member.id !== owner) {
+              <option [value]="member.id">{{ member.name }}</option>
+            }
+          }
+        </select>
+      </div>
+    }
+
     <div class="field">
       <label for="exp-date">Date</label>
       <input id="exp-date" type="date" name="date" [(ngModel)]="date" required />
@@ -32,8 +45,9 @@
     <div class="field">
       <label for="exp-owner">Profil</label>
       <select id="exp-owner" name="owner" [(ngModel)]="owner">
-        <option value="moi">Moi</option>
-        <option value="madame">Madame</option>
+        @for (member of store.memberOptions(); track member.id) {
+          <option [value]="member.id">{{ member.name }}</option>
+        }
       </select>
     </div>
 

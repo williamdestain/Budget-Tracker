@@ -2,8 +2,22 @@
 // application (fichier unique HTML/localStorage), pour une migration 1:1
 // sans perte ni changement de comportement.
 
-export type Owner = 'moi' | 'madame';
+/**
+ * Legacy name kept for import/export compatibility.  Values are now member
+ * ids (the historical `moi`/`madame` values are accepted while migration 024
+ * has not been run).
+ */
+export type Owner = string;
 export type OwnerOrGlobal = Owner | 'global';
+
+export interface Member {
+  id: string;
+  householdId: string;
+  displayName: string;
+  color: string;
+  role: 'owner' | 'member';
+  active: boolean;
+}
 
 export type RecurringInterval =
   | 'once'
@@ -17,7 +31,10 @@ export interface Expense {
   amount: number;
   category: string;
   date: string; // "YYYY-MM-DD"
+  /** @deprecated use memberId; retained for old exports and pre-024 servers. */
   owner: Owner;
+  memberId?: string;
+  versementToMemberId?: string | null;
   cc: boolean; // chargé à la carte de crédit
   recurringSourceId?: string | null; // dépense récurrente confirmée à l'origine de cette ligne
 }
@@ -38,6 +55,7 @@ export interface RecurringExpense {
   amount: number;
   category: string;
   owner: Owner;
+  memberId?: string;
   interval: RecurringExpenseInterval;
   dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
   secondDayOfMonth?: number | null; // 1-31 — utilisé seulement si interval 'semimonthly'
@@ -52,6 +70,7 @@ export interface Income {
   type: string;
   date: string; // "YYYY-MM-DD"
   owner: Owner;
+  memberId?: string;
   note: string;
   // Conservés pour affichage/rétrocompatibilité (badge de fréquence dans
   // la liste) — la logique de calcul ne s'appuie plus dessus, voir
@@ -95,6 +114,7 @@ export interface RecurringIncome {
   amount: number; // montant d'UNE occurrence (pas une moyenne)
   type: string;
   owner: Owner;
+  memberId?: string;
   note: string;
   interval: IncomeRecurringInterval;
   dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
@@ -126,6 +146,7 @@ export interface Provision {
   startDate: string; // "YYYY-MM-DD" — utilisé si intervalUnit === "days"
   category: string;
   owner: Owner;
+  memberId?: string;
   autoRecalibrate: boolean;
   // Part (%) de cette provision utilisée pour préremplir sa portion dans
   // l'outil "Répartir un versement" (0 = pas de préremplissage automatique).
@@ -150,16 +171,42 @@ export interface Provision {
 export interface CreditCardPayment {
   id: string;
   owner: Owner;
+  memberId?: string;
   amount: number;
   date: string; // "YYYY-MM-DD"
   note: string;
 }
 
+export type AccountType = 'bank' | 'credit' | 'investment' | 'other';
+
+export interface Account {
+  id: string;
+  memberId: string | null;
+  name: string;
+  institution: string | null;
+  type: AccountType;
+  archived: boolean;
+}
+
+export interface AccountBalanceSnapshot {
+  id: string;
+  accountId: string;
+  date: string;
+  balance: number;
+  note: string | null;
+}
+
 // { owner: { "YYYY-MM": montant } }
-export type MonthlyAmountMap = Record<Owner, Record<string, number>>;
+export type MonthlyAmountMap = {
+  moi: Record<string, number>;
+  madame: Record<string, number>;
+} & Record<string, Record<string, number>>;
 
 // { owner: { "YYYY-MM": { catégorie: montant } } }
-export type CategoryBudgetMap = Record<Owner, Record<string, Record<string, number>>>;
+export type CategoryBudgetMap = {
+  moi: Record<string, Record<string, number>>;
+  madame: Record<string, Record<string, number>>;
+} & Record<string, Record<string, Record<string, number>>>;
 
 export interface SavingsContribution {
   id: string;
@@ -178,6 +225,7 @@ export interface SavingsGoal {
   targetAmount: number;
   targetDate: string | null; // "YYYY-MM-DD", optionnelle
   owner: Owner;
+  memberId?: string;
   contributions: SavingsContribution[];
 }
 

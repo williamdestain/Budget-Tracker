@@ -1,6 +1,5 @@
 import { Component, computed } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { OWNERS } from '../../../core/utils/categories';
 import { fmt } from '../../../core/utils/currency.utils';
 import { monthLabel } from '../../../core/utils/date.utils';
 
@@ -14,7 +13,9 @@ export class BudgetProgress {
   constructor(public store: BudgetStore) {}
 
   get title(): string {
-    return 'Budget — ' + monthLabel(this.store.current()) + ' — ' + OWNERS[this.store.activeOwner()];
+    const active = this.store.activeOwner();
+    return 'Budget — ' + monthLabel(this.store.current()) + ' — ' +
+      (active === 'global' ? 'Global (foyer)' : this.store.memberName(active));
   }
 
   fmt(n: number): string {

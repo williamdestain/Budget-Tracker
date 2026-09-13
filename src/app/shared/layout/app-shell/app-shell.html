@@ -46,7 +46,7 @@
           </button>
         </div>
         <app-member-switch
-          [members]="members"
+          [members]="members()"
           [activeId]="store.activeOwner()"
           (select)="selectMember($event)"
         />

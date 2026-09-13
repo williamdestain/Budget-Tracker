@@ -37,7 +37,7 @@ export class IncomeList {
   }
 
   ownerBadge(owner: Owner): string {
-    return owner === 'moi' ? 'Moi' : 'Mme';
+    return this.store.memberName(owner);
   }
 
   fmt(n: number): string {

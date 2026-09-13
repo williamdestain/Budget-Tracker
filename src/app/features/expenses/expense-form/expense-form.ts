@@ -31,6 +31,7 @@ export class ExpenseForm {
   category = '';
   date = isoOfDate(new Date());
   owner: Owner = 'moi';
+  versementToMemberId: string | null = null;
   cc = false;
 
   readonly saving = signal(false);
@@ -40,7 +41,7 @@ export class ExpenseForm {
     // y compris si on change d'onglet après l'ouverture de la page.
     effect(() => {
       const active = this.store.activeOwner();
-      if (active === 'moi' || active === 'madame') this.owner = active;
+      if (active !== 'global') this.owner = active;
     });
     // Pré-sélectionne la première catégorie dès qu'elles sont chargées —
     // nécessaire car elles arrivent de façon asynchrone (store.loadAll()),
@@ -60,10 +61,15 @@ export class ExpenseForm {
         category: this.category,
         date: this.date,
         owner: this.owner,
+        versementToMemberId:
+          this.category === 'Versement'
+            ? this.versementToMemberId ?? this.store.memberOptions().find((m) => m.id !== this.owner)?.id ?? null
+            : null,
         cc: this.cc,
       });
       this.amount = null;
       this.cc = false;
+      this.versementToMemberId = null;
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {

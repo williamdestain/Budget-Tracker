@@ -75,13 +75,9 @@ export const routes: Routes = [
       {
         path: 'comptes',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/accounts/accounts').then((m) => m.Accounts),
         data: {
           navTitle: 'Comptes',
-          placeholderNote:
-            'Dépend du modèle de comptes généralisé — voir MODELE.md, section 5.',
         },
       },
       {
@@ -93,9 +89,7 @@ export const routes: Routes = [
       {
         path: 'rapports',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/reports/reports').then((m) => m.Reports),
         data: { navTitle: 'Rapports' },
       },
       {

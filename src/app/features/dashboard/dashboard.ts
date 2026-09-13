@@ -89,7 +89,7 @@ export class Dashboard implements OnInit {
     this.store.current.set(nextYM(this.store.current()));
   }
 
-  setOwner(owner: 'moi' | 'madame' | 'global'): void {
+  setOwner(owner: string): void {
     this.store.activeOwner.set(owner);
   }
 
@@ -135,23 +135,28 @@ export class Dashboard implements OnInit {
     const ym = this.store.current();
     const target = nextYM(ym);
 
-    const soldeMoi = this.store.soldeNetForOwner('moi');
-    const soldeMadame = this.store.soldeNetForOwner('madame');
-    const existingMoi = this.store.rolloverFor('moi', target);
-    const existingMadame = this.store.rolloverFor('madame', target);
-    const rolloverMoi = carryForward ? soldeMoi : 0;
-    const rolloverMadame = carryForward ? soldeMadame : 0;
+    const members = this.store.activeMembers();
+    const balances = members.map((member) => ({
+      member,
+      balance: this.store.soldeNetForOwner(member.id),
+      existing: this.store.rolloverFor(member.id, target),
+    }));
+    const rollovers = balances.map(({ member, balance }) => ({
+      member,
+      balance,
+      amount: carryForward ? balance : 0,
+    }));
 
     let msg = carryForward
       ? `Clôturer ${monthLabel(ym)} et reporter vers ${monthLabel(target)} :\n\n` +
-        `• Moi : ${this.fmtSigned(soldeMoi)}\n` +
-        `• Madame : ${this.fmtSigned(soldeMadame)}\n\n` +
+        rollovers.map(({ member, balance }) => `• ${member.displayName} : ${this.fmtSigned(balance)}`).join('\n') +
+        `\n\n` +
         `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour les deux profils).`
       : `Clôturer ${monthLabel(ym)} SANS reporter le solde ?\n\n` +
-        `• Solde de Moi (${this.fmtSigned(soldeMoi)}) et de Madame (${this.fmtSigned(soldeMadame)}) : perdu, pas reporté.\n` +
+        `• Soldes (${rollovers.map(({ member, balance }) => `${member.displayName} : ${this.fmtSigned(balance)}`).join(', ')}) : perdus, pas reportés.\n` +
         `• ${monthLabel(target)} démarrera à 0, comme un nouveau départ.\n\n` +
         `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour les deux profils).`;
-    if (existingMoi || existingMadame) {
+    if (balances.some(({ existing }) => existing !== 0)) {
       msg += carryForward
         ? `\n\n⚠ Des reports existent déjà pour ${monthLabel(target)} — ils seront remplacés.`
         : `\n\n⚠ Des reports existent déjà pour ${monthLabel(target)} — ils seront remis à 0.`;
@@ -160,8 +165,9 @@ export class Dashboard implements OnInit {
 
     try {
       await Promise.all([
-        this.store.setRollover('moi', target, rolloverMoi),
-        this.store.setRollover('madame', target, rolloverMadame),
+        ...rollovers.map(({ member, amount }) =>
+          this.store.setRollover(member.id, target, amount),
+        ),
       ]);
       await this.store.closeMonth(ym);
       // Bascule automatiquement sur le mois cible : sans ça, le tableau de
@@ -172,7 +178,7 @@ export class Dashboard implements OnInit {
       this.store.current.set(target);
       this.toast.show(
         carryForward
-          ? `🔒 ${monthLabel(ym)} clôturé — reporté vers ${monthLabel(target)} : Moi ${this.fmtSigned(soldeMoi)}, Madame ${this.fmtSigned(soldeMadame)}.`
+          ? `🔒 ${monthLabel(ym)} clôturé — reports enregistrés vers ${monthLabel(target)}.`
           : `🔒 ${monthLabel(ym)} clôturé sans report — ${monthLabel(target)} démarre à 0.`,
       );
     } catch (err) {

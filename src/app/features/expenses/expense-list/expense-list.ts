@@ -1,7 +1,6 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
-import { OWNERS, OWNERS_SHORT } from '../../../core/utils/categories';
 import { fmtDate } from '../../../core/utils/date.utils';
 import { fmt } from '../../../core/utils/currency.utils';
 import { Expense, Owner } from '../../../core/models/budget.models';
@@ -61,11 +60,18 @@ export class ExpenseList {
   }
 
   ownerShort(owner: Owner): string {
-    return OWNERS_SHORT[owner];
+    const name = this.store.memberName(owner);
+    return name.slice(0, 3);
   }
 
   otherOwner(owner: Owner): Owner {
-    return owner === 'moi' ? 'madame' : 'moi';
+    return this.store.memberOptions().find((m) => m.id !== owner)?.id ?? owner;
+  }
+
+  transferRecipient(e: Expense): string {
+    return this.store.memberName(
+      e.versementToMemberId ?? this.otherOwner(e.owner),
+    );
   }
 
   get showBadge(): boolean {
@@ -74,12 +80,12 @@ export class ExpenseList {
 
   get emptyMessage(): string {
     const owner = this.store.activeOwner();
-    return `Aucune dépense pour ${owner === 'global' ? 'le foyer' : OWNERS[owner]} sur cette période.`;
+    return `Aucune dépense pour ${owner === 'global' ? 'le foyer' : this.store.memberName(owner)} sur cette période.`;
   }
 
   get title(): string {
     const owner = this.store.activeOwner();
-    return 'Dépenses de ' + (owner === 'global' ? 'foyer' : OWNERS[owner]);
+    return 'Dépenses de ' + (owner === 'global' ? 'foyer' : this.store.memberName(owner));
   }
 
   get provisionEntryCount(): number {
