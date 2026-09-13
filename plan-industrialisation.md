@@ -381,7 +381,9 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    (`migration-024-owner-to-member.sql`, voir vague B et `MODELE.md`
    section 6.4) — pas encore exécutée sur Supabase.
 6. ✅ Bascule applicative Owner → Member préparée avec compatibilité
-   transitoire; type-check, build et 279 tests validés.
+   transitoire; type-check, build et 281 tests validés, dont des tests
+   d'intégration avec une table `members` peuplée vérifiant la sélection
+   dynamique et l'écriture `member_id`.
 7. ⏸️ Vague B (Comptes, Investissements, Épargne, Paramètres) — **en
    pause** jusqu'à l'exécution et la vérification du point 5 sur Supabase.
 8. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
