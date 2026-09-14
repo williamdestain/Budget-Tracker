@@ -384,7 +384,7 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 ## Pour démarrer cette semaine
 
 1. ✅ `MODELE.md` — fait.
-2. ✅ Phase 0 (fondations visuelles) — complète; les 279 tests sont verts,
+2. ✅ Phase 0 (fondations visuelles) — complète; les 282 tests sont verts,
    avec l'attendu `180` conservé pour `provisionDaysUntilNext` (voir Phase 0).
 3. ✅ Phase 1 (architecture de navigation) — complète.
 4. ✅ Vague A, écran 1 (Carte de crédit) — complète.
@@ -392,9 +392,10 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    (`migration-024-owner-to-member.sql`, voir vague B et `MODELE.md`
    section 6.4).
 6. ✅ Bascule applicative Owner → Member préparée avec compatibilité
-   transitoire; type-check, build et 279 tests validés.
+   transitoire; type-check, build et 282 tests validés, dont la couverture
+   d'intégration du chemin `useMemberSchema() === true`.
 7. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
-   build et 279 tests verts.
+   build et 282 tests verts.
 8. ✅ **Migration exécutée sur Supabase réel et validée en production le
    13 septembre 2026** — schéma, données existantes, écritures et
    répartition de versement tous vérifiés avec de vraies données, aucune
@@ -403,6 +404,5 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 9. **Prochaine étape réelle** — deux chantiers indépendants :
    - Vague A, écran 3 : moderniser le Tableau de bord.
    - Vague B : courte période de rodage, puis retrait de la compatibilité
-     transitoire, ajout des tests manquants sur le nouveau schéma, RPC de
-     gestion des membres (Paramètres), et reprise pour de vrai de
-     `/comptes` — dans cet ordre (voir `MODELE.md` section 9).
+     transitoire, RPC de gestion des membres (Paramètres), et reprise pour
+     de vrai de `/comptes` — dans cet ordre (voir `MODELE.md` section 9).

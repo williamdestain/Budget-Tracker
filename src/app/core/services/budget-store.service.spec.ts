@@ -187,6 +187,99 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(created.memberId).toBe('member-alex');
       expect(created.owner).toBe('member-alex');
     });
+
+    it('utilise member_id pour les autres écritures financières du schéma Member', async () => {
+      fakeClient.seed('members', [
+        {
+          id: 'member-alex',
+          household_id: TEST_HOUSEHOLD_ID,
+          display_name: 'Alex',
+          color: '#2563eb',
+          role: 'owner',
+          active: true,
+        },
+      ]);
+      await store.loadAll();
+
+      await store.addIncome({
+        amount: 2500,
+        type: 'Salaire',
+        date: '2026-07-01',
+        owner: 'member-alex',
+        memberId: 'member-alex',
+        note: '',
+        recurring: false,
+        recurringInterval: 'once',
+        recurringStartMonth: '2026-07',
+      });
+      await store.addProvision({
+        name: 'Assurance',
+        amount: 600,
+        everyN: 3,
+        intervalUnit: 'months',
+        startYM: '2026-01',
+        startDate: '',
+        category: 'Assurance',
+        owner: 'member-alex',
+        memberId: 'member-alex',
+        autoRecalibrate: true,
+        allocationPercent: 0,
+        rollingCount: 0,
+        monthlyReminder: null,
+      });
+      await store.addRecurringExpense({
+        name: 'Loyer',
+        amount: 1000,
+        category: 'Loyer',
+        owner: 'member-alex',
+        memberId: 'member-alex',
+        interval: 'monthly',
+        dayOfMonth: 1,
+        secondDayOfMonth: null,
+        startDate: null,
+        cc: false,
+        active: true,
+      });
+      await store.addRecurringIncome({
+        amount: 2500,
+        type: 'Salaire',
+        owner: 'member-alex',
+        memberId: 'member-alex',
+        note: '',
+        interval: 'monthly',
+        dayOfMonth: 1,
+        secondDayOfMonth: null,
+        startDate: '2026-01-01',
+        active: true,
+      });
+      await store.addSavingsGoal({
+        name: 'Vacances',
+        targetAmount: 2000,
+        targetDate: null,
+        owner: 'member-alex',
+        memberId: 'member-alex',
+      });
+      await store.setCategoryBudget('member-alex', '2026-07', 'Loyer', 1000);
+      await store.setRollover('member-alex', '2026-07', 125);
+      await store.addCreditCardPayment('member-alex', 90, '2026-07-20', '');
+
+      for (const table of [
+        'incomes',
+        'provisions',
+        'recurring_expenses',
+        'recurring_incomes',
+        'savings_goals',
+        'category_budgets',
+        'rollovers',
+        'credit_card_payments',
+      ]) {
+        expect(fakeClient.tables[table].length).toBeGreaterThan(0);
+        for (const row of fakeClient.tables[table]) {
+          expect(row).toMatchObject({ member_id: 'member-alex' });
+          expect(row).not.toHaveProperty('owner');
+        }
+      }
+    });
   });
 
   // Audit BUG-013 : les formulaires empêchent les montants négatifs, mais

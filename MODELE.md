@@ -559,10 +559,12 @@ souvent.
    2. Retirer le repli `owner`/`useMemberSchema()` dans
       `budget-store.service.ts`/`supabase-mappers.ts`/`budget.models.ts`
       une fois ce rodage jugé suffisant.
-   3. Ajouter les tests qui manquent sur le nouveau schéma (le chemin
-      `useMemberSchema() === true` n'a aucune couverture automatisée
-      actuellement — tout ce qui a été vérifié l'a été manuellement en
-      production, voir 6.4.3).
+   3. ✅ Ajouter les tests du nouveau schéma : le chemin
+      `useMemberSchema() === true` est couvert par des tests d'intégration
+      du store qui chargent une table `members` peuplée et vérifient les
+      écritures `member_id` pour les dépenses, revenus, provisions,
+      récurrents, objectifs, budgets et paiements de carte. La suite passe
+      à 282 tests.
    4. Écrire les RPC manquantes pour un futur écran Paramètres (renommer
       un membre, changer sa couleur, le désactiver, gérer une invitation)
       — `members`/`invitations` existent mais rien ne les modifie encore.
