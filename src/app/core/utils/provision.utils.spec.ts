@@ -546,6 +546,25 @@ describe('provision.utils', () => {
       expect(provisionDueAlert(p, '2026-01', [])).toBeNull();
     });
 
+    // Reproduction demandée le 18 septembre 2026 : une provision annuelle
+    // (everyN=12) à échéance CE MOIS-CI, cible 905,49 $, cagnotte à
+    // 908,00 $ (donc déjà suffisante), aucun paiement encore enregistré.
+    it("provision annuelle échue ce mois-ci, cagnotte déjà suffisante (908 $ pour 905,49 $ visés), pas encore payée : aucune alerte", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 18)); // 18 septembre 2026
+      const p = makeProvision({
+        name: 'Taxe fonciere/municipale',
+        amount: 905.49,
+        everyN: 12,
+        startYM: '2026-08', // échéance ce mois-ci (voir isHitMonth : total=1)
+        category: 'Taxe fonciere/municipale',
+        adjustments: [{ id: 'a1', amount: 908.0, date: '2025-10-15', note: '' }],
+      });
+      const alert = provisionDueAlert(p, '2026-09', []);
+      console.log('[reproduction] alerte =', JSON.stringify(alert));
+      expect(alert).toBeNull();
+    });
+
     // ⚠️ DÉCOUVERTE en écrivant ce test (pas un choix de conception
     // volontaire documenté ailleurs) : le type d'alerte "overdue" semble
     // Corrigé — voir provisionUpcomingHit() dans provision.utils.ts,

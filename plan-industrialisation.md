@@ -290,12 +290,19 @@ qui s'est concrètement matérialisé.
   se rafraîchit pas tout seul après une migration — `accounts`,
   `account_balance_snapshots` et `members` renvoyaient des 404 malgré des
   tables bien créées, jusqu'à `notify pgrst, 'reload schema';`.
+- ✅ **Couverture de test du nouveau schéma comblée le 15 septembre 2026**
+  (voir `MODELE.md` section 9, point 5.3) : écritures simples table par
+  table, répartition de versement avec un vrai 3e membre (le chemin le
+  plus délicat de la migration), et agrégation (`rolloverFor('global')`,
+  `creditCardBalance('global')`, `versementsRecus()`) prouvée sur 3
+  membres réels, pas seulement 1. Au passage, une vraie lacune du faux
+  client de test a été trouvée et corrigée (il ne simulait que l'ancien
+  paramètre RPC `p_sender`, jamais le nouveau `p_sender_member_id`) —
+  sans ce correctif, ce chemin restait invérifiable par un test, peu
+  importe combien on en aurait écrit. Suite à 285 tests, tous verts.
 - ⬜ **Reste avant de finaliser `/comptes`** : une courte période de
   rodage en usage normal, puis le retrait du repli transitoire
-  `owner`/`useMemberSchema()` (voir `MODELE.md` section 9) — et combler
-  l'absence totale de test automatisé sur le nouveau chemin
-  (`useMemberSchema() === true` n'est couvert par aucun test pour
-  l'instant, tout a été vérifié manuellement en production).
+  `owner`/`useMemberSchema()` (voir `MODELE.md` section 9).
 
 La vague A n'a jamais été concernée par cette pause et peut continuer
 normalement (voir « Pour démarrer cette semaine » en fin de document).
@@ -392,17 +399,29 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    (`migration-024-owner-to-member.sql`, voir vague B et `MODELE.md`
    section 6.4).
 6. ✅ Bascule applicative Owner → Member préparée avec compatibilité
-   transitoire; type-check, build et 282 tests validés, dont la couverture
+   transitoire; type-check, build et tests validés, dont la couverture
    d'intégration du chemin `useMemberSchema() === true`.
 7. ✅ Vague A, écran 2 (Rapports) — livré et validé avec le type-check, le
-   build et 282 tests verts.
+   build et la suite de tests verte.
 8. ✅ **Migration exécutée sur Supabase réel et validée en production le
    13 septembre 2026** — schéma, données existantes, écritures et
    répartition de versement tous vérifiés avec de vraies données, aucune
    régression (voir `MODELE.md` section 6.4.2/6.4.3). La vague B n'est
    donc plus en pause sur le plan technique.
-9. **Prochaine étape réelle** — deux chantiers indépendants :
-   - Vague A, écran 3 : moderniser le Tableau de bord.
-   - Vague B : courte période de rodage, puis retrait de la compatibilité
-     transitoire, RPC de gestion des membres (Paramètres), et reprise pour
-     de vrai de `/comptes` — dans cet ordre (voir `MODELE.md` section 9).
+9. ✅ **Couverture de test du schéma Member complétée le 15 septembre
+   2026** — répartition de versement avec un vrai 3e membre (le chemin le
+   plus délicat), agrégation prouvée sur 3 membres, et un vrai bug du faux
+   client de test trouvé et corrigé au passage (voir vague B et `MODELE.md`
+   section 9). Suite à 285 tests, tous verts.
+10. ✅ **Gestion des membres pour Paramètres — 16 septembre 2026**
+    (`migration-025-member-management.sql`, testée avec un rôle Postgres à
+    privilèges limités). Renommer/changer la couleur d'un membre marchent
+    déjà par écriture directe (policies `FOR ALL` de migration-024) —
+    seule la désactivation avait besoin d'une vraie RPC (garde contre un
+    foyer sans aucun membre actif), écrite et testée dans les 4 cas. Voir
+    `MODELE.md` section 9, point 5.4.
+11. **Prochaine étape réelle** — deux chantiers indépendants :
+    - Vague A, écran 3 : moderniser le Tableau de bord.
+    - Vague B : courte période de rodage, puis retrait de la compatibilité
+      transitoire, puis reprise pour de vrai de `/comptes` — dans cet ordre
+      (voir `MODELE.md` section 9).

@@ -94,10 +94,23 @@ export class ProvisionCard {
       statusClass = 'deficit';
       barClass = 'deficit';
       statusText = `⚠️ Déficit de ${fmt(Math.abs(pot))} (payé avant d'avoir assez économisé)`;
+    } else if (isHit && spent < targetForNext && pot >= targetForNext) {
+      // Échue, aucun paiement encore enregistré CETTE échéance, mais la
+      // cagnotte suffit déjà à la couvrir : ce n'est pas un manque
+      // d'argent, juste un rappel qu'il reste à enregistrer le paiement.
+      // Avant ce correctif (18 septembre 2026), ce cas tombait dans la
+      // branche suivante ("restant à payer", stylée en avertissement),
+      // ce qui donnait l'impression trompeuse de ne pas avoir assez
+      // économisé alors que la cagnotte était largement suffisante — bug
+      // rapporté par un utilisateur, reproduit dans provision-card.spec.ts.
+      statusClass = 'ok';
+      barClass = 'full';
+      statusText = `Échéance ce mois — prêt à payer (${fmt(targetForNext)} disponibles dans la cagnotte)`;
     } else if (isHit && spent < targetForNext) {
+      // Échue ET la cagnotte elle-même ne suffit pas : ici, un vrai manque.
       statusClass = 'warn';
       barClass = 'partial';
-      statusText = `Échéance ce mois — ${fmt(targetForNext - spent)} restant à payer`;
+      statusText = `Échéance ce mois — cagnotte insuffisante, il manque ${fmt(targetForNext - pot)}`;
     } else if (isHit && spent >= targetForNext) {
       statusClass = 'ok';
       barClass = 'full';

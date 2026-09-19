@@ -80,6 +80,9 @@ export class MoneyPulse {
     if (rb.provisionsRemaining > 0) {
       parts.push(`${fmt(rb.provisionsRemaining)} de provisions à financer`);
     }
+    if (rb.categoryBudgetsRemaining > 0) {
+      parts.push(`${fmt(rb.categoryBudgetsRemaining)} de budgets de catégorie restants`);
+    }
     const sub = parts.length > 0 ? `Après ${parts.join(' et ')}.` : null;
 
     const perDayText = perDay !== null ? `Environ ${fmt(perDay)}/jour jusqu'à la fin du mois.` : null;

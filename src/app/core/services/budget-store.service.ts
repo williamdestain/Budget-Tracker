@@ -99,6 +99,7 @@ export interface RemainingBudget {
   spent: number;
   recurringRemaining: number;
   provisionsRemaining: number;
+  categoryBudgetsRemaining: number;
 }
 
 // Validation en profondeur du fichier importé (audit BUG-014) — au-delà
@@ -1258,12 +1259,30 @@ export class BudgetStore {
       .filter((row) => row.dueThisMonth)
       .reduce((s, row) => s + row.missing, 0);
 
+    // Demandé le 18 septembre 2026 : les catégories avec un budget "plafond"
+    // mais sans dépense récurrente (ex. Courses — payé au fil du mois, pas
+    // sur un montant fixe programmé) n'apparaissaient nulle part dans ce
+    // calcul. On additionne ici la part NON DÉPENSÉE de chaque budget de
+    // catégorie configuré (jamais le budget total : la part déjà dépensée
+    // est déjà comptée dans `spent` ci-dessus, la recompter aurait fait un
+    // double comptage). Inclut volontairement les catégories qui ont AUSSI
+    // une dépense récurrente (ex. Loyer) : si une même catégorie compte à
+    // la fois un reste de budget et un récurrent pas encore confirmé pour
+    // le même montant, ça peut chevaucher avec `recurringRemaining` — pas
+    // séparé pour l'instant, à revoir si ça produit un chiffre qui
+    // paraît trop élevé en pratique.
+    const categoryBudgetsRemaining = this.categoryBudgetRows()
+      .filter((row) => row.budget > 0)
+      .reduce((s, row) => s + Math.max(0, row.remaining), 0);
+
     return {
-      amount: budget - spent - recurringRemaining - provisionsRemaining,
+      amount:
+        budget - spent - recurringRemaining - provisionsRemaining - categoryBudgetsRemaining,
       budget,
       spent,
       recurringRemaining,
       provisionsRemaining,
+      categoryBudgetsRemaining,
     };
   });
 
@@ -1348,27 +1367,35 @@ export class BudgetStore {
       }
     }
 
-    // Catégories proches ou en dépassement de leur budget (les 2 pires)
+    // Catégories en dépassement de leur budget (les 2 pires) — seules
+    // celles qui dépassent réellement sont affichées ici (préférence
+    // exprimée le 18 septembre 2026 : une catégorie à 80-100 % du budget
+    // n'est pas un problème, juste une catégorie suivie normalement,
+    // inutile de la remonter dans la bande d'alerte). Sévérité en 2
+    // paliers selon l'ampleur du dépassement plutôt qu'un seul niveau
+    // uniforme : un léger dépassement (jusqu'à 20 points de pourcentage
+    // au-dessus de 100 %, soit ≤120 % du budget) reste orange
+    // (`warning`) ; au-delà, rouge (`critical`) — même code couleur que
+    // le dépassement du budget global plus haut. Le seuil de 20 points
+    // est un choix arbitraire, à ajuster si ça ne correspond pas à ce qui
+    // semble "beaucoup" en pratique.
     this.categoryBudgetRows()
-      .filter((r) => r.budget > 0 && r.pct >= 80)
+      .filter((r) => r.budget > 0 && r.remaining < 0)
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 2)
       .forEach((r) => {
-        // Même correctif que ci-dessus : dépassement seulement si le
-        // montant restant est réellement négatif, pas juste "pct >= 100"
-        // (pile 100 % ne veut pas dire dépassé, et affichait auparavant
-        // "dépassement de 0,00 $" — trompeur).
-        if (r.remaining < 0) {
+        const overPct = r.pct - 100;
+        if (overPct >= 20) {
           alerts.push({
-            severity: 'warning',
-            icon: '⚠️',
+            severity: 'critical',
+            icon: '🔴',
             message: `${r.category} : dépassement de ${fmt(-r.remaining)}.`,
           });
         } else {
           alerts.push({
-            severity: 'info',
-            icon: 'ℹ️',
-            message: `${r.category} à ${r.pct.toFixed(0)} % du budget.`,
+            severity: 'warning',
+            icon: '⚠️',
+            message: `${r.category} : dépassement de ${fmt(-r.remaining)}.`,
           });
         }
       });
@@ -2109,10 +2136,29 @@ export class BudgetStore {
   // la provision — l'argent redevient donc réellement disponible dans le
   // budget du mois, au lieu de s'évaporer silencieusement. Un déficit
   // (cagnotte négative ou nulle) ne crée rien : il n'y a rien à rendre.
+  //
+  // BUG signalé le 17 septembre 2026 (reproduit dans
+  // budget-store.service.spec.ts, describe "DIAGNOSTIC") : la cagnotte
+  // était calculée avec this.current() — le mois affiché au tableau de
+  // bord — au lieu du mois réel. Si l'utilisateur consultait encore un
+  // mois passé pendant qu'il payait/fermait une provision, deux choses se
+  // produisaient en même temps : (1) provisionReferenceDate() traitait ce
+  // mois passé comme "la référence", ce qui excluait le report de surplus
+  // tout juste inséré par syncProvisionsFromExpense() (daté d'aujourd'hui,
+  // donc "dans le futur" par rapport au mois affiché) ; (2) la fenêtre de
+  // provisionSpent() (du nouveau startYM, réel, jusqu'à ce mois passé)
+  // devenait inversée et donc vide, si bien qu'AUCUNE dépense ne pouvait
+  // plus être soustraite. Résultat : la cagnotte BRUTE entière (908,00 $)
+  // était reversée comme si le paiement qu'on venait de faire (905,49 $)
+  // n'avait jamais existé, au lieu du vrai surplus net (~2,51 $). Payer
+  // une facture est un événement qui a lieu AUJOURD'HUI, peu importe quel
+  // mois on regarde à l'écran — closeProvision() ne doit donc jamais
+  // dépendre de this.current().
   async closeProvision(id: string): Promise<number> {
     const p = this.provisions().find((x) => x.id === id);
     if (!p) throw new Error('Provision introuvable.');
-    const surplus = round2(provisionPot(p, this.current(), this.expenses()));
+    const todayYm = ymOf(new Date());
+    const surplus = round2(provisionPot(p, todayYm, this.expenses()));
     if (surplus > 0.004) {
       await this.addIncome({
         amount: surplus,
@@ -2122,7 +2168,7 @@ export class BudgetStore {
         note: `Provision "${p.name}" terminée — solde reversé au budget`,
         recurring: false,
         recurringInterval: 'once',
-        recurringStartMonth: this.current(),
+        recurringStartMonth: todayYm,
       });
     }
     await this.removeProvision(id);

@@ -43,6 +43,7 @@ function rb(overrides: Partial<RemainingBudget>): RemainingBudget {
     spent: 0,
     recurringRemaining: 0,
     provisionsRemaining: 0,
+    categoryBudgetsRemaining: 0,
     ...overrides,
   };
 }
@@ -161,6 +162,34 @@ describe('MoneyPulse', () => {
       const sub = comp.pulse().sub;
       expect(sub).not.toContain('récurrentes');
       expect(sub).toContain('provisions');
+    });
+
+    it("mentionne les budgets de catégorie restants quand ils sont non nuls (ex. Courses, sans dépense récurrente liée)", () => {
+      const comp = createComponent({
+        remainingBudget: rb({
+          amount: 1000, budget: 4000, spent: 2900,
+          recurringRemaining: 0, provisionsRemaining: 0, categoryBudgetsRemaining: 100,
+        }),
+        remainingBudgetPerDay: 66,
+        isCurrentMonth: true,
+      });
+
+      const sub = comp.pulse().sub;
+      expect(sub).toContain('100');
+      expect(sub).toContain('budgets de catégorie restants');
+    });
+
+    it('sub est null seulement quand les 3 composantes (récurrents, provisions, budgets de catégorie) sont à zéro', () => {
+      const comp = createComponent({
+        remainingBudget: rb({
+          amount: 2500, budget: 3000, spent: 500,
+          recurringRemaining: 0, provisionsRemaining: 0, categoryBudgetsRemaining: 0,
+        }),
+        remainingBudgetPerDay: 166,
+        isCurrentMonth: true,
+      });
+
+      expect(comp.pulse().sub).toBeNull();
     });
   });
 

@@ -559,15 +559,45 @@ souvent.
    2. Retirer le repli `owner`/`useMemberSchema()` dans
       `budget-store.service.ts`/`supabase-mappers.ts`/`budget.models.ts`
       une fois ce rodage jugé suffisant.
-   3. ✅ Ajouter les tests du nouveau schéma : le chemin
-      `useMemberSchema() === true` est couvert par des tests d'intégration
-      du store qui chargent une table `members` peuplée et vérifient les
-      écritures `member_id` pour les dépenses, revenus, provisions,
-      récurrents, objectifs, budgets et paiements de carte. La suite passe
-      à 282 tests.
-   4. Écrire les RPC manquantes pour un futur écran Paramètres (renommer
-      un membre, changer sa couleur, le désactiver, gérer une invitation)
-      — `members`/`invitations` existent mais rien ne les modifie encore.
+   3. ✅ Ajouter les tests du nouveau schéma. Deux passes :
+      - 12-14 septembre : couverture des écritures simples table par table
+        (dépenses, revenus, provisions, récurrents, objectifs, budgets,
+        paiements de carte) avec une table `members` peuplée.
+      - **15 septembre** : audit de cette couverture — deux angles morts
+        trouvés et comblés. (1) Aucun test n'exerçait
+        `splitVersementIntoProvisions()` avec le schéma Member actif — le
+        chemin le plus délicat de toute la migration (la RPC garde une
+        règle historique à 2 membres, le store crée donc la dépense
+        lui-même avant d'appeler la RPC juste pour les ajustements, voir
+        6.2). En écrivant ce test, une vraie lacune du **faux client de
+        test** (pas du code de l'appli) est apparue : il ne comprenait que
+        l'ancien paramètre `p_sender`, jamais le nouveau
+        `p_sender_member_id` — corrigé dans
+        `fake-supabase-client.ts`. (2) Aucun test ne prouvait qu'une
+        agrégation (`rolloverFor('global')`, `creditCardBalance('global')`,
+        `versementsRecus()`) fonctionne sur un **vrai 3e membre**, ce qui
+        aurait pu masquer une boucle qui ne boucle en réalité que sur 1.
+        La suite passe à 285 tests, tous verts.
+   4. ✅ **Gestion des membres pour Paramètres — 16 septembre 2026**
+      (`supabase/migration-025-member-management.sql`, testée avec un rôle
+      Postgres à privilèges limités, pas en superutilisateur, pour que le
+      RLS s'applique vraiment). Découverte en la préparant : les policies
+      `household_scoped_members`/`household_scoped_invitations`
+      (migration-024) sont des `FOR ALL` — renommer un membre ou changer
+      sa couleur **fonctionne déjà aujourd'hui par simple écriture directe**
+      (`supabase.from('members').update({...})`), aucune RPC nécessaire, et
+      c'est vérifié : un utilisateur peut modifier un membre de son foyer,
+      se fait bloquer (0 ligne) sur un membre d'un autre foyer. La seule
+      vraie garde nécessaire concerne la désactivation (ne jamais laisser un
+      foyer sans aucun membre actif — une policy RLS ne voit qu'une ligne à
+      la fois, ça ne peut pas s'exprimer autrement que par une fonction) :
+      `set_household_member_active(member_id, active)`, testée dans les 4
+      cas (désactivation permise, dernier membre actif refusé, foyer
+      croisé refusé, RLS toujours vraie après durcissement `to
+      authenticated` des 2 policies). Les invitations ne sont pas
+      construites davantage : la table permet déjà l'écriture directe, mais
+      l'appli n'a aucun mécanisme d'envoi d'email — inutile de bâtir de la
+      plomberie qui ne sert à rien tant que ce besoin ne se confirme pas.
    5. Reprendre pour de vrai le brouillon `/comptes` (mis en pause, voir
       `plan-industrialisation.md`) une fois les points ci-dessus faits.
 6. Une fois tout ce qui précède fait, ce document devient la référence

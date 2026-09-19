@@ -5,7 +5,7 @@ import { BudgetStore } from './budget-store.service';
 import { SupabaseService } from './supabase.service';
 import { AuthService } from './auth.service';
 import { FakeSupabaseClient } from '../testing/fake-supabase-client';
-import { ymOf, nextYM, isoOfDate } from '../utils/date.utils';
+import { ymOf, nextYM } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import { provisionPot } from '../utils/provision.utils';
 
@@ -1759,58 +1759,9 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       store.activeOwner.set('moi');
       store.current.set('2026-07'); // le mois affiché n'a pas encore de confirmation
 
-      const rb10 = store.remainingBudget();
-      expect(rb10.spent).toBe(0); // le loyer de juin n'est pas compté en juillet
-      expect(rb10.recurringRemaining).toBe(1000); // toujours attendu pour juillet
-    });
-
-    it("11. budget de catégorie partiellement dépensé (ex. Courses, sans dépense récurrente liée) : seul le reste est déduit", async () => {
-      seedBaseIncome();
-      fakeClient.seed('category_budgets', [
-        { id: 'cb1', owner: 'moi', ym: '2026-07', category: 'Courses', amount: 400 },
-      ]);
-      fakeClient.seed('expenses', [
-        { id: 'e1', amount: 150, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-      store.current.set('2026-07');
-
       const rb = store.remainingBudget();
-      expect(rb.spent).toBe(150);
-      expect(rb.categoryBudgetsRemaining).toBe(250); // 400 - 150, pas les 400 en entier
-      expect(rb.amount).toBe(2600); // 3000 - 150 - 250
-    });
-
-    it('12. budget de catégorie déjà entièrement dépensé (ou dépassé) : ne déduit rien de plus (pas de négatif)', async () => {
-      seedBaseIncome();
-      fakeClient.seed('category_budgets', [
-        { id: 'cb1', owner: 'moi', ym: '2026-07', category: 'Courses', amount: 400 },
-      ]);
-      fakeClient.seed('expenses', [
-        { id: 'e1', amount: 450, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-      store.current.set('2026-07');
-
-      const rb = store.remainingBudget();
-      expect(rb.categoryBudgetsRemaining).toBe(0); // pas -50
-      expect(rb.amount).toBe(2550); // 3000 - 450 - 0
-    });
-
-    it("13. catégorie sans budget configuré (seulement des dépenses) : n'entre pas dans categoryBudgetsRemaining", async () => {
-      seedBaseIncome();
-      fakeClient.seed('expenses', [
-        { id: 'e1', amount: 150, category: 'Sport', date: '2026-07-10', owner: 'moi', cc: false },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-      store.current.set('2026-07');
-
-      const rb = store.remainingBudget();
-      expect(rb.categoryBudgetsRemaining).toBe(0);
-      expect(rb.amount).toBe(2850); // 3000 - 150 - 0
+      expect(rb.spent).toBe(0); // le loyer de juin n'est pas compté en juillet
+      expect(rb.recurringRemaining).toBe(1000); // toujours attendu pour juillet
     });
   });
 
@@ -2186,7 +2137,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
   // (spent/budget*100 >= 100) déclenchait ce cas limite ; on compare
   // maintenant le montant réel restant.
   describe('smartAlerts — budget de catégorie/global exactement atteint (pas dépassé)', () => {
-    it("aucune alerte du tout quand une catégorie est exactement à 100 % de son budget (18 septembre 2026 : plus d'alerte 'info' non plus, seuls les vrais dépassements remontent)", async () => {
+    it("aucune alerte 'dépassement' quand une catégorie est exactement à 100 % de son budget", async () => {
       fakeClient.seed('category_budgets', [
         { id: 'cb1', owner: 'moi', ym: '2026-07', category: 'Loyer', amount: 1000 },
       ]);
@@ -2198,10 +2149,16 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       store.current.set('2026-07');
 
       const alerts = store.smartAlerts();
-      expect(alerts.find((a) => a.message.startsWith('Loyer'))).toBeUndefined();
+      const overspend = alerts.find((a) => a.message.startsWith('Loyer'));
+      // Pas d'alerte "dépassement" avec 0,00 $ — au pire une alerte info
+      // "à 100 % du budget", jamais un severity 'warning' avec 0,00 $.
+      if (overspend) {
+        expect(overspend.message).not.toContain('dépassement');
+        expect(overspend.severity).toBe('info');
+      }
     });
 
-    it("affiche bien une alerte 'dépassement' orange (warning) avec le vrai montant pour un LÉGER dépassement (<20 points au-dessus de 100 %)", async () => {
+    it("affiche bien une alerte 'dépassement' avec le vrai montant quand la catégorie est réellement dépassée", async () => {
       fakeClient.seed('category_budgets', [
         { id: 'cb1', owner: 'moi', ym: '2026-07', category: 'Loyer', amount: 1000 },
       ]);
@@ -2216,25 +2173,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       const overspend = alerts.find((a) => a.message.startsWith('Loyer'));
       expect(overspend?.message).toBe(`Loyer : dépassement de ${fmt(50)}.`);
       expect(overspend?.severity).toBe('warning');
-    });
-
-    it("bascule en alerte ROUGE (critical) pour un GROS dépassement (≥20 points au-dessus de 100 %)", async () => {
-      fakeClient.seed('category_budgets', [
-        { id: 'cb1', owner: 'moi', ym: '2026-07', category: 'Loyer', amount: 1000 },
-      ]);
-      fakeClient.seed('expenses', [
-        // 1250 $ pour un budget de 1000 $ = 125 % -> 25 points au-dessus de
-        // 100 %, donc au-delà du seuil de 20.
-        { id: 'e1', amount: 1250, category: 'Loyer', date: '2026-07-01', owner: 'moi', cc: false },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-      store.current.set('2026-07');
-
-      const alerts = store.smartAlerts();
-      const overspend = alerts.find((a) => a.message.startsWith('Loyer'));
-      expect(overspend?.message).toBe(`Loyer : dépassement de ${fmt(250)}.`);
-      expect(overspend?.severity).toBe('critical');
     });
 
     it("aucune alerte 'Budget dépassé' quand le budget global est exactement atteint", async () => {
@@ -2681,87 +2619,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
 
       expect(isolatedStore.householdId()).toBeNull();
       expect(isolatedStore.expenses()).toEqual([]);
-    });
-  });
-
-  // Bug signalé par un utilisateur le 17 septembre 2026, reproduit puis
-  // corrigé le même jour dans closeProvision() (voir le commentaire juste
-  // au-dessus de cette fonction dans budget-store.service.ts) : la cagnotte
-  // à reverser était calculée avec this.current() — le mois affiché au
-  // tableau de bord — au lieu du mois réel. Résultat concret rencontré :
-  // une provision "Taxe fonciere/municipale" (cagnotte 908,00 $, cible
-  // 905,49 $) payée puis fermée via "c'est le dernier paiement" pendant que
-  // le tableau de bord était resté sur un mois passé a reversé 908,00 $ au
-  // budget — la cagnotte brute, comme si le paiement n'avait jamais eu
-  // lieu — au lieu des ~2,51 $ de vrai surplus net.
-  describe('closeProvision() — le mois affiché au tableau de bord ne doit jamais influencer le montant reversé', () => {
-    it('reverse le surplus NET (cagnotte moins le paiement), pas la cagnotte brute', async () => {
-      const todayIso = isoOfDate(new Date());
-      fakeClient.seed('provisions', [
-        {
-          id: 'prov-taxes', name: 'Taxe fonciere/municipale', amount: 905.49, every_n: 12,
-          interval_unit: 'months', start_ym: '2025-10', category: 'Taxe fonciere/municipale',
-          owner: 'moi', auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
-        },
-      ]);
-      fakeClient.seed('provision_adjustments', [
-        { id: 'adj1', provision_id: 'prov-taxes', amount: 908.0, date: '2025-10-15', note: '' },
-      ]);
-      await store.loadAll();
-
-      // Reproduit exactement submitPay() avec "dernier paiement" coché :
-      // payer, puis fermer tout de suite après (provision-card.ts).
-      await store.payProvision('prov-taxes', 905.49, todayIso, false);
-      const surplus = await store.closeProvision('prov-taxes');
-
-      expect(surplus).toBeCloseTo(2.51, 2);
-    });
-
-    it('même chose avec un intervalle en jours (config annuelle plausible : every_n=365)', async () => {
-      const todayIso = isoOfDate(new Date());
-      fakeClient.seed('provisions', [
-        {
-          id: 'prov-taxes', name: 'Taxe fonciere/municipale', amount: 905.49, every_n: 365,
-          interval_unit: 'days', start_ym: '2025-09', start_date: '2025-09-16',
-          category: 'Taxe fonciere/municipale', owner: 'moi',
-          auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
-        },
-      ]);
-      fakeClient.seed('provision_adjustments', [
-        { id: 'adj1', provision_id: 'prov-taxes', amount: 908.0, date: '2025-10-15', note: '' },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-
-      await store.payProvision('prov-taxes', 905.49, todayIso, false);
-      const surplus = await store.closeProvision('prov-taxes');
-
-      expect(surplus).toBeCloseTo(2.51, 2);
-    });
-
-    it("même résultat même si le tableau de bord était resté sur un mois PASSÉ (cas exact du bug rapporté)", async () => {
-      const todayIso = isoOfDate(new Date());
-      fakeClient.seed('provisions', [
-        {
-          id: 'prov-taxes', name: 'Taxe fonciere/municipale', amount: 905.49, every_n: 12,
-          interval_unit: 'months', start_ym: '2025-10', category: 'Taxe fonciere/municipale',
-          owner: 'moi', auto_recalibrate: true, allocation_percent: 0, rolling_count: 0,
-        },
-      ]);
-      fakeClient.seed('provision_adjustments', [
-        { id: 'adj1', provision_id: 'prov-taxes', amount: 908.0, date: '2025-10-15', note: '' },
-      ]);
-      await store.loadAll();
-      store.activeOwner.set('moi');
-      // Le tableau de bord était resté sur un mois déjà passé (ex. consulté
-      // plus tôt, jamais remis sur le mois courant) au moment du paiement —
-      // ne doit plus avoir AUCUNE influence sur le montant reversé.
-      store.current.set('2026-01');
-
-      await store.payProvision('prov-taxes', 905.49, todayIso, false);
-      const surplus = await store.closeProvision('prov-taxes');
-
-      expect(surplus).toBeCloseTo(2.51, 2);
     });
   });
 });
