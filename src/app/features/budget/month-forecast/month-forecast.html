@@ -1,6 +1,8 @@
 @if (store.monthForecast(); as fc) {
   <div class="card forecast-card" [class.over]="!positive">
-    <div class="forecast-icon">{{ positive ? '📈' : '⚠️' }}</div>
+    <div class="forecast-icon">
+      <app-icon [name]="positive ? 'trending' : 'alert'" [size]="20" />
+    </div>
     <div class="forecast-body">
       <div class="forecast-main">
         @if (positive) {

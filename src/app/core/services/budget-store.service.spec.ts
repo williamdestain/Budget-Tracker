@@ -5,7 +5,7 @@ import { BudgetStore } from './budget-store.service';
 import { SupabaseService } from './supabase.service';
 import { AuthService } from './auth.service';
 import { FakeSupabaseClient } from '../testing/fake-supabase-client';
-import { ymOf, nextYM, isoOfDate } from '../utils/date.utils';
+import { ymOf, nextYM, prevYM, isoOfDate } from '../utils/date.utils';
 import { fmt } from '../utils/currency.utils';
 import { provisionPot } from '../utils/provision.utils';
 
@@ -1394,6 +1394,83 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         expect(result).not.toBeNull();
         expect(result as number).toBeCloseTo(expected, 6);
       }
+    });
+  });
+
+  // monthForecast() est une logique neuve, ajoutée pour le panneau
+  // "prévisions" du Tableau de bord (vague A, 19-20 septembre 2026) — sans
+  // couverture dédiée jusqu'ici (un seul test existant l'utilise en
+  // passant, pour remainingBudgetPerDay() ci-dessus, sans vérifier sa
+  // propre logique de projection).
+  describe('monthForecast() — projection de fin de mois', () => {
+    it('sépare la part "provision" (comptée telle quelle) de la part "variable" (extrapolée au rythme du mois)', async () => {
+      const todayYm = ymOf(new Date());
+      const dayOfMonth = new Date().getDate();
+      fakeClient.seed('incomes', [
+        {
+          id: 'i1', amount: 3000, type: 'Salaire', date: `${todayYm}-01`, owner: 'moi', note: '',
+          recurring: false, recurring_interval: 'once', recurring_start_month: todayYm,
+        },
+      ]);
+      // Dépense variable réelle (catégorie non provisionnée) : doit être
+      // extrapolée au prorata du jour du mois.
+      fakeClient.seed('expenses', [
+        { id: 'e1', amount: 150, category: 'Courses', date: `${todayYm}-01`, owner: 'moi', cc: false },
+      ]);
+      // Provision avec un ajout manuel ce mois-ci (200 $) : compte tel
+      // quel dans provisionPart, jamais multiplié par le ratio du mois —
+      // une grosse provision versée le 1er du mois ne doit pas faire
+      // croire à une explosion de dépenses en fin de mois.
+      fakeClient.seed('provisions', [
+        {
+          id: 'p1', name: 'Assurance', amount: 1200, every_n: 12, interval_unit: 'months',
+          start_ym: prevYM(todayYm), category: 'Assurance Auto', owner: 'moi',
+          auto_recalibrate: false, allocation_percent: 0, rolling_count: 0,
+        },
+      ]);
+      fakeClient.seed('provision_adjustments', [
+        { id: 'adj1', provision_id: 'p1', amount: 200, date: `${todayYm}-01`, note: '' },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set(todayYm);
+
+      const forecast = store.monthForecast();
+      expect(forecast).not.toBeNull();
+      expect(forecast!.dayOfMonth).toBe(dayOfMonth);
+      expect(forecast!.spentSoFar).toBe(350); // 150 (variable) + 200 (provision)
+
+      const expectedProjectedVariable = (150 / dayOfMonth) * forecast!.daysInMonth;
+      const expectedProjectedSpend = 200 + expectedProjectedVariable;
+      expect(forecast!.projectedSpend).toBeCloseTo(expectedProjectedSpend, 6);
+      expect(forecast!.projectedSoldeNet).toBeCloseTo(3000 - expectedProjectedSpend, 6);
+    });
+
+    it('aucune dépense ce mois-ci : projette un solde net égal au budget en entier', async () => {
+      const todayYm = ymOf(new Date());
+      fakeClient.seed('incomes', [
+        {
+          id: 'i1', amount: 2000, type: 'Salaire', date: `${todayYm}-01`, owner: 'moi', note: '',
+          recurring: false, recurring_interval: 'once', recurring_start_month: todayYm,
+        },
+      ]);
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set(todayYm);
+
+      const forecast = store.monthForecast();
+      expect(forecast).not.toBeNull();
+      expect(forecast!.spentSoFar).toBe(0);
+      expect(forecast!.projectedSpend).toBe(0);
+      expect(forecast!.projectedSoldeNet).toBe(2000);
+    });
+
+    it("renvoie null pour un mois affiché qui n'est pas le vrai mois courant (passé ou futur)", async () => {
+      await store.loadAll();
+      store.activeOwner.set('moi');
+      store.current.set('2020-01'); // sûrement jamais "aujourd'hui"
+
+      expect(store.monthForecast()).toBeNull();
     });
   });
 

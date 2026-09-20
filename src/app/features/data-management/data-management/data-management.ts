@@ -191,7 +191,19 @@ export class DataManagement {
       }
 
       this.open.set(false);
-      this.toast.show('🗑 Données supprimées. Sauvegarde téléchargée.');
+      this.toast.show('Données supprimées. Sauvegarde téléchargée.');
+    } catch (err: any) {
+      // Trouvaille de REVIEW_ARCHITECTURE_ET_PLAN_REFACTORING.md (🔴 P1,
+      // encore vraie au 20 septembre 2026) : aucun catch ici avant ce
+      // correctif — un échec de suppression passait inaperçu, le bouton
+      // redevenait juste cliquable sans dire à l'utilisateur que rien ne
+      // s'était passé. Pour une action destructive, le silence est le pire
+      // résultat possible.
+      console.error(err);
+      const detail = err?.message ? ` (${err.message})` : '';
+      this.toast.show(
+        `Échec de la suppression${detail} — vérifie l'état de tes données avant de réessayer.`,
+      );
     } finally {
       this.saving.set(false);
     }

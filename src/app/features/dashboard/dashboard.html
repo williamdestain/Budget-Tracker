@@ -1,57 +1,64 @@
-<div class="wrap">
-  <header>
-    <div class="title-row">
-      <h1><span class="logo">💰</span> Traqueur de Budget</h1>
-      <button class="btn-primary" (click)="logout()">Se déconnecter</button>
-    </div>
-
-    <div class="tabs">
-      @for (member of store.memberOptions(); track member.id) {
-        <button
-          class="tab"
-          [class.active]="store.activeOwner() === member.id"
-          (click)="setOwner(member.id)"
-        >
-          {{ member.name }}
-        </button>
-      }
-      <button
-        class="tab"
-        [class.active]="store.activeOwner() === 'global'"
-        (click)="setOwner('global')"
-      >
-        Global
-      </button>
-    </div>
-
-    <div class="header-actions">
-      <app-categories-manage />
-      <app-data-management />
-    </div>
-  </header>
-
+<main class="dashboard-page">
   @if (store.loading()) {
-    <p class="placeholder">Chargement des données…</p>
+    <p class="loading">Chargement de ton tableau de bord…</p>
   } @else {
     <app-load-error-banner />
-    <app-money-pulse />
 
-    <div class="period-budget-grid">
-      <div class="card period-card">
-        <div class="card-title">Période</div>
-        <div class="month-nav">
-          <button class="icon-btn" (click)="prevMonth()" title="Mois précédent">‹</button>
-          <span class="month-label">{{ monthLabel }}</span>
-          <button class="icon-btn" (click)="nextMonth()" title="Mois suivant">›</button>
+    <section class="ledger" aria-labelledby="dashboard-heading">
+      <div class="ledger-heading">
+        <div>
+          <p class="eyebrow">Vue d'ensemble</p>
+          <h1 id="dashboard-heading">Ton argent, en un coup d'œil</h1>
+          <p class="intro">
+            Le solde du mois et les enveloppes disponibles pour la période active.
+          </p>
         </div>
+        <div class="ledger-actions">
+          <app-categories-manage />
+          <app-data-management />
+        </div>
+      </div>
+
+      <div class="ledger-grid">
+        <article class="ledger-card ledger-card--primary">
+          <div class="ledger-card-label">Solde net du mois</div>
+          <strong
+            class="ledger-amount"
+            [class.positive]="store.budgetSummary().soldeNet >= 0"
+            [class.negative]="store.budgetSummary().soldeNet < 0"
+          >
+            {{ fmt(store.budgetSummary().soldeNet) }}
+          </strong>
+          <span class="ledger-card-meta">
+            Revenus moins dépenses · {{ fmt(store.budgetSummary().spent) }} dépensés
+            dépensés
+          </span>
+        </article>
+
+        <article class="ledger-card">
+          <div class="ledger-card-label">Patrimoine</div>
+          <strong class="ledger-amount ledger-amount--muted">—</strong>
+          <span class="ledger-card-meta">
+            Comptes et investissements disponibles en vague B
+          </span>
+        </article>
+      </div>
+
+      <div class="ledger-footer">
+        <span class="ledger-period">
+          <span class="ledger-period-dot"></span>
+          Enveloppes de {{ monthLabel }}
+        </span>
         @if (store.currentMonthClosed()) {
-          <div class="closed-month-badge">🔒 Mois clôturé — aucune modification possible</div>
+          <span class="closed-month-badge">
+            <app-icon name="lock" [size]="14" /> Mois clôturé
+          </span>
           <button
             class="seg reopen-month-btn"
             (click)="reopenMonth()"
             title="Autoriser à nouveau les modifications pour ce mois"
           >
-            🔓 Rouvrir le mois
+            <app-icon name="unlock" [size]="14" /> Rouvrir le mois
           </button>
         } @else {
           <div class="close-month-actions">
@@ -60,49 +67,64 @@
               (click)="closeMonth()"
               title="Reporter le solde net de ce mois vers le mois suivant, puis verrouiller le mois"
             >
-              🔒 Clôturer le mois
+              <app-icon name="lock" [size]="14" /> Clôturer le mois
             </button>
             <button
               class="seg close-month-btn close-month-fresh-btn"
               (click)="closeMonthFresh()"
-              title="Verrouiller le mois SANS reporter le solde — le mois suivant démarre à 0"
+              title="Verrouiller le mois sans reporter le solde"
             >
-              🆕 Clôturer sans reporter
+              Clôturer sans reporter
             </button>
           </div>
         }
       </div>
+    </section>
+
+    <app-money-pulse />
+
+    <section class="insights-grid" aria-label="Alertes et prévisions">
+      <app-smart-alerts />
+      <app-month-forecast />
+    </section>
+
+    <section class="budget-section" aria-labelledby="budget-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Enveloppes</p>
+          <h2 id="budget-heading">Ce qui reste à piloter</h2>
+        </div>
+      </div>
       <app-budget-progress />
-    </div>
+      <app-income-bar />
+    </section>
 
-    <app-income-bar />
-    <app-smart-alerts />
-    <app-month-forecast />
+    <section class="dashboard-stack" aria-label="Suivi du mois">
+      <app-income-list />
+      <app-income-form />
 
-    <app-income-list />
-    <app-income-form />
+      <app-upcoming-provisions />
+      <app-monthly-reminders />
+      <app-provision-form />
+      <app-provision-list />
+      <app-versement-splitter />
 
-    <app-upcoming-provisions />
-    <app-monthly-reminders />
-    <app-provision-form />
-    <app-provision-list />
-    <app-versement-splitter />
+      <app-savings-goal-list />
 
-    <app-savings-goal-list />
+      <app-category-budgets />
+      <app-expense-form />
+      <app-expected-this-month />
+      <app-recurring-expenses-manage />
 
-    <app-category-budgets />
-    <app-expense-form />
-    <app-expected-this-month />
-    <app-recurring-expenses-manage />
+      <app-month-comparison />
+      <app-yearly-view />
 
-    <app-month-comparison />
-    <app-yearly-view />
+      <div class="chart-expenses-grid">
+        <app-spending-chart />
+        <app-expense-list />
+      </div>
 
-    <div class="chart-expenses-grid">
-      <app-spending-chart />
-      <app-expense-list />
-    </div>
-
-    <app-credit-card />
+      <app-credit-card />
+    </section>
   }
-</div>
+</main>

@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-month-forecast',
-  imports: [],
+  imports: [Icon],
   templateUrl: './month-forecast.html',
   styleUrl: './month-forecast.scss',
 })

@@ -29,6 +29,7 @@ import { ExpectedThisMonth } from '../recurring-expenses/expected-this-month/exp
 import { RecurringExpensesManage } from '../recurring-expenses/recurring-expenses-manage/recurring-expenses-manage';
 import { DataManagement } from '../data-management/data-management/data-management';
 import { CategoriesManage } from '../categories/categories-manage/categories-manage';
+import { Icon } from '../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-dashboard',
@@ -58,11 +59,14 @@ import { CategoriesManage } from '../categories/categories-manage/categories-man
     RecurringExpensesManage,
     DataManagement,
     CategoriesManage,
+    Icon,
   ],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
 export class Dashboard implements OnInit {
+  readonly fmt = fmt;
+
   constructor(
     private auth: AuthService,
     public store: BudgetStore,
@@ -151,15 +155,15 @@ export class Dashboard implements OnInit {
       ? `Clôturer ${monthLabel(ym)} et reporter vers ${monthLabel(target)} :\n\n` +
         rollovers.map(({ member, balance }) => `• ${member.displayName} : ${this.fmtSigned(balance)}`).join('\n') +
         `\n\n` +
-        `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour les deux profils).`
+        `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour tous les membres).`
       : `Clôturer ${monthLabel(ym)} SANS reporter le solde ?\n\n` +
         `• Soldes (${rollovers.map(({ member, balance }) => `${member.displayName} : ${this.fmtSigned(balance)}`).join(', ')}) : perdus, pas reportés.\n` +
         `• ${monthLabel(target)} démarrera à 0, comme un nouveau départ.\n\n` +
-        `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour les deux profils).`;
+        `Plus aucune modification ne sera possible dans ${monthLabel(ym)} après la clôture (pour tous les membres).`;
     if (balances.some(({ existing }) => existing !== 0)) {
       msg += carryForward
-        ? `\n\n⚠ Des reports existent déjà pour ${monthLabel(target)} — ils seront remplacés.`
-        : `\n\n⚠ Des reports existent déjà pour ${monthLabel(target)} — ils seront remis à 0.`;
+        ? `\n\nDes reports existent déjà pour ${monthLabel(target)} — ils seront remplacés.`
+        : `\n\nDes reports existent déjà pour ${monthLabel(target)} — ils seront remis à 0.`;
     }
     if (!confirm(msg)) return;
 
@@ -178,8 +182,8 @@ export class Dashboard implements OnInit {
       this.store.current.set(target);
       this.toast.show(
         carryForward
-          ? `🔒 ${monthLabel(ym)} clôturé — reports enregistrés vers ${monthLabel(target)}.`
-          : `🔒 ${monthLabel(ym)} clôturé sans report — ${monthLabel(target)} démarre à 0.`,
+          ? `${monthLabel(ym)} clôturé — reports enregistrés vers ${monthLabel(target)}.`
+          : `${monthLabel(ym)} clôturé sans report — ${monthLabel(target)} démarre à 0.`,
       );
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
@@ -196,7 +200,7 @@ export class Dashboard implements OnInit {
     }
     try {
       await this.store.reopenMonth(ym);
-      this.toast.show(`🔓 ${monthLabel(ym)} rouvert.`);
+      this.toast.show(`${monthLabel(ym)} rouvert.`);
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     }
