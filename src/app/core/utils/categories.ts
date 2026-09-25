@@ -13,16 +13,6 @@ export function nextCategoryColor(existingCount: number): string {
   return `hsl(${Math.round((i * 137.508) % 360)}, ${62 + (i % 3) * 6}%, ${56 + (i % 2) * 5}%)`;
 }
 
-export const OWNERS: Record<string, string> = {
-  moi: 'Moi',
-  madame: 'Madame',
-  global: 'Global (foyer)',
-};
-export const OWNERS_SHORT: Record<string, string> = {
-  moi: 'Moi',
-  madame: 'Mme',
-};
-
 // Tri alphabétique (fr) pour l'affichage dans les listes déroulantes.
 export function sortedAlpha(list: string[]): string[] {
   return [...list].sort((a, b) => a.localeCompare(b, 'fr'));

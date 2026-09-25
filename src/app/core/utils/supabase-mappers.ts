@@ -16,12 +16,10 @@ import {
   AccountBalanceSnapshot,
 } from '../models/budget.models';
 
-const rowMemberId = (row: any): string => row.member_id ?? row.owner;
+const rowMemberId = (row: any): string => row.member_id;
 
-function memberColumn(value: { memberId?: string; owner?: string }, useMemberSchema: boolean): any {
-  return useMemberSchema
-    ? { member_id: value.memberId ?? value.owner }
-    : { owner: value.owner ?? value.memberId };
+function memberColumn(value: { memberId?: string; owner?: string }): any {
+  return { member_id: value.memberId ?? value.owner };
 }
 
 export function rowToAccount(row: any): Account {
@@ -70,15 +68,15 @@ export function rowToExpense(row: any): Expense {
   };
 }
 
-export function expenseToRow(e: Omit<Expense, 'id'> | Expense, useMemberSchema = false): any {
+export function expenseToRow(e: Omit<Expense, 'id'> | Expense): any {
   return {
     amount: e.amount,
     category: e.category,
     date: e.date,
-    ...memberColumn(e, useMemberSchema),
+    ...memberColumn(e),
     cc: e.cc,
     recurring_source_id: e.recurringSourceId ?? null,
-    ...(useMemberSchema ? { versement_to_member_id: e.versementToMemberId ?? null } : {}),
+    versement_to_member_id: e.versementToMemberId ?? null,
   };
 }
 
@@ -105,13 +103,12 @@ export function rowToRecurringExpense(row: any): RecurringExpense {
 
 export function recurringExpenseToRow(
   r: Omit<RecurringExpense, 'id'> | RecurringExpense,
-  useMemberSchema = false,
 ): any {
   return {
     name: r.name,
     amount: r.amount,
     category: r.category,
-    ...memberColumn(r, useMemberSchema),
+    ...memberColumn(r),
     interval: r.interval,
     day_of_month: r.dayOfMonth,
     second_day_of_month: r.secondDayOfMonth ?? null,
@@ -138,12 +135,12 @@ export function rowToIncome(row: any): Income {
   };
 }
 
-export function incomeToRow(i: Omit<Income, 'id'> | Income, useMemberSchema = false): any {
+export function incomeToRow(i: Omit<Income, 'id'> | Income): any {
   return {
     amount: i.amount,
     type: i.type,
     date: i.date,
-    ...memberColumn(i, useMemberSchema),
+    ...memberColumn(i),
     note: i.note,
     recurring: i.recurring,
     recurring_interval: i.recurringInterval,
@@ -190,12 +187,11 @@ export function rowToRecurringIncome(row: any): RecurringIncome {
 
 export function recurringIncomeToRow(
   r: Omit<RecurringIncome, 'id'> | RecurringIncome,
-  useMemberSchema = false,
 ): any {
   return {
     amount: r.amount,
     type: r.type,
-    ...memberColumn(r, useMemberSchema),
+    ...memberColumn(r),
     note: r.note,
     interval: r.interval,
     day_of_month: r.dayOfMonth,
@@ -254,10 +250,9 @@ export function rowToCreditCardPayment(row: any): CreditCardPayment {
 
 export function creditCardPaymentToRow(
   p: Omit<CreditCardPayment, 'id'>,
-  useMemberSchema = false,
 ): any {
   return {
-    ...memberColumn(p, useMemberSchema),
+    ...memberColumn(p),
     amount: p.amount,
     date: p.date,
     note: p.note,
@@ -306,7 +301,6 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
 
 export function provisionToRow(
   p: Omit<Provision, 'id' | 'adjustments'>,
-  useMemberSchema = false,
 ): any {
   return {
     name: p.name,
@@ -316,7 +310,7 @@ export function provisionToRow(
     start_ym: p.startYM || null,
     start_date: p.startDate || null,
     category: p.category,
-    ...memberColumn(p, useMemberSchema),
+    ...memberColumn(p),
     auto_recalibrate: p.autoRecalibrate,
     allocation_percent: p.allocationPercent,
     rolling_count: p.rollingCount,
@@ -365,12 +359,11 @@ export function rowToSavingsGoal(row: any, contributionRows: any[]): SavingsGoal
 
 export function savingsGoalToRow(
   g: Omit<SavingsGoal, 'id' | 'contributions'>,
-  useMemberSchema = false,
 ): any {
   return {
     name: g.name,
     target_amount: g.targetAmount,
     target_date: g.targetDate || null,
-    ...memberColumn(g, useMemberSchema),
+    ...memberColumn(g),
   };
 }

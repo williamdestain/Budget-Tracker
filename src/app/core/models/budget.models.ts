@@ -3,9 +3,10 @@
 // sans perte ni changement de comportement.
 
 /**
- * Legacy name kept for import/export compatibility.  Values are now member
- * ids (the historical `moi`/`madame` values are accepted while migration 024
- * has not been run).
+ * Legacy name kept for import/export compatibility. Values are member ids
+ * since migration-024-owner-to-member.sql, executed and validated in
+ * production on 2026-09-13 (see plan-industrialisation.md); the historical
+ * `moi`/`madame` string values no longer occur in fresh data.
  */
 export type Owner = string;
 export type OwnerOrGlobal = Owner | 'global';
@@ -31,7 +32,6 @@ export interface Expense {
   amount: number;
   category: string;
   date: string; // "YYYY-MM-DD"
-  /** @deprecated use memberId; retained for old exports and pre-024 servers. */
   owner: Owner;
   memberId?: string;
   versementToMemberId?: string | null;

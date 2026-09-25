@@ -239,7 +239,14 @@ export class FakeSupabaseClient {
 
   // Pré-remplit une table (équivalent d'un `insert` déjà en base avant le test).
   seed(table: string, rows: Row[]): void {
-    this.tables[table] = rows.map((r) => ({ id: r['id'] ?? nextId(), ...r }));
+    this.tables[table] = rows.map((r) => {
+      const row = { ...r };
+      if (row['owner'] !== undefined && row['member_id'] === undefined) {
+        row['member_id'] = row['owner'];
+        delete row['owner'];
+      }
+      return { id: row['id'] ?? nextId(), ...row };
+    });
   }
 
   // Fait échouer toute requête sur cette table (pour tester la gestion
@@ -273,7 +280,7 @@ export class FakeSupabaseClient {
   // tables : seulement celles dont un test exerce réellement le chemin
   // "INSERT strict, conflit = erreur" (contrôle de concurrence #8).
   private uniqueKeyColumns: Record<string, string[]> = {
-    category_budgets: ['household_id', 'owner', 'ym', 'category'],
+    category_budgets: ['household_id', 'member_id', 'ym', 'category'],
     closed_months: ['household_id', 'ym'],
   };
 
@@ -370,28 +377,12 @@ export class FakeSupabaseClient {
   // tests de ce faux client vérifient le COMPORTEMENT observable (tout ou
   // rien du point de vue de l'appelant), pas l'implémentation SQL.
   private fakeSplitVersementIntoProvisions(params?: Record<string, unknown>) {
-    // Migration-024 renomme p_sender (texte 'moi'/'madame') en
-    // p_sender_member_id (uuid, n'importe quel membre réel du foyer) —
-    // voir supabase/migration-024-owner-to-member.sql section 8. Les deux
-    // signatures doivent rester simulées tant que budget-store.service.ts
-    // essaie la nouvelle avant de retomber sur l'ancienne.
-    const memberSender = params?.['p_sender_member_id'] as string | undefined;
-    const legacySender = params?.['p_sender'] as string | undefined;
-    const usingMemberSchema = memberSender !== undefined;
-    const sender = (memberSender ?? legacySender) as string;
+    const sender = params?.['p_sender_member_id'] as string;
     const totalAmount = params?.['p_total_amount'] as number;
     const date = params?.['p_date'] as string;
     const existingExpenseId = (params?.['p_existing_expense_id'] as string | null) ?? null;
     const allocations = (params?.['p_allocations'] as any[]) ?? [];
 
-    if (usingMemberSchema) {
-      const knownMember = (this.tables['members'] ?? []).some((m) => m['id'] === memberSender);
-      if (!knownMember) {
-        return { data: null, error: { message: `Membre émetteur invalide : ${memberSender}` } };
-      }
-    } else if (!['moi', 'madame'].includes(sender)) {
-      return { data: null, error: { message: `Owner invalide : ${sender}` } };
-    }
     if (!(totalAmount > 0)) {
       return { data: null, error: { message: `Montant de versement invalide : ${totalAmount}` } };
     }
@@ -424,25 +415,15 @@ export class FakeSupabaseClient {
       expenseId = nextId();
       this.tables['expenses'] = [
         ...(this.tables['expenses'] ?? []),
-        usingMemberSchema
-          ? {
-              id: expenseId,
-              household_id: this.currentHouseholdId,
-              amount: totalAmount,
-              category: 'Versement',
-              date,
-              member_id: sender,
-              cc: false,
-            }
-          : {
-              id: expenseId,
-              household_id: this.currentHouseholdId,
-              amount: totalAmount,
-              category: 'Versement',
-              date,
-              owner: sender,
-              cc: false,
-            },
+        {
+          id: expenseId,
+          household_id: this.currentHouseholdId,
+          amount: totalAmount,
+          category: 'Versement',
+          date,
+          member_id: sender,
+          cc: false,
+        },
       ];
     }
 
@@ -532,16 +513,17 @@ export class FakeSupabaseClient {
   // des catégories par défaut (hors périmètre des tests unitaires du
   // store, qui seedent leurs propres catégories si besoin).
   private fakeCreateHousehold(params?: Record<string, unknown>) {
-    const ownerLabel = params?.['p_owner_label'] as string;
-    const name = (params?.['p_name'] as string) ?? 'Mon foyer';
-    if (!['moi', 'madame'].includes(ownerLabel)) {
-      return { data: null, error: { message: `Profil invalide : ${ownerLabel}` } };
-    }
+    const ownerLabel = params?.['p_display_name'] as string;
+    const name = (params?.['p_household_name'] as string) ?? 'Mon foyer';
     const members = this.tables['household_members'] ?? [];
     if (members.some((m) => m['user_id'] === this.currentUserId)) {
       return { data: null, error: { message: 'Ce compte appartient déjà à un foyer.' } };
     }
     const householdId = nextId();
+    // Un vrai id de membre, distinct du nom affiché — voir
+    // migration-026-household-rpc-member-id.sql, qui corrige le fait que la
+    // vraie RPC ne renvoyait aucun member_id avant elle.
+    const memberId = nextId();
     const joinCode = Math.random().toString(36).slice(2, 8).toUpperCase();
     if (!this.tables['households']) this.tables['households'] = [];
     if (!this.tables['household_members']) this.tables['household_members'] = [];
@@ -550,17 +532,15 @@ export class FakeSupabaseClient {
       id: nextId(),
       household_id: householdId,
       user_id: this.currentUserId,
-      owner_label: ownerLabel,
+      member_id: memberId,
+      display_name: ownerLabel,
     });
-    return { data: [{ household_id: householdId, join_code: joinCode }], error: null };
+    return { data: [{ household_id: householdId, join_code: joinCode, member_id: memberId }], error: null };
   }
 
   private fakeJoinHousehold(params?: Record<string, unknown>) {
     const code = ((params?.['p_code'] as string) ?? '').toUpperCase().trim();
-    const ownerLabel = params?.['p_owner_label'] as string;
-    if (!['moi', 'madame'].includes(ownerLabel)) {
-      return { data: null, error: { message: `Profil invalide : ${ownerLabel}` } };
-    }
+    const ownerLabel = params?.['p_display_name'] as string;
     const members = this.tables['household_members'] ?? [];
     if (members.some((m) => m['user_id'] === this.currentUserId)) {
       return { data: null, error: { message: 'Ce compte appartient déjà à un foyer.' } };
@@ -569,16 +549,21 @@ export class FakeSupabaseClient {
     if (!household) {
       return { data: null, error: { message: 'Code invalide.' } };
     }
-    if (members.some((m) => m['household_id'] === household['id'] && m['owner_label'] === ownerLabel)) {
+    if (members.some((m) => m['household_id'] === household['id'] && m['display_name'] === ownerLabel)) {
       return { data: null, error: { message: `Le profil "${ownerLabel}" existe déjà dans ce foyer.` } };
     }
+    const memberId = nextId();
     this.tables['household_members'].push({
       id: nextId(),
       household_id: household['id'],
       user_id: this.currentUserId,
-      owner_label: ownerLabel,
+      member_id: memberId,
+      display_name: ownerLabel,
     });
-    return { data: household['id'], error: null };
+    // RETOURNE TABLE (household_id, member_id) depuis migration-026 — avant,
+    // seul household_id (un uuid nu) était renvoyé, voir le commentaire dans
+    // budget-store.service.ts::joinHousehold().
+    return { data: [{ household_id: household['id'], member_id: memberId }], error: null };
   }
 
   // Sous-ensemble minimal de l'API auth, pas utilisé par BudgetStore

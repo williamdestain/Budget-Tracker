@@ -238,10 +238,16 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    répartition des dépenses du mois courant par catégorie et tableau
    détaillé mois par mois. Les calculs existants du store et les composants
    SVG partagés sont réutilisés; aucune logique financière n'est dupliquée.
-3. **Tableau de bord** — nouveau bandeau « ledger », panneaux d'alertes et
-   de prévisions. L'aperçu de patrimoine du prototype (comptes +
-   investissements − dettes) reste en `-` tant que la vague B n'est pas
-   faite ; afficher provisoirement juste le solde net et les enveloppes.
+3. ✅ **Tableau de bord** — fait le 20 septembre 2026 (commit `5faf117`).
+   Nouveau bandeau « ledger » (solde net + carte « Patrimoine »),
+   panneaux d'alertes et de prévisions (`app-smart-alerts` +
+   `app-month-forecast`). L'aperçu de patrimoine du prototype (comptes +
+   investissements − dettes) reste bien en `-` tant que la vague B n'est
+   pas faite, avec la mention « disponible en vague B » ; solde net +
+   enveloppes affichés à la place, comme prévu. Seuls `.html`/`.scss` ont
+   changé sur le fond ; le `.ts` n'a bougé que sur des détails cosmétiques
+   (import d'icône, wording « les deux profils » → « tous les membres »),
+   aucun calcul touché.
 4. **Mouvements** — nouveau `TransactionsFeedComponent` qui combine
    `ExpenseList` et `IncomeList` dans un seul flux triable et filtrable
    (le seul vrai nouveau bout de logique d'affichage de cette vague — un
@@ -303,6 +309,34 @@ qui s'est concrètement matérialisé.
 - ⬜ **Reste avant de finaliser `/comptes`** : une courte période de
   rodage en usage normal, puis le retrait du repli transitoire
   `owner`/`useMemberSchema()` (voir `MODELE.md` section 9).
+  - ✅ Le drapeau `useMemberSchema()` lui-même (branche à double chemin +
+    retry RPC sur l'ancien paramètre) est retiré de
+    `budget-store.service.ts`/`supabase-mappers.ts`.
+  - **Audit du 25 septembre 2026** : 2 vrais bugs trouvés dans ce
+    nettoyage, tous les deux corrigés et couverts par un test de
+    régression (309/310 tests ; le seul restant, `provisionDaysUntilNext`,
+    est préexistant et sans rapport — voir `MODELE.md` section 9.5.2) :
+    - `create_household()`/`join_household()` calculaient un `member_id`
+      en interne mais ne le renvoyaient **jamais** — bug de migration-024
+      elle-même, pas seulement du TypeScript. `joinHousehold()` stockait
+      donc le nom affiché tapé au lieu d'un vrai id (masqué par un filet
+      de rattrapage fragile qui compare aussi par `displayName`). Corrigé
+      par `migration-026-household-rpc-member-id.sql`.
+      **⬜ à exécuter sur le projet Supabase réel**, comme migration-024/025.
+    - Repli « Moi »/« Madame » codé en dur dans
+      `activeMembers()`/`memberName()`/`memberColor()` : mort en
+      production depuis le 13 septembre, mais masquait un vrai problème
+      si `members` était vide pour une mauvaise raison — retiré.
+    - Commentaire périmé dans `budget.models.ts` corrigé (référençait
+      encore une migration 024 « non exécutée »).
+  - ⬜ **Toujours en double, volontairement pas attaqué le 25 septembre**
+    (périmètre plus large que prévu — voir `MODELE.md` section 9.5.2 pour
+    le détail) : les champs `owner`/`memberId` restent dupliqués sur les
+    modèles, et `owner` est encore le champ réellement écrit (pas
+    seulement déclaré) par les formulaires, les listes, et surtout
+    `provision.utils.ts` (calcul de répartition entre membres) — un
+    renommage complet touche donc du code de calcul financier dans une
+    dizaine de fichiers hors du périmètre d'origine.
 
 La vague A n'a jamais été concernée par cette pause et peut continuer
 normalement (voir « Pour démarrer cette semaine » en fin de document).

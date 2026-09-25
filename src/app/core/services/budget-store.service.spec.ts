@@ -39,6 +39,29 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     // qui ne reçoivent pas household_id en paramètre — voir
     // fake-supabase-client.ts).
     fakeClient.setCurrentHousehold(TEST_HOUSEHOLD_ID);
+    // Membres par défaut pour tout le reste de la suite (qui écrit encore
+    // `owner: 'moi'`/`owner: 'madame'` dans ses fixtures) : depuis le
+    // retrait du repli codé en dur dans activeMembers()/memberIds() (voir
+    // budget-store.service.ts), une table `members` non peuplée donne un
+    // foyer sans membre actif, ce qui casserait silencieusement toute
+    // logique d'agrégation (`rolloverFor('global')`,
+    // `creditCardBalance('global')`, `splitVersementIntoProvisions()`, etc.)
+    // pour les tests qui ne seedent pas explicitement leurs propres membres.
+    // `seed()` remplace la table entière, donc les tests qui seedent leurs
+    // propres membres plus bas (Alex/Sam, etc.) écrasent ce défaut sans
+    // conflit.
+    fakeClient.seed('members', [
+      { id: 'moi', household_id: TEST_HOUSEHOLD_ID, display_name: 'Moi', color: '#4a6fa1', role: 'owner', active: true },
+      { id: 'madame', household_id: TEST_HOUSEHOLD_ID, display_name: 'Madame', color: '#a15385', role: 'member', active: true },
+    ]);
+    // loadAll() trie les membres par display_name ('Madame' avant 'Moi'
+    // alphabétiquement) et ne retombe sur le premier membre actif que si ni
+    // myMemberId ni myOwnerLabel ne correspondent à personne — sans ce
+    // réglage, cette suite se retrouverait avec activeOwner() sur 'madame'
+    // au lieu de 'moi' dès le premier loadAll(), pour la mauvaise raison
+    // (ordre alphabétique) plutôt que par résolution réelle du compte
+    // connecté (resolveHousehold(), non exercé ici).
+    store.myMemberId.set('moi');
   });
 
   describe('loadAll()', () => {
@@ -1274,7 +1297,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       // survivent EXACTEMENT intactes si l'import échoue en cours de
       // route (pas juste "revidées comme le reste").
       fakeClient.seed('expenses', [
-        { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', owner: 'moi', cc: false },
+        { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', member_id: 'moi', cc: false },
       ]);
       await store.loadAll();
 
@@ -1300,7 +1323,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       // ne recharge qu'en cas de succès), donc il reflète toujours l'état
       // chargé avant la tentative.
       expect(fakeClient.tables['expenses']).toEqual([
-        { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', owner: 'moi', cc: false },
+        { id: 'old', amount: 10, category: 'Courses', date: '2026-06-01', member_id: 'moi', cc: false },
       ]);
       expect(fakeClient.tables['incomes']).toEqual([]);
       expect(store.expenses()).toHaveLength(1);
@@ -1558,7 +1581,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       fakeClient.tables['category_budgets'].push({
         id: 'external-1',
         household_id: TEST_HOUSEHOLD_ID,
-        owner: 'moi',
+        member_id: 'moi',
         ym: '2026-07',
         category: 'Loisirs',
         amount: 80,
@@ -2674,7 +2697,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
 
     it('resolveHousehold() résout le foyer existant du compte connecté', async () => {
       fakeClient.seed('household_members', [
-        { id: 'm1', household_id: 'h1', user_id: 'test-user-1', owner_label: 'madame' },
+        { id: 'm1', household_id: 'h1', user_id: 'test-user-1', member_id: 'madame' },
       ]);
       await store.resolveHousehold();
       expect(store.needsHouseholdSetup()).toBe(false);
@@ -2688,6 +2711,11 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(store.myOwnerLabel()).toBe('moi');
       expect(store.needsHouseholdSetup()).toBe(false);
       expect(joinCode).toMatch(/^[A-Z0-9]{6}$/);
+      // Régression migration-026 : create_household() doit renvoyer un vrai
+      // member_id, pas juste household_id/join_code — sans quoi myMemberId
+      // reste à null jusqu'au premier loadAll().
+      expect(store.myMemberId()).toBeTruthy();
+      expect(store.myMemberId()).not.toBe('moi');
     });
 
     it('createHousehold() est refusé si le compte a déjà un foyer', async () => {
@@ -2708,6 +2736,11 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.joinHousehold(joinCode, 'moi');
       expect(store.householdId()).not.toBeNull();
       expect(store.myOwnerLabel()).toBe('moi');
+      // Régression du bug trouvé en audit : join_household() stockait le
+      // nom affiché tapé ('moi') dans myMemberId au lieu du vrai member_id
+      // renvoyé par la RPC (voir migration-026-household-rpc-member-id.sql).
+      expect(store.myMemberId()).toBeTruthy();
+      expect(store.myMemberId()).not.toBe('moi');
     });
 
     it('joinHousehold() est refusé avec un code invalide', async () => {

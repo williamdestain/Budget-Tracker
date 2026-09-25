@@ -556,9 +556,49 @@ souvent.
    1. Courte période de rodage en usage normal avant de retirer la
       compatibilité transitoire (pas de délai fixé — le temps de voir
       l'appli utilisée normalement quelques jours).
-   2. Retirer le repli `owner`/`useMemberSchema()` dans
+   2. 🟡 **Repli `owner`/`useMemberSchema()`** dans
       `budget-store.service.ts`/`supabase-mappers.ts`/`budget.models.ts`
-      une fois ce rodage jugé suffisant.
+      — partiellement retiré, audit du 25 septembre 2026 (voir aussi
+      `plan-industrialisation.md`, section vague B) :
+      - ✅ Le drapeau `useMemberSchema()` lui-même (branche à double
+        chemin + retry RPC sur l'ancien paramètre `p_sender`) est retiré.
+      - ✅ 2 vrais bugs trouvés au passage et corrigés, 309/310 tests (le
+        seul restant, `provisionDaysUntilNext`, est préexistant et sans
+        rapport avec ce nettoyage) :
+        - `create_household()`/`join_household()` ne renvoyaient jamais
+          le `member_id` qu'elles calculent en interne — bug de
+          migration-024 elle-même, pas seulement du TypeScript.
+          `joinHousehold()` stockait donc le nom affiché tapé au lieu
+          d'un vrai id (masqué par un filet de rattrapage fragile à la
+          ligne ~591 du store, qui compare aussi par `displayName`).
+          Corrigé par `migration-026-household-rpc-member-id.sql`, **à
+          exécuter sur Supabase comme migration-024/025** (même
+          procédure que section 6.4 : exécuter puis vérifier via la
+          requête de contrôle en commentaire dans le fichier).
+        - Repli « Moi »/« Madame » codé en dur dans
+          `activeMembers()`/`memberName()`/`memberColor()` : mort en
+          production depuis le 13 septembre, mais masquait un vrai
+          problème si `members` était vide pour une mauvaise raison —
+          retiré. (Effet de bord repéré en le retirant : `loadAll()`
+          trie les membres par `display_name`, donc son propre repli de
+          dernier recours — `.find(m => m.active)` quand ni `myMemberId`
+          ni `myOwnerLabel` ne correspond à personne — retombe sur
+          l'ordre alphabétique, pas sur une vraie résolution. Peu
+          probable en usage normal, mais noté au cas où.)
+        - Commentaire périmé dans `budget.models.ts` corrigé
+          (référençait encore une migration 024 « non exécutée »).
+      - ⬜ **Toujours en double, volontairement pas attaqué le 25
+        septembre** : les champs `owner`/`memberId` restent dupliqués sur
+        les modèles, et ce n'est pas confiné aux 3 fichiers du périmètre
+        d'origine — `owner` est encore le champ réellement écrit (pas
+        juste déclaré) par les formulaires (`expense-form`,
+        `income-form`, `provision-form`, `savings-goal-form`,
+        `recurring-expenses-manage`), les listes (`expense-list`,
+        `income-list`), et surtout `provision.utils.ts` — le calcul de
+        répartition entre membres. Consolider sur `memberId` partout
+        touche donc du code de calcul financier dans ~10 fichiers hors
+        périmètre ; à faire consciemment et séparément, pas comme un
+        nettoyage technique incident.
    3. ✅ Ajouter les tests du nouveau schéma. Deux passes :
       - 12-14 septembre : couverture des écritures simples table par table
         (dépenses, revenus, provisions, récurrents, objectifs, budgets,

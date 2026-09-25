@@ -262,17 +262,15 @@ export class BudgetStore {
   readonly myOwnerLabel = signal<Owner | null>(null);
   readonly myMemberId = signal<string | null>(null);
   readonly members = signal<Member[]>([]);
-  private readonly memberSchema = signal(false);
 
-  readonly activeMembers = computed(() => {
-    const configured = this.members().filter((m) => m.active);
-    return configured.length
-      ? configured
-      : [
-          { id: 'moi', householdId: this.householdId() ?? '', displayName: 'Moi', color: 'var(--owner-moi)', role: 'owner' as const, active: true },
-          { id: 'madame', householdId: this.householdId() ?? '', displayName: 'Madame', color: 'var(--pink)', role: 'member' as const, active: true },
-        ];
-  });
+  // Migration 024 confirmée en production depuis des semaines (voir
+  // plan-industrialisation.md) : plus aucun foyer réel ne devrait jamais
+  // avoir une table `members` vide. On ne fabrique donc plus de "Moi"/
+  // "Madame" de secours ici — un repli silencieux masquerait un vrai
+  // problème de chargement plutôt que de le signaler. Les rares call sites
+  // qui ont besoin d'une valeur par défaut (ex. provision-form,
+  // savings-goal-form) gèrent déjà leur propre `?? 'moi'` explicite.
+  readonly activeMembers = computed(() => this.members().filter((m) => m.active));
 
   readonly memberOptions = computed(() =>
     this.activeMembers().map((m) => ({ id: m.id, name: m.displayName, color: m.color })),
@@ -280,13 +278,11 @@ export class BudgetStore {
 
   memberName(id: string | null | undefined): string {
     if (!id) return 'Membre';
-    return this.members().find((m) => m.id === id)?.displayName ??
-      ({ moi: 'Moi', madame: 'Madame' }[id] ?? id);
+    return this.members().find((m) => m.id === id)?.displayName ?? id;
   }
 
   memberColor(id: string | null | undefined): string {
-    return this.members().find((m) => m.id === id)?.color ??
-      ({ moi: 'var(--owner-moi)', madame: 'var(--pink)' }[id ?? ''] ?? 'var(--accent)');
+    return this.members().find((m) => m.id === id)?.color ?? 'var(--accent)';
   }
 
   private memberIds(): string[] {
@@ -297,10 +293,6 @@ export class BudgetStore {
     return value.memberId ?? value.owner ?? '';
   }
 
-  private useMemberSchema(): boolean {
-    return this.memberSchema() ||
-      this.members().some((member) => member.id !== 'moi' && member.id !== 'madame');
-  }
   // Vrai une fois qu'on sait avec certitude que le compte connecté n'a
   // ENCORE aucun foyer — distinct de householdId()===null pendant le court
   // instant où la résolution est en cours (évite un flash de l'écran
@@ -327,18 +319,10 @@ export class BudgetStore {
   // dans la migration SQL) et résout immédiatement householdId/myOwnerLabel
   // — pas besoin d'un second aller-retour réseau après.
   async createHousehold(ownerLabel: Owner, name = 'Mon foyer'): Promise<{ joinCode: string }> {
-    let { data, error } = await this.supabase.client.rpc('create_household', {
+    const { data, error } = await this.supabase.client.rpc('create_household', {
       p_display_name: ownerLabel,
       p_household_name: name,
     });
-    if (error) {
-      // Compatibility window: migration 024 changes both parameter names and
-      // the member model. Retry the legacy RPC before reporting the failure.
-      ({ data, error } = await this.supabase.client.rpc('create_household', {
-        p_owner_label: ownerLabel.toLowerCase() === 'madame' ? 'madame' : 'moi',
-        p_name: name,
-      }));
-    }
     if (error) throw error;
     // Une fonction Postgres RETURNS TABLE renvoie un tableau (même à une
     // seule ligne) tant qu'on n'appelle pas .single() — évité ici pour
@@ -351,28 +335,32 @@ export class BudgetStore {
     };
     this.householdId.set(row.household_id);
     this.myOwnerLabel.set(ownerLabel);
-    this.myMemberId.set(row.member_id ?? ownerLabel);
+    this.myMemberId.set(row.member_id ?? null);
     this.needsHouseholdSetup.set(false);
     return { joinCode: row.join_code };
   }
 
-  // Rejoint un foyer existant via son code (voir join_household() dans la
-  // migration SQL).
+  // Rejoint un foyer existant via son code (voir join_household() dans
+  // migration-026-household-rpc-member-id.sql).
   async joinHousehold(code: string, ownerLabel: Owner): Promise<void> {
-    let { data, error } = await this.supabase.client.rpc('join_household', {
+    const { data, error } = await this.supabase.client.rpc('join_household', {
       p_code: code,
       p_display_name: ownerLabel,
     });
-    if (error) {
-      ({ data, error } = await this.supabase.client.rpc('join_household', {
-        p_code: code,
-        p_owner_label: ownerLabel.toLowerCase() === 'madame' ? 'madame' : 'moi',
-      }));
-    }
     if (error) throw error;
-    this.householdId.set(data as string);
+    // Bug corrigé (migration-026) : join_household() ne renvoyait que le
+    // household_id (uuid nu), donc il n'y avait pas de vrai member_id à
+    // lire ici — le code stockait à la place le nom affiché tapé par la
+    // personne (ownerLabel), qui n'est pas un identifiant. La fonction
+    // RETOURNE désormais TABLE (household_id, member_id), comme
+    // create_household() : même déballage tableau-à-une-ligne.
+    const row = (Array.isArray(data) ? data[0] : data) as {
+      household_id: string;
+      member_id?: string;
+    };
+    this.householdId.set(row.household_id);
     this.myOwnerLabel.set(ownerLabel);
-    this.myMemberId.set(ownerLabel);
+    this.myMemberId.set(row.member_id ?? null);
     this.needsHouseholdSetup.set(false);
   }
 
@@ -399,8 +387,8 @@ export class BudgetStore {
       return;
     }
     this.householdId.set(data.household_id);
-    this.myOwnerLabel.set((data.member_id ?? data.owner_label) as Owner);
-    this.myMemberId.set(data.member_id ?? data.owner_label);
+    this.myOwnerLabel.set(data.member_id as Owner);
+    this.myMemberId.set(data.member_id ?? null);
     this.needsHouseholdSetup.set(false);
   }
 
@@ -503,7 +491,6 @@ export class BudgetStore {
     this.myOwnerLabel.set(null);
     this.myMemberId.set(null);
     this.members.set([]);
-    this.memberSchema.set(false);
     this.activeOwner.set('moi');
     this.needsHouseholdSetup.set(false);
     this.expenses.set([]);
@@ -598,13 +585,7 @@ export class BudgetStore {
     }
     this.loadError.set(failedTables.length ? failedTables : []);
 
-    // Migration 024 is deliberately optional during rollout. A missing
-    // members table (or an empty fake/legacy schema) keeps the old owner
-    // contract active; a populated members table switches all writes to
-    // member_id.
-    const hasMemberSchema = !membersRes.error && (membersRes.data ?? []).length > 0;
-    this.memberSchema.set(hasMemberSchema);
-    if (hasMemberSchema) {
+    if (!membersRes.error) {
       this.members.set((membersRes.data ?? []).map((row: any) => ({
         id: row.id,
         householdId: row.household_id,
@@ -617,16 +598,6 @@ export class BudgetStore {
         this.members().find((m) => m.id === this.myMemberId() || m.displayName === this.myOwnerLabel())?.id ??
         this.members().find((m) => m.active)?.id;
       if (preferred) this.activeOwner.set(preferred);
-    } else {
-      const legacyMembers = ['moi', 'madame'].map((id) => ({
-          id,
-          householdId: this.householdId() ?? '',
-          displayName: id === 'moi' ? 'Moi' : 'Madame',
-          color: id === 'moi' ? 'var(--owner-moi)' : 'var(--pink)',
-          role: id === 'moi' ? 'owner' as const : 'member' as const,
-          active: true,
-        }));
-      this.members.set(legacyMembers);
     }
 
     // Chaque table n'est mise à jour que si sa requête a réussi — en cas
@@ -641,7 +612,7 @@ export class BudgetStore {
       this.categoryBudgets.set(rowsToCategoryBudgetMap(categoryBudgetsRes.data ?? []));
       this.categoryBudgetUpdatedAt = new Map(
         (categoryBudgetsRes.data ?? []).map((row: any) => [
-          this.cbKey(row.member_id ?? row.owner, row.ym, row.category),
+          this.cbKey(row.member_id, row.ym, row.category),
           row.updated_at,
         ]),
       );
@@ -1535,7 +1506,7 @@ export class BudgetStore {
         .from('category_budgets')
         .update({ amount })
         .eq('household_id', this.hid())
-        .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
+        .eq('member_id', owner)
         .eq('ym', ym)
         .eq('category', category)
         .eq('updated_at', localUpdatedAt)
@@ -1550,7 +1521,7 @@ export class BudgetStore {
         .from('category_budgets')
         .insert({
           household_id: this.hid(),
-          ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+          member_id: owner,
           ym,
           category,
           amount,
@@ -1593,7 +1564,7 @@ export class BudgetStore {
       .from('category_budgets')
       .delete()
       .eq('household_id', this.hid())
-      .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
+      .eq('member_id', owner)
       .eq('ym', ym)
       .eq('category', category);
     // Compare-and-swap : si on connaît le `updated_at` de la dernière
@@ -1635,7 +1606,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('expenses')
-      .insert({ household_id: this.hid(), ...expenseToRow(expense, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...expenseToRow(expense) })
       .select()
       .single();
     if (error) throw error;
@@ -1714,15 +1685,11 @@ export class BudgetStore {
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
     if (changes.date !== undefined) row['date'] = changes.date;
-    if (this.useMemberSchema()) {
-      if (changes.memberId !== undefined || changes.owner !== undefined) {
-        row['member_id'] = changes.memberId ?? changes.owner;
-      }
-      if (changes.versementToMemberId !== undefined) {
-        row['versement_to_member_id'] = changes.versementToMemberId;
-      }
-    } else if (changes.owner !== undefined) {
-      row['owner'] = changes.owner;
+    if (changes.memberId !== undefined || changes.owner !== undefined) {
+      row['member_id'] = changes.memberId ?? changes.owner;
+    }
+    if (changes.versementToMemberId !== undefined) {
+      row['versement_to_member_id'] = changes.versementToMemberId;
     }
     if (changes.cc !== undefined) row['cc'] = changes.cc;
     if (changes.recurringSourceId !== undefined) {
@@ -1748,7 +1715,7 @@ export class BudgetStore {
       // modifiée sans son recalage de provision.
       const { error: rollbackError } = await this.supabase.client
         .from('expenses')
-        .update(expenseToRow(existing, this.useMemberSchema()))
+        .update(expenseToRow(existing))
         .eq('id', id);
       this.expenses.update((list) => list.map((e) => (e.id === id ? existing : e)));
       if (rollbackError) {
@@ -1821,7 +1788,7 @@ export class BudgetStore {
   async addRecurringExpense(r: Omit<RecurringExpense, 'id'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('recurring_expenses')
-      .insert({ household_id: this.hid(), ...recurringExpenseToRow(r, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...recurringExpenseToRow(r) })
       .select()
       .single();
     if (error) throw error;
@@ -1836,7 +1803,9 @@ export class BudgetStore {
     if (changes.name !== undefined) row['name'] = changes.name;
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
-    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.owner !== undefined || changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId ?? changes.owner;
+    }
     if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
     if (changes.cc !== undefined) row['cc'] = changes.cc;
     if (changes.active !== undefined) row['active'] = changes.active;
@@ -2106,7 +2075,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('provisions')
-      .insert({ household_id: this.hid(), ...provisionToRow(provision, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...provisionToRow(provision) })
       .select()
       .single();
     if (error) throw error;
@@ -2180,7 +2149,7 @@ export class BudgetStore {
   async addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'contributions'>): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('savings_goals')
-      .insert({ household_id: this.hid(), ...savingsGoalToRow(goal, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...savingsGoalToRow(goal) })
       .select()
       .single();
     if (error) throw error;
@@ -2287,7 +2256,9 @@ export class BudgetStore {
     if (changes.startYM !== undefined) row['start_ym'] = changes.startYM || null;
     if (changes.startDate !== undefined) row['start_date'] = changes.startDate || null;
     if (changes.category !== undefined) row['category'] = changes.category;
-    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.owner !== undefined || changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId ?? changes.owner;
+    }
     if (changes.autoRecalibrate !== undefined) row['auto_recalibrate'] = changes.autoRecalibrate;
     if (changes.allocationPercent !== undefined) row['allocation_percent'] = changes.allocationPercent;
     if (changes.rollingCount !== undefined) row['rolling_count'] = changes.rollingCount;
@@ -2415,7 +2386,7 @@ export class BudgetStore {
     // provision adjustments to it.
     let rpcExpenseId = existingExpenseId;
     let createdExpenseId: string | null = null;
-    if (this.useMemberSchema() && !rpcExpenseId) {
+    if (!rpcExpenseId) {
       const created = await this.addExpense({
         amount: totalAmount,
         category: 'Versement',
@@ -2435,20 +2406,8 @@ export class BudgetStore {
     // écrit, soit rien ne l'est. Remplace l'ancienne approche (inserts
     // indépendants + rollback applicatif "de compensation" qui pouvait
     // lui-même échouer, voir BUG-010).
-    const { error } = await this.supabase.client.rpc('split_versement_into_provisions', this.useMemberSchema() ? {
+    const { error } = await this.supabase.client.rpc('split_versement_into_provisions', {
       p_sender_member_id: sender,
-      p_total_amount: totalAmount,
-      p_date: date,
-      p_existing_expense_id: rpcExpenseId ?? null,
-      p_allocations: allocations
-        .filter((a) => a.amount > 0)
-        .map((a) => ({
-          provision_id: a.provisionId,
-          amount: a.amount,
-          note: `Versement de ${senderLabel}`,
-        })),
-    } : {
-      p_sender: sender,
       p_total_amount: totalAmount,
       p_date: date,
       p_existing_expense_id: rpcExpenseId ?? null,
@@ -2606,7 +2565,7 @@ export class BudgetStore {
     }
     const { data, error } = await this.supabase.client
       .from('incomes')
-      .insert({ household_id: this.hid(), ...incomeToRow(income, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...incomeToRow(income) })
       .select()
       .single();
     if (error) throw error;
@@ -2676,7 +2635,7 @@ export class BudgetStore {
   async addRecurringIncome(r: Omit<RecurringIncome, 'id'>): Promise<RecurringIncome> {
     const { data, error } = await this.supabase.client
       .from('recurring_incomes')
-      .insert({ household_id: this.hid(), ...recurringIncomeToRow(r, this.useMemberSchema()) })
+      .insert({ household_id: this.hid(), ...recurringIncomeToRow(r) })
       .select()
       .single();
     if (error) throw error;
@@ -2695,7 +2654,9 @@ export class BudgetStore {
     const row: Record<string, unknown> = {};
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.type !== undefined) row['type'] = changes.type;
-    if (changes.owner !== undefined) row['owner'] = changes.owner;
+    if (changes.owner !== undefined || changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId ?? changes.owner;
+    }
     if (changes.note !== undefined) row['note'] = changes.note;
     if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
     if (changes.secondDayOfMonth !== undefined) row['second_day_of_month'] = changes.secondDayOfMonth;
@@ -2902,15 +2863,13 @@ export class BudgetStore {
           .upsert(
             {
               household_id: this.hid(),
-              ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+              member_id: owner,
               ym,
               category: trimmed,
               amount,
             },
             {
-              onConflict: this.useMemberSchema()
-                ? 'household_id,member_id,ym,category'
-                : 'household_id,owner,ym,category',
+              onConflict: 'household_id,member_id,ym,category',
             },
           )
           .select('updated_at')
@@ -2919,7 +2878,7 @@ export class BudgetStore {
         const { error: delErr } = await this.supabase.client
           .from('category_budgets')
           .delete()
-          .eq(this.useMemberSchema() ? 'member_id' : 'owner', owner)
+          .eq('member_id', owner)
           .eq('ym', ym)
           .eq('category', oldName);
         if (delErr) throw delErr;
@@ -3002,7 +2961,7 @@ export class BudgetStore {
         this.supabase.client
           .from('rollovers')
           .delete()
-          .eq(this.useMemberSchema() ? 'member_id' : 'owner', o)
+          .eq('member_id', o)
           .eq('ym', ym),
       ),
     );
@@ -3040,14 +2999,12 @@ export class BudgetStore {
       .upsert(
         {
           household_id: this.hid(),
-          ...(this.useMemberSchema() ? { member_id: owner } : { owner }),
+          member_id: owner,
           ym,
           amount,
         },
         {
-          onConflict: this.useMemberSchema()
-            ? 'household_id,member_id,ym'
-            : 'household_id,owner,ym',
+          onConflict: 'household_id,member_id,ym',
         },
       );
     if (error) throw error;
@@ -3223,7 +3180,6 @@ export class BudgetStore {
   }
 
   private importMemberId(value: string | undefined): string {
-    if (!this.useMemberSchema()) return value ?? 'moi';
     const configured = this.memberIds();
     if (value && configured.includes(value)) return value;
     if (value === 'madame') return configured.find((id) => id !== configured[0]) ?? configured[0];
@@ -3251,7 +3207,7 @@ export class BudgetStore {
       return {
         id: newId,
         household_id: hid,
-        ...provisionToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }, this.useMemberSchema()),
+        ...provisionToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }),
       };
     });
     const provisionAdjustmentRows = (data.provisions as Provision[]).flatMap((p) =>
@@ -3275,7 +3231,7 @@ export class BudgetStore {
       return {
         id: newId,
         household_id: hid,
-        ...savingsGoalToRow({ ...g, memberId: this.importMemberId(g.memberId ?? g.owner) }, this.useMemberSchema()),
+        ...savingsGoalToRow({ ...g, memberId: this.importMemberId(g.memberId ?? g.owner) }),
       };
     });
     const savingsGoalContributionRows = savingsGoals.flatMap((g) =>
@@ -3297,7 +3253,7 @@ export class BudgetStore {
     ).map((r) => ({
       id: idFor(r.id),
       household_id: hid,
-      ...recurringExpenseToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }, this.useMemberSchema()),
+      ...recurringExpenseToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }),
     }));
 
     const recurringIncomeRows = (
@@ -3305,7 +3261,7 @@ export class BudgetStore {
     ).map((r) => ({
       id: idFor(r.id),
       household_id: hid,
-      ...recurringIncomeToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }, this.useMemberSchema()),
+      ...recurringIncomeToRow({ ...r, memberId: this.importMemberId(r.memberId ?? r.owner) }),
     }));
 
     // Optionnel : absent des sauvegardes exportées avant l'ajout des
@@ -3327,18 +3283,18 @@ export class BudgetStore {
     ).map((p) => ({
       id: idFor(p.id),
       household_id: hid,
-      ...creditCardPaymentToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }, this.useMemberSchema()),
+      ...creditCardPaymentToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }),
     }));
 
     const expenseRows = (data.expenses as Expense[]).map((e) => ({
       id: idFor(e.id),
       household_id: hid,
-      ...expenseToRow({ ...e, memberId: this.importMemberId(e.memberId ?? e.owner) }, this.useMemberSchema()),
+      ...expenseToRow({ ...e, memberId: this.importMemberId(e.memberId ?? e.owner) }),
     }));
     const incomeRows = (data.incomes as Income[]).map((i) => ({
       id: idFor(i.id),
       household_id: hid,
-      ...incomeToRow({ ...i, memberId: this.importMemberId(i.memberId ?? i.owner) }, this.useMemberSchema()),
+      ...incomeToRow({ ...i, memberId: this.importMemberId(i.memberId ?? i.owner) }),
     }));
 
     const ownersList: Owner[] = this.memberIds();
@@ -3347,7 +3303,7 @@ export class BudgetStore {
       Object.entries(data.budgets?.[o] || {}).forEach(([ym, amount]) => {
         budgetRows.push({
           household_id: hid,
-          ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+          member_id: this.importMemberId(o),
           ym,
           amount,
         });
@@ -3358,7 +3314,7 @@ export class BudgetStore {
       Object.entries(data.rollovers?.[o] || {}).forEach(([ym, amount]) => {
         rolloverRows.push({
           household_id: hid,
-          ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+          member_id: this.importMemberId(o),
           ym,
           amount,
         });
@@ -3370,7 +3326,7 @@ export class BudgetStore {
         Object.entries(catMap || {}).forEach(([category, amount]) => {
           categoryBudgetRows.push({
             household_id: hid,
-            ...(this.useMemberSchema() ? { member_id: this.importMemberId(o) } : { owner: o }),
+            member_id: this.importMemberId(o),
             ym,
             category,
             amount,
@@ -3441,7 +3397,7 @@ export class BudgetStore {
       .from('credit_card_payments')
       .insert({
         household_id: this.hid(),
-        ...creditCardPaymentToRow({ owner, amount, date, note }, this.useMemberSchema()),
+        ...creditCardPaymentToRow({ owner, amount, date, note }),
       })
       .select()
       .single();
