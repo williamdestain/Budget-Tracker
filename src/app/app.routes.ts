@@ -35,9 +35,7 @@ export const routes: Routes = [
       {
         path: 'mouvements',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/mouvements/mouvements').then((m) => m.Mouvements),
         data: { navTitle: 'Mouvements' },
       },
       {

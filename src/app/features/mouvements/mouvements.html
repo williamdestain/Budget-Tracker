@@ -1,0 +1,78 @@
+<div class="mouvements-page">
+  <app-card size="lg" accent="var(--accent)">
+    <div class="mouvements-hero">
+      <div>
+        <span class="eyebrow">Flux du mois</span>
+        <h1>Mouvements</h1>
+      </div>
+
+      <div class="mouvements-totals">
+        <div>
+          <span class="totals-label">Entrées</span>
+          <strong class="positive">{{ fmt(summary().incomes) }}</strong>
+        </div>
+        <div>
+          <span class="totals-label">Sorties</span>
+          <strong class="negative">{{ fmt(summary().expenses) }}</strong>
+        </div>
+        <div>
+          <span class="totals-label">Solde</span>
+          <strong [class.positive]="summary().net >= 0" [class.negative]="summary().net < 0">
+            {{ fmt(summary().net) }}
+          </strong>
+        </div>
+      </div>
+    </div>
+  </app-card>
+
+  <div class="mouvements-toolbar">
+    <div class="chip-row" aria-label="Filtres des mouvements">
+      <app-chip [active]="filter() === 'all'" (click)="setFilter('all')">Tout</app-chip>
+      <app-chip [active]="filter() === 'expense'" (click)="setFilter('expense')">Dépenses</app-chip>
+      <app-chip [active]="filter() === 'income'" (click)="setFilter('income')">Revenus</app-chip>
+    </div>
+
+    <label class="search-field" aria-label="Recherche dans les mouvements">
+      <span>Recherche</span>
+      <input
+        type="search"
+        [value]="search()"
+        placeholder="Catégorie, membre, type…"
+        (input)="search.set($any($event.target).value)"
+      />
+    </label>
+  </div>
+
+  <app-card>
+    @if (entries().length === 0) {
+      <div class="empty-state">
+        <strong>Aucun mouvement pour ce filtre.</strong>
+        <span>Essaye une autre catégorie ou un autre mot-clé.</span>
+      </div>
+    } @else {
+      <div class="movement-list" aria-live="polite">
+        @for (entry of entries(); track entry.id) {
+          <article class="movement-row" [class]="'movement-row--' + entry.type">
+            <span class="movement-dot" [style.background]="entry.color"></span>
+
+            <div class="movement-copy">
+              <div class="movement-head">
+                <strong>{{ entry.category }}</strong>
+                <span class="movement-badge">{{ badgeLabel(entry) }}</span>
+              </div>
+              <div class="movement-meta">
+                <span>{{ fmtDate(entry.date) }}</span>
+                <span>·</span>
+                <span>{{ store.memberName(entry.memberId) }}</span>
+              </div>
+            </div>
+
+            <span class="movement-amount" [class.positive]="entry.type === 'income'" [class.negative]="entry.type === 'expense'">
+              {{ entry.type === 'income' ? '+' : '-' }}{{ fmt(entry.amount) }}
+            </span>
+          </article>
+        }
+      </div>
+    }
+  </app-card>
+</div>
