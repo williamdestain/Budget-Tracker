@@ -24,6 +24,17 @@
 -- format (voir budget-store.service.ts).
 --
 -- À exécuter après migration-025-member-management.sql.
+--
+-- Corrigé le 25 septembre 2026, trouvé en testant join_household() : passer
+-- son type de retour à `table (household_id uuid, member_id uuid)` fait de
+-- `household_id` une variable de sortie implicite dans tout le corps de la
+-- fonction, en plus d'être une colonne de `members`. Les références non
+-- qualifiées à `household_id` dans ses clauses WHERE devenaient donc
+-- ambiguës (erreur Postgres 42702) — invisible à la création de la
+-- fonction, seulement au premier appel. Qualifiées en `members.household_id`
+-- ci-dessous. create_household() n'a pas ce problème : aucune de ses
+-- requêtes ne référence `household_id` autrement que dans une liste de
+-- colonnes cible d'un insert (jamais ambigu).
 
 begin;
 
@@ -150,7 +161,7 @@ begin
   -- nom existe déjà dans ce foyer mais n'est encore relié à AUCUN compte
   -- connecté -> on le réclame au lieu d'en créer un second.
   select id into v_member_id from members
-    where household_id = v_household_id
+    where members.household_id = v_household_id
       and lower(display_name) = lower(trim(p_display_name))
       and not exists (
         select 1 from household_members hm where hm.member_id = members.id
@@ -163,7 +174,7 @@ begin
   else
     if exists (
       select 1 from members
-      where household_id = v_household_id and lower(display_name) = lower(trim(p_display_name))
+      where members.household_id = v_household_id and lower(display_name) = lower(trim(p_display_name))
     ) then
       raise exception 'Il y a déjà un membre nommé "%" dans ce foyer.', p_display_name;
     end if;
@@ -171,7 +182,7 @@ begin
     if p_color is not null and trim(p_color) <> '' then
       v_color := trim(p_color);
     else
-      select array_agg(color) into v_used_colors from members where household_id = v_household_id;
+      select array_agg(color) into v_used_colors from members where members.household_id = v_household_id;
       v_color := null;
       foreach v_c in array v_palette loop
         if v_used_colors is null or not (v_c = any(v_used_colors)) then
