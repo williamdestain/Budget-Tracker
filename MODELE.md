@@ -556,25 +556,39 @@ souvent.
    1. Courte période de rodage en usage normal avant de retirer la
       compatibilité transitoire (pas de délai fixé — le temps de voir
       l'appli utilisée normalement quelques jours).
-   2. 🟡 **Repli `owner`/`useMemberSchema()`** dans
+   2. ✅ **Repli `owner`/`useMemberSchema()`** dans
       `budget-store.service.ts`/`supabase-mappers.ts`/`budget.models.ts`
-      — partiellement retiré, audit du 25 septembre 2026 (voir aussi
+      — entièrement retiré le 28 septembre 2026 (deux passages, voir
       `plan-industrialisation.md`, section vague B) :
       - ✅ Le drapeau `useMemberSchema()` lui-même (branche à double
-        chemin + retry RPC sur l'ancien paramètre `p_sender`) est retiré.
-      - ✅ 2 vrais bugs trouvés au passage et corrigés, 309/310 tests (le
-        seul restant, `provisionDaysUntilNext`, est préexistant et sans
-        rapport avec ce nettoyage) :
+        chemin + retry RPC sur l'ancien paramètre `p_sender`) est retiré
+        (25 septembre).
+      - ✅ 2 vrais bugs trouvés au 25 septembre et corrigés, 309/310 tests
+        (le seul restant, `provisionDaysUntilNext`, était préexistant et
+        sans rapport avec ce nettoyage — **corrigé le 27 septembre 2026** :
+        `daysBetween()` compte désormais en UTC, voir
+        `plan-industrialisation.md` Phase 0) :
         - `create_household()`/`join_household()` ne renvoyaient jamais
           le `member_id` qu'elles calculent en interne — bug de
           migration-024 elle-même, pas seulement du TypeScript.
           `joinHousehold()` stockait donc le nom affiché tapé au lieu
           d'un vrai id (masqué par un filet de rattrapage fragile à la
           ligne ~591 du store, qui compare aussi par `displayName`).
-          Corrigé par `migration-026-household-rpc-member-id.sql`, **à
-          exécuter sur Supabase comme migration-024/025** (même
-          procédure que section 6.4 : exécuter puis vérifier via la
-          requête de contrôle en commentaire dans le fichier).
+          Corrigé par `migration-026-household-rpc-member-id.sql`,
+          **exécutée sur Supabase le 28 septembre 2026** (même procédure
+          que 024/025 : le fichier définit `create_household()` et
+          `join_household()` avec `create or replace function`, donc
+          rejouable sans casse si jamais réappliquée). Avant exécution
+          réelle, la migration a été rejouée sur un Postgres jetable
+          (schéma complet + données héritées + 024 + 025 + 026, avec des
+          rôles `authenticated`/`anon` réels) : 38 vérifications couvrant
+          chaque chemin (création, nouveau membre, réclamation d'un
+          membre fantôme créé par la 024 §7, palette de couleurs, chaque
+          message d'erreur avec atomicité, unicité des signatures,
+          isolation RLS) — voir `supabase/tests/026-household-rpc.test.sql`
+          et `supabase/tests/run.sh`. Les deux mutations volontaires du
+          bug historique (référence `household_id` ambiguë, `member_id`
+          non renvoyé) ont bien fait échouer la batterie avant correctif.
         - Repli « Moi »/« Madame » codé en dur dans
           `activeMembers()`/`memberName()`/`memberColor()` : mort en
           production depuis le 13 septembre, mais masquait un vrai
@@ -587,18 +601,67 @@ souvent.
           probable en usage normal, mais noté au cas où.)
         - Commentaire périmé dans `budget.models.ts` corrigé
           (référençait encore une migration 024 « non exécutée »).
-      - ⬜ **Toujours en double, volontairement pas attaqué le 25
-        septembre** : les champs `owner`/`memberId` restent dupliqués sur
-        les modèles, et ce n'est pas confiné aux 3 fichiers du périmètre
-        d'origine — `owner` est encore le champ réellement écrit (pas
-        juste déclaré) par les formulaires (`expense-form`,
-        `income-form`, `provision-form`, `savings-goal-form`,
-        `recurring-expenses-manage`), les listes (`expense-list`,
-        `income-list`), et surtout `provision.utils.ts` — le calcul de
-        répartition entre membres. Consolider sur `memberId` partout
-        touche donc du code de calcul financier dans ~10 fichiers hors
-        périmètre ; à faire consciemment et séparément, pas comme un
-        nettoyage technique incident.
+      - ✅ **Consolidation `owner`/`memberId` — faite le 28 septembre
+        2026.** Champ `memberId: string` désormais seul sur les 7
+        entités concernées (`Expense`, `RecurringExpense`, `Income`,
+        `RecurringIncome`, `Provision`, `CreditCardPayment`,
+        `SavingsGoal`) ; `owner`/`Owner` reste seulement comme *type*
+        (`Owner = string`, `OwnerOrGlobal`) pour désigner un profil dans
+        les signatures (`activeOwner`, `memberIds()`, filtres de vue),
+        jamais comme champ dupliqué sur une entité. 105 erreurs de
+        compilation corrigées, position par position (pas de
+        remplacement global) pour distinguer un vrai champ d'un simple
+        nom de paramètre ou d'un doublon déjà présent dans un litéral de
+        test. Deux cas trouvés qui n'étaient PAS de simples
+        renommages :
+        - `MonthlyAmountMap`/`CategoryBudgetMap` (`budgets`,
+          `categoryBudgets`, `rollovers`) avaient `moi`/`madame` comme
+          clés garanties par le type, même sans données — supprimé (le
+          type est maintenant un vrai `Record<string, ...>`, une entrée
+          par membre RÉEL, aucune garantie de présence). A cassé
+          `renameCategory()` (`this.categoryBudgets()[owner]` supposait
+          un objet toujours présent) — corrigé avec un repli `?? {}` à
+          l'unique endroit concerné, les 4 autres accès avaient déjà
+          `?.`. Cherché explicitement dans toute l'app (composants et
+          templates compris, pas seulement le store) : aucun autre
+          endroit ne suppose ces clés.
+        - `buildImportPayload()` (import d'une sauvegarde) doit encore
+          accepter un fichier exporté avant migration-024 avec
+          `owner: 'moi'|'madame'` et sans `memberId` — ce n'est pas un
+          reliquat à nettoyer mais une compatibilité descendante
+          nécessaire. Gardée, avec un type dédié `LegacyOwnerField`
+          utilisé seulement à l'import, jamais dans les types du
+          domaine.
+        - `tsc --noEmit` ne voit PAS les templates HTML : `ng build`
+          seul a révélé 13 erreurs supplémentaires (`.owner` encore lu
+          dans `expense-list.html`/`income-list.html`), invisibles côté
+          `.ts`. Les deux corrigés.
+        - Dans les tests utilisant un cast `as unknown as BudgetStore`,
+          `tsc` ne signale pas un `owner:` resté dans les données de
+          test (le cast désactive la vérification stricte) — 3 données
+          de `mouvements.spec.ts` avaient encore `owner: 'madame'` sans
+          erreur de compilation, mais rendaient un des tests
+          silencieusement moins strict qu'il n'y paraissait (le faux
+          `memberName()` du test traite « différent de 'moi' » comme
+          Madame, donc le test passait quand même, pour la mauvaise
+          raison). Corrigé.
+        - **Notée mais PAS corrigée, hors périmètre** :
+          `expense-list.html` utilise encore `[class]="e.memberId"` pour
+          appliquer une couleur de badge via CSS
+          (`.owner-badge.moi`/`.owner-badge.madame` dans le SCSS). Ça ne
+          fonctionne que si l'id réel du membre est littéralement `moi`
+          ou `madame` — vrai pour les tout premiers membres migrés par
+          la 024, faux pour tout membre créé depuis (id = uuid réel). Un
+          `[style.background]` déjà présent sur le même élément
+          fonctionne correctement, donc le badge garde la bonne couleur
+          en pratique ; seule la classe CSS elle-même est un reliquat
+          muet. Préexistant au nettoyage d'aujourd'hui (présent depuis
+          le 13 septembre), pas introduit par lui — à traiter avec
+          `/mouvements` ou une passe UI dédiée, pas ici.
+        - Suite complète (662 tests) verte après coup, y compris
+          `ng build` (production) et sous 3 fuseaux (UTC, Toronto,
+          Sydney) pour s'assurer que rien ne dépend accidentellement de
+          l'heure locale comme pour `provisionDaysUntilNext`.
    3. ✅ Ajouter les tests du nouveau schéma. Deux passes :
       - 12-14 septembre : couverture des écritures simples table par table
         (dépenses, revenus, provisions, récurrents, objectifs, budgets,

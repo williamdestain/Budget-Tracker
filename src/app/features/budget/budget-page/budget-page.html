@@ -1,0 +1,69 @@
+<main class="budget-page">
+  <header class="budget-intro">
+    <div>
+      <p class="eyebrow">Planification mensuelle</p>
+      <h1>Budget &amp; enveloppes</h1>
+      <p class="intro-copy">
+        Suis les dépenses du mois, prépare les factures irrégulières et répartis les versements
+        entre tes provisions.
+      </p>
+    </div>
+    <span class="period-chip">{{ monthLabel(store.current()) }}</span>
+  </header>
+
+  @if (store.loading()) {
+    <p class="loading" role="status">Chargement du budget…</p>
+  } @else {
+    <app-load-error-banner />
+
+    <section class="summary-grid" aria-label="Résumé du budget du mois">
+      <article class="summary-card summary-card--primary">
+        <span>Budget disponible</span>
+        <strong>{{ fmt(store.budgetSummary().budget) }}</strong>
+        <small>Revenus et report inclus</small>
+      </article>
+      <article class="summary-card">
+        <span>Dépenses comptabilisées</span>
+        <strong>{{ fmt(store.budgetSummary().spent) }}</strong>
+        <small>Contributions incluses; un paiement couvert n'est pas compté deux fois</small>
+      </article>
+      <article class="summary-card">
+        <span>Solde net</span>
+        <strong
+          [class.positive]="store.budgetSummary().soldeNet >= 0"
+          [class.negative]="store.budgetSummary().soldeNet < 0"
+        >
+          {{ fmt(store.budgetSummary().soldeNet) }}
+        </strong>
+        <small>Budget disponible moins dépenses comptabilisées</small>
+      </article>
+    </section>
+
+    <section class="budget-section" aria-labelledby="provisions-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Dépenses prévisibles</p>
+          <h2 id="provisions-heading">Provisions</h2>
+          <p>Constitue une cagnotte pour les factures qui reviennent à intervalles réguliers.</p>
+        </div>
+      </div>
+
+      <app-monthly-reminders />
+      <app-provision-form />
+      <app-upcoming-provisions />
+      <app-provision-list />
+      <app-versement-splitter />
+    </section>
+
+    <section class="budget-section" aria-labelledby="category-budgets-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Suivi du mois</p>
+          <h2 id="category-budgets-heading">Budgets par catégorie</h2>
+          <p>Compare les dépenses comptabilisées aux plafonds mensuels que tu as définis.</p>
+        </div>
+      </div>
+      <app-category-budgets />
+    </section>
+  }
+</main>

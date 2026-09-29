@@ -8,7 +8,7 @@ function makeRecurring(overrides: Partial<RecurringExpense> = {}): RecurringExpe
     name: 'Test',
     amount: 100,
     category: 'Autre',
-    owner: 'moi',
+    memberId: 'moi',
     interval: 'monthly',
     dayOfMonth: 15,
     secondDayOfMonth: null,

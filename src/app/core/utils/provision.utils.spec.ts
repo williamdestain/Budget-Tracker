@@ -19,6 +19,7 @@ import {
   countedExpenses,
 } from './provision.utils';
 import { Expense, Provision } from '../models/budget.models';
+import { DST_TIMEZONES, withTimezone } from '../testing/with-timezone';
 
 function makeProvision(overrides: Partial<Provision> = {}): Provision {
   return {
@@ -30,7 +31,7 @@ function makeProvision(overrides: Partial<Provision> = {}): Provision {
     startYM: '2026-01',
     startDate: '',
     category: 'Électricité',
-    owner: 'moi',
+    memberId: 'moi',
     autoRecalibrate: true,
     allocationPercent: 0,
     rollingCount: 0,
@@ -46,7 +47,7 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
     amount: 100,
     category: 'Électricité',
     date: '2026-01-15',
-    owner: 'moi',
+    memberId: 'moi',
     cc: false,
     ...overrides,
   };
@@ -107,7 +108,7 @@ describe('provision.utils', () => {
     });
 
     it('calcule la moyenne des N dernières factures de la catégorie', () => {
-      const p = makeProvision({ category: 'Électricité', owner: 'moi', rollingCount: 3 });
+      const p = makeProvision({ category: 'Électricité', memberId: 'moi', rollingCount: 3 });
       const expenses = [
         makeExpense({ id: 'e1', amount: 100, date: '2026-01-10' }),
         makeExpense({ id: 'e2', amount: 200, date: '2026-02-10' }),
@@ -118,11 +119,11 @@ describe('provision.utils', () => {
     });
 
     it('ignore les dépenses d’une autre catégorie ou d’un autre profil', () => {
-      const p = makeProvision({ category: 'Électricité', owner: 'moi', rollingCount: 2 });
+      const p = makeProvision({ category: 'Électricité', memberId: 'moi', rollingCount: 2 });
       const expenses = [
-        makeExpense({ id: 'e1', amount: 100, category: 'Électricité', owner: 'moi', date: '2026-01-10' }),
-        makeExpense({ id: 'e2', amount: 999, category: 'Courses', owner: 'moi', date: '2026-01-11' }),
-        makeExpense({ id: 'e3', amount: 999, category: 'Électricité', owner: 'madame', date: '2026-01-12' }),
+        makeExpense({ id: 'e1', amount: 100, category: 'Électricité', memberId: 'moi', date: '2026-01-10' }),
+        makeExpense({ id: 'e2', amount: 999, category: 'Courses', memberId: 'moi', date: '2026-01-11' }),
+        makeExpense({ id: 'e3', amount: 999, category: 'Électricité', memberId: 'madame', date: '2026-01-12' }),
       ];
       expect(effectiveProvisionAmount(p, expenses)).toBe(100);
     });
@@ -143,7 +144,7 @@ describe('provision.utils', () => {
 
   describe('provisionSpent', () => {
     it('somme les dépenses réelles de la catégorie depuis le début du cycle', () => {
-      const p = makeProvision({ category: 'Électricité', owner: 'moi', startYM: '2026-01' });
+      const p = makeProvision({ category: 'Électricité', memberId: 'moi', startYM: '2026-01' });
       const expenses = [
         makeExpense({ id: 'e1', amount: 100, date: '2026-01-15' }),
         makeExpense({ id: 'e2', amount: 150, date: '2026-02-15' }),
@@ -153,7 +154,7 @@ describe('provision.utils', () => {
     });
 
     it('ne compte rien avant le début du cycle', () => {
-      const p = makeProvision({ category: 'Électricité', owner: 'moi', startYM: '2026-03' });
+      const p = makeProvision({ category: 'Électricité', memberId: 'moi', startYM: '2026-03' });
       const expenses = [makeExpense({ amount: 100, date: '2026-01-15' })];
       expect(provisionSpent(p, '2026-06', expenses)).toBe(0);
     });
@@ -165,7 +166,7 @@ describe('provision.utils', () => {
     it('= ajouts manuels − dépenses réelles (peut être négatif)', () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         startYM: '2026-01',
         adjustments: [{ id: 'a1', amount: 50, date: '2026-01-05', note: '' }],
       });
@@ -176,7 +177,7 @@ describe('provision.utils', () => {
     it('est positive quand les ajouts dépassent les dépenses', () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         startYM: '2026-01',
         adjustments: [{ id: 'a1', amount: 200, date: '2026-01-05', note: '' }],
       });
@@ -190,7 +191,7 @@ describe('provision.utils', () => {
     it("NE compte PAS les ajouts faits avant le début du cycle en cours (recalage) — la cagnotte repart bien à 0", () => {
       const p = makeProvision({
         category: 'Assurance',
-        owner: 'moi',
+        memberId: 'moi',
         everyN: 3,
         // Recalée sur juillet : les 600 $ ajoutés en janvier appartenaient
         // à l'ancien cycle (déjà réglé), ils ne doivent plus compter ici.
@@ -203,7 +204,7 @@ describe('provision.utils', () => {
     it("compte bien les ajouts faits APRÈS le début du cycle en cours, même s'il y a aussi d'anciens ajouts avant", () => {
       const p = makeProvision({
         category: 'Assurance',
-        owner: 'moi',
+        memberId: 'moi',
         everyN: 3,
         startYM: '2026-07',
         adjustments: [
@@ -217,7 +218,7 @@ describe('provision.utils', () => {
     it('même correctif pour un cycle en jours (startDate), pas seulement en mois', () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 60,
         startDate: '2026-07-01',
@@ -236,7 +237,7 @@ describe('provision.utils', () => {
     it("compte bien les ajouts faits AVANT une échéance future pas encore atteinte (toute première période d'accumulation)", () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 62,
         startDate: '2026-09-10', // 1re échéance = 10 juillet + 62 jours
@@ -255,7 +256,7 @@ describe('provision.utils', () => {
       vi.setSystemTime(new Date(2026, 8, 1)); // 1er septembre : avant le 10, jour réel de l'échéance
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 62,
         startDate: '2026-09-10',
@@ -275,7 +276,7 @@ describe('provision.utils', () => {
       vi.setSystemTime(new Date(2026, 8, 10)); // 10 septembre : jour de l'échéance
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 62,
         startDate: '2026-09-10',
@@ -289,7 +290,7 @@ describe('provision.utils', () => {
       vi.setSystemTime(new Date(2026, 8, 15));
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 62,
         startDate: '2026-09-10',
@@ -303,7 +304,7 @@ describe('provision.utils', () => {
       vi.setSystemTime(new Date(2026, 8, 10));
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 62,
         startDate: '2026-09-10',
@@ -327,7 +328,7 @@ describe('provision.utils', () => {
     it("conserve les anciens ajouts après un nouvel ajout dans le cycle recalé", () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 60,
         startDate: '2026-09-10',
@@ -459,7 +460,7 @@ describe('provision.utils', () => {
     it("avance à l'échéance suivante quand celle du mois a déjà été payée", () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         startYM: '2026-09',
         everyN: 3,
       });
@@ -470,7 +471,7 @@ describe('provision.utils', () => {
     it("ajoute l'intervalle à la date du paiement pour une échéance en jours", () => {
       const p = makeProvision({
         category: 'Électricité',
-        owner: 'moi',
+        memberId: 'moi',
         intervalUnit: 'days',
         everyN: 60,
         startDate: '2026-09-10',
@@ -518,8 +519,33 @@ describe('provision.utils', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(2026, 0, 1)); // "aujourd'hui" = 1er janvier, mais on consulte juin (futur)
       const p = makeProvision({ startYM: '2026-01', everyN: 6 }); // échéance juillet
-      // Référence = 1er janvier (vraie date du jour) ; échéance = 1er juillet => 180 jours
-      expect(provisionDaysUntilNext(p, '2026-06')).toBe(180);
+      // Référence = 1er janvier (vraie date du jour) ; échéance = 1er juillet.
+      // 2026 n'est pas bissextile : janv(31) + fév(28) + mars(31) + avril(30)
+      // + mai(31) + juin(30) = 181 jours entre le 1er janvier et le 1er juillet.
+      expect(provisionDaysUntilNext(p, '2026-06')).toBe(181);
+    });
+
+    // Régression : provisionDaysUntilNext() faisait un Math.floor sur une
+    // différence de Date LOCALES. Quand un changement d'heure tombe entre les
+    // deux dates, cette différence vaut 1 h de moins (ou de plus) qu'un
+    // nombre entier de jours : 180,96 j au lieu de 181 → floor = 180 au
+    // Québec, alors que la CI (UTC) voyait 181. Le résultat dépendait de la
+    // machine. Chaque cas ci-dessous est vérifié dans 5 fuseaux, dont les deux
+    // hémisphères (le DST du Sud avance en octobre : le décalage inverse).
+    describe.each([
+      // aujourd'hui, mois consulté, provision, jours attendus, ce que ça traverse
+      { today: [2026, 0, 1], month: '2026-06', everyN: 6, expected: 181, crosses: 'avance d\'heure au Nord (mars)' },
+      { today: [2026, 2, 1], month: '2026-03', everyN: 6, expected: 122, crosses: 'avance d\'heure au Nord (8 mars)' },
+      { today: [2026, 5, 1], month: '2026-06', everyN: 12, expected: 214, crosses: 'avance d\'heure au Sud (octobre)' },
+    ])('jours attendus = $expected ($crosses)', ({ today, month, everyN, expected }) => {
+      it.each(DST_TIMEZONES)('donne le même nombre de jours en %s', (tz) => {
+        withTimezone(tz, () => {
+          vi.useFakeTimers();
+          vi.setSystemTime(new Date(today[0], today[1], today[2]));
+          const p = makeProvision({ startYM: '2026-01', everyN });
+          expect(provisionDaysUntilNext(p, month)).toBe(expected);
+        });
+      });
     });
 
     it('se base sur la fin du mois consulté si ce mois est entièrement dans le passé', () => {
@@ -617,16 +643,16 @@ describe('provision.utils', () => {
     // concret que ça corrige (vue Global sous-comptant une dépense).
     it('renvoie les catégories des provisions d’un profil donné, préfixées par le profil', () => {
       const provisions = [
-        makeProvision({ category: 'Électricité', owner: 'moi' }),
-        makeProvision({ category: 'Assurance', owner: 'madame' }),
+        makeProvision({ category: 'Électricité', memberId: 'moi' }),
+        makeProvision({ category: 'Assurance', memberId: 'madame' }),
       ];
       expect(provisionedCategories(provisions, 'moi')).toEqual(new Set(['moi|Électricité']));
     });
 
     it('renvoie toutes les catégories en vue Global, chacune préfixée par son propriétaire', () => {
       const provisions = [
-        makeProvision({ category: 'Électricité', owner: 'moi' }),
-        makeProvision({ category: 'Assurance', owner: 'madame' }),
+        makeProvision({ category: 'Électricité', memberId: 'moi' }),
+        makeProvision({ category: 'Assurance', memberId: 'madame' }),
       ];
       expect(provisionedCategories(provisions, 'global')).toEqual(
         new Set(['moi|Électricité', 'madame|Assurance']),
@@ -636,10 +662,10 @@ describe('provision.utils', () => {
 
   describe('countedExpenses — BUG-008 : vue Global ne doit pas sous-compter un autre profil', () => {
     it("la dépense réelle de Madame dans une catégorie où seul Moi a une provision compte bien dans le budget Global", () => {
-      const provisions = [makeProvision({ category: 'Assurance', owner: 'moi' })];
+      const provisions = [makeProvision({ category: 'Assurance', memberId: 'moi' })];
       const expenses: Expense[] = [
         {
-          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', owner: 'madame', cc: false,
+          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', memberId: 'madame', cc: false,
         },
       ];
       const counted = countedExpenses(expenses, provisions, 'global', '2026-07');
@@ -653,14 +679,14 @@ describe('provision.utils', () => {
       const provisions = [
         makeProvision({
           category: 'Assurance',
-          owner: 'moi',
+          memberId: 'moi',
           startYM: '2026-01',
           adjustments: [{ id: 'a1', amount: 300, date: '2026-06-01', note: '' }],
         }),
       ];
       const expenses: Expense[] = [
         {
-          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', owner: 'moi', cc: false,
+          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', memberId: 'moi', cc: false,
         },
       ];
       const counted = countedExpenses(expenses, provisions, 'global', '2026-07');
@@ -671,10 +697,10 @@ describe('provision.utils', () => {
     // qu'AUCUN argent n'a jamais été mis dans la provision correspondante
     // ne doit PLUS faire disparaître la dépense — rien ne l'a couverte.
     it("la dépense réelle de Moi dans une catégorie provisionnée mais SANS AUCUNE épargne compte intégralement", () => {
-      const provisions = [makeProvision({ category: 'Assurance', owner: 'moi', adjustments: [] })];
+      const provisions = [makeProvision({ category: 'Assurance', memberId: 'moi', adjustments: [] })];
       const expenses: Expense[] = [
         {
-          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', owner: 'moi', cc: false,
+          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', memberId: 'moi', cc: false,
         },
       ];
       const counted = countedExpenses(expenses, provisions, 'global', '2026-07');
@@ -687,14 +713,14 @@ describe('provision.utils', () => {
       const provisions = [
         makeProvision({
           category: 'Assurance',
-          owner: 'moi',
+          memberId: 'moi',
           startYM: '2026-01',
           adjustments: [{ id: 'a1', amount: 100, date: '2026-06-01', note: '' }],
         }),
       ];
       const expenses: Expense[] = [
         {
-          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', owner: 'moi', cc: false,
+          id: 'e1', amount: 300, category: 'Assurance', date: '2026-07-10', memberId: 'moi', cc: false,
         },
       ];
       const counted = countedExpenses(expenses, provisions, 'moi', '2026-07');
@@ -709,7 +735,7 @@ describe('provision.utils', () => {
       const provisions = [
         makeProvision({
           category: 'Assurance',
-          owner: 'moi',
+          memberId: 'moi',
           startYM: '2026-07', // recalé sur juillet
           adjustments: [
             { id: 'a1', amount: 200, date: '2026-01-10', note: 'Ancien cycle, avant recalage' },
@@ -724,7 +750,7 @@ describe('provision.utils', () => {
       const provisions = [
         makeProvision({
           category: 'Assurance',
-          owner: 'moi',
+          memberId: 'moi',
           startYM: '2026-07',
           adjustments: [
             { id: 'a1', amount: 150, date: '2026-07-15', note: 'Nouveau cycle' },
@@ -757,7 +783,7 @@ describe('provision.utils', () => {
     });
 
     it('exclut "Versement" seulement en vue Global (transfert interne)', () => {
-      const expenses = [makeExpense({ category: 'Versement', date: '2026-01-15', owner: 'moi' })];
+      const expenses = [makeExpense({ category: 'Versement', date: '2026-01-15', memberId: 'moi' })];
       expect(countedExpenses(expenses, [], 'global', '2026-01')).toHaveLength(0);
       expect(countedExpenses(expenses, [], 'moi', '2026-01')).toHaveLength(1);
     });
@@ -770,7 +796,7 @@ describe('provision.utils', () => {
     // vraie dépense en vue individuelle).
     it('exclut "Remboursement Carte Crédit" du calcul du budget, dans tous les cas (pas de double comptage)', () => {
       const expenses = [
-        makeExpense({ category: 'Remboursement Carte Crédit', date: '2026-01-10', amount: 200, owner: 'moi', cc: true }),
+        makeExpense({ category: 'Remboursement Carte Crédit', date: '2026-01-10', amount: 200, memberId: 'moi', cc: true }),
       ];
       expect(countedExpenses(expenses, [], 'moi', '2026-01')).toHaveLength(0);
       expect(countedExpenses(expenses, [], 'global', '2026-01')).toHaveLength(0);
@@ -778,8 +804,8 @@ describe('provision.utils', () => {
 
     it("l'achat original chargé à la carte compte normalement, seul le remboursement est exclu", () => {
       const expenses = [
-        makeExpense({ id: 'e1', category: 'Loisirs', date: '2026-01-05', amount: 90, owner: 'moi', cc: true }),
-        makeExpense({ id: 'e2', category: 'Remboursement Carte Crédit', date: '2026-01-20', amount: 90, owner: 'moi', cc: false }),
+        makeExpense({ id: 'e1', category: 'Loisirs', date: '2026-01-05', amount: 90, memberId: 'moi', cc: true }),
+        makeExpense({ id: 'e2', category: 'Remboursement Carte Crédit', date: '2026-01-20', amount: 90, memberId: 'moi', cc: false }),
       ];
       const result = countedExpenses(expenses, [], 'moi', '2026-01');
       expect(result).toHaveLength(1);
@@ -791,18 +817,18 @@ describe('provision.utils', () => {
       const provisions = [
         makeProvision({
           category: 'Électricité',
-          owner: 'moi',
+          memberId: 'moi',
           startYM: '2025-11',
           adjustments: [{ id: 'a1', amount: 100, date: '2025-12-01', note: '' }],
         }),
       ];
-      const expenses = [makeExpense({ category: 'Électricité', owner: 'moi', date: '2026-01-15' })];
+      const expenses = [makeExpense({ category: 'Électricité', memberId: 'moi', date: '2026-01-15' })];
       expect(countedExpenses(expenses, provisions, 'moi', '2026-01')).toHaveLength(0);
     });
 
     it("ne l'exclut PAS si la cagnotte est vide (rien n'a jamais été mis de côté)", () => {
-      const provisions = [makeProvision({ category: 'Électricité', owner: 'moi', adjustments: [] })];
-      const expenses = [makeExpense({ category: 'Électricité', owner: 'moi', date: '2026-01-15' })];
+      const provisions = [makeProvision({ category: 'Électricité', memberId: 'moi', adjustments: [] })];
+      const expenses = [makeExpense({ category: 'Électricité', memberId: 'moi', date: '2026-01-15' })];
       const counted = countedExpenses(expenses, provisions, 'moi', '2026-01');
       expect(counted).toHaveLength(1);
       expect(counted[0].amount).toBe(100);
@@ -814,7 +840,7 @@ describe('provision.utils', () => {
           id: 'prov-elec',
           name: 'Électricité',
           category: 'Électricité',
-          owner: 'moi',
+          memberId: 'moi',
           adjustments: [{ id: 'adj-1', amount: 100, date: '2026-01-10', note: 'mise de côté' }],
         }),
       ];
@@ -833,15 +859,15 @@ describe('provision.utils', () => {
     });
 
     it('ignore un profil filtré (les dépenses/ajouts d’un autre owner n’apparaissent pas)', () => {
-      const provisions = [makeProvision({ category: 'Électricité', owner: 'madame' })];
-      const expenses = [makeExpense({ category: 'Courses', owner: 'madame', date: '2026-01-15' })];
+      const provisions = [makeProvision({ category: 'Électricité', memberId: 'madame' })];
+      const expenses = [makeExpense({ category: 'Courses', memberId: 'madame', date: '2026-01-15' })];
       expect(countedExpenses(expenses, provisions, 'moi', '2026-01')).toHaveLength(0);
     });
 
     it('en vue Global, agrège les deux profils', () => {
       const expenses = [
-        makeExpense({ category: 'Courses', owner: 'moi', date: '2026-01-15', amount: 30 }),
-        makeExpense({ category: 'Courses', owner: 'madame', date: '2026-01-16', amount: 20 }),
+        makeExpense({ category: 'Courses', memberId: 'moi', date: '2026-01-15', amount: 30 }),
+        makeExpense({ category: 'Courses', memberId: 'madame', date: '2026-01-16', amount: 20 }),
       ];
       const result = countedExpenses(expenses, [], 'global', '2026-01');
       expect(result.reduce((s, e) => s + e.amount, 0)).toBe(50);

@@ -12,7 +12,7 @@
         <div class="income-item">
           <div class="income-info">
             <div class="income-type">
-              {{ typeLabel(i.type) }} • {{ fmtDate(i.date) }} • {{ ownerBadge(i.owner) }}
+              {{ typeLabel(i.type) }} • {{ fmtDate(i.date) }} • {{ ownerBadge(i.memberId) }}
             </div>
             @if (i.note) {
               <div class="income-note">{{ i.note }}</div>
@@ -51,7 +51,7 @@
       <div class="card-subtitle">🔁 Revenus récurrents actifs</div>
       @for (r of store.visibleRecurringIncomes(); track r.id) {
         <div class="recurring-item">
-          <span>{{ typeLabel(r.type) }} • {{ fmt(r.amount) }} • {{ intervalLabel(r.interval) }} • {{ ownerBadge(r.owner) }}</span>
+          <span>{{ typeLabel(r.type) }} • {{ fmt(r.amount) }} • {{ intervalLabel(r.interval) }} • {{ ownerBadge(r.memberId) }}</span>
           <button class="del" title="Arrêter ce revenu récurrent" (click)="stopRecurring(r.id, r.type)">
             Arrêter
           </button>

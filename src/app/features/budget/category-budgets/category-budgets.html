@@ -1,8 +1,12 @@
-<div class="card cat-budget-card">
+<section class="card cat-budget-card" aria-labelledby="cat-budget-title">
   <div class="cat-budget-head">
-    <div class="card-title">Budgets par catégorie</div>
-    <button class="seg" (click)="toggle()">
-      {{ open() ? '− Fermer' : '+ Afficher' }}
+    <div class="card-title" id="cat-budget-title">Budgets par catégorie</div>
+    <button class="seg" type="button" [attr.aria-expanded]="open()" (click)="toggle()">
+      @if (open()) {
+        <app-icon name="close" [size]="14" /> Fermer
+      } @else {
+        <app-icon name="plus" [size]="14" /> Afficher
+      }
     </button>
   </div>
 
@@ -16,13 +20,17 @@
   @if (open()) {
     @if (isGlobal) {
       <p class="cat-budget-hint">
-        Vue Global : somme de Moi + Madame. Passe sur un profil pour modifier
-        les budgets par catégorie.
+        La vue Global additionne les membres. Passe sur un profil pour
+        modifier les budgets par catégorie.
       </p>
     } @else {
       <div class="cat-budget-add-toggle">
-        <button class="seg" (click)="toggleAdd()">
-          {{ addOpen() ? '− Fermer' : '+ Ajouter' }}
+        <button class="seg" type="button" [attr.aria-expanded]="addOpen()" (click)="toggleAdd()">
+          @if (addOpen()) {
+            <app-icon name="close" [size]="14" /> Fermer
+          } @else {
+            <app-icon name="plus" [size]="14" /> Ajouter
+          }
         </button>
       </div>
     }
@@ -30,17 +38,17 @@
     @if (addOpen() && !isGlobal) {
     <form class="cat-budget-add-form" (ngSubmit)="submitAdd()">
       <div class="field field-category">
-        <label>Catégorie</label>
-        <select name="newCategory" [(ngModel)]="newCategory">
+        <label for="new-category-budget">Catégorie</label>
+        <select id="new-category-budget" name="newCategory" [(ngModel)]="newCategory">
           @for (c of availableCategories(); track c) {
             <option [value]="c">{{ c }}</option>
           }
         </select>
       </div>
       <div class="field">
-        <label>Budget mensuel</label>
+        <label for="new-category-budget-amount">Budget mensuel</label>
         <div class="input-money">
-          <input type="number" min="0" step="0.01" name="newAmount" [(ngModel)]="newAmount" placeholder="800" required />
+          <input id="new-category-budget-amount" type="number" min="0" step="0.01" name="newAmount" [(ngModel)]="newAmount" placeholder="800" required />
         </div>
       </div>
       <div class="field-actions">
@@ -51,7 +59,7 @@
 
   @if (store.categoryBudgetRows().length === 0) {
     <div class="cat-budget-empty">
-      <div class="big">📊</div>
+      <app-icon class="empty-icon" name="chart" [size]="30" />
       Aucun budget par catégorie pour l'instant.<br />
       Ajoute-en un pour mieux voir où l'argent part.
     </div>
@@ -70,20 +78,30 @@
                       type="number"
                       min="0"
                       step="0.01"
+                      [name]="'budget-' + row.category"
+                      [attr.aria-label]="'Budget mensuel pour ' + row.category"
                       [(ngModel)]="editAmount"
                       (keyup.enter)="saveEdit(row.category)"
                     />
                   </div>
-                  <button class="seg tiny" (click)="saveEdit(row.category)">✓</button>
-                  <button class="seg tiny" (click)="cancelEdit()">✕</button>
+                  <button class="seg tiny" type="button" aria-label="Enregistrer le budget" (click)="saveEdit(row.category)">
+                    <app-icon name="check" [size]="14" />
+                  </button>
+                  <button class="seg tiny" type="button" aria-label="Annuler la modification" (click)="cancelEdit()">
+                    <app-icon name="close" [size]="14" />
+                  </button>
                 </span>
               } @else {
                 <span class="cat-budget-amounts">
                   {{ fmt(row.spent) }} / {{ fmt(row.budget) }}
                   @if (!isGlobal) {
-                    <button class="cat-budget-edit-btn" title="Modifier le budget" (click)="startEdit(row.category, row.budget)">✏️</button>
+                    <button class="cat-budget-edit-btn" type="button" title="Modifier le budget" aria-label="Modifier le budget" (click)="startEdit(row.category, row.budget)">
+                      <app-icon name="edit" [size]="14" />
+                    </button>
                     @if (row.hasExplicitEntryThisMonth) {
-                      <button class="cat-budget-edit-btn" title="Retirer ce budget (revient à l'héritage du mois précédent)" (click)="removeBudget(row.category)">✕</button>
+                      <button class="cat-budget-edit-btn" type="button" title="Retirer ce budget (revient à l'héritage du mois précédent)" aria-label="Retirer ce budget" (click)="removeBudget(row.category)">
+                        <app-icon name="close" [size]="14" />
+                      </button>
                     }
                   }
                 </span>
@@ -112,4 +130,4 @@
     </div>
   }
   }
-</div>
+</section>

@@ -60,7 +60,7 @@ export class ExpenseForm {
         amount: this.amount,
         category: this.category,
         date: this.date,
-        owner: this.owner,
+        memberId: this.owner,
         versementToMemberId:
           this.category === 'Versement'
             ? this.versementToMemberId ?? this.store.memberOptions().find((m) => m.id !== this.owner)?.id ?? null

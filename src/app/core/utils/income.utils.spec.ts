@@ -8,7 +8,7 @@ function makeIncome(overrides: Partial<Income> = {}): Income {
     amount: 1000,
     type: 'Salaire',
     date: '2026-07-15',
-    owner: 'moi',
+    memberId: 'moi',
     note: '',
     recurring: false,
     recurringInterval: 'once',

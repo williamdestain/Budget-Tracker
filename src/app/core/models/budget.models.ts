@@ -32,8 +32,7 @@ export interface Expense {
   amount: number;
   category: string;
   date: string; // "YYYY-MM-DD"
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   versementToMemberId?: string | null;
   cc: boolean; // chargé à la carte de crédit
   recurringSourceId?: string | null; // dépense récurrente confirmée à l'origine de cette ligne
@@ -54,8 +53,7 @@ export interface RecurringExpense {
   name: string;
   amount: number;
   category: string;
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   interval: RecurringExpenseInterval;
   dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
   secondDayOfMonth?: number | null; // 1-31 — utilisé seulement si interval 'semimonthly'
@@ -69,8 +67,7 @@ export interface Income {
   amount: number;
   type: string;
   date: string; // "YYYY-MM-DD"
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   note: string;
   // Conservés pour affichage/rétrocompatibilité (badge de fréquence dans
   // la liste) — la logique de calcul ne s'appuie plus dessus, voir
@@ -113,8 +110,7 @@ export interface RecurringIncome {
   id: string;
   amount: number; // montant d'UNE occurrence (pas une moyenne)
   type: string;
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   note: string;
   interval: IncomeRecurringInterval;
   dayOfMonth: number; // 1-31 — utilisé si interval 'monthly' ou 'semimonthly' (1er jour)
@@ -145,8 +141,7 @@ export interface Provision {
   startYM: string; // "YYYY-MM" — utilisé si intervalUnit === "months"
   startDate: string; // "YYYY-MM-DD" — utilisé si intervalUnit === "days"
   category: string;
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   autoRecalibrate: boolean;
   // Part (%) de cette provision utilisée pour préremplir sa portion dans
   // l'outil "Répartir un versement" (0 = pas de préremplissage automatique).
@@ -170,8 +165,7 @@ export interface Provision {
 // voir creditCardBalance() dans budget-store.service.ts.
 export interface CreditCardPayment {
   id: string;
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   amount: number;
   date: string; // "YYYY-MM-DD"
   note: string;
@@ -196,17 +190,13 @@ export interface AccountBalanceSnapshot {
   note: string | null;
 }
 
-// { owner: { "YYYY-MM": montant } }
-export type MonthlyAmountMap = {
-  moi: Record<string, number>;
-  madame: Record<string, number>;
-} & Record<string, Record<string, number>>;
+// { memberId: { "YYYY-MM": montant } } — une clé par membre RÉEL du foyer
+// (uuid). Aucune clé n'est garantie : un membre sans montant n'a pas d'entrée,
+// d'où le `?.`/`|| {}` chez les lecteurs.
+export type MonthlyAmountMap = Record<string, Record<string, number>>;
 
-// { owner: { "YYYY-MM": { catégorie: montant } } }
-export type CategoryBudgetMap = {
-  moi: Record<string, Record<string, number>>;
-  madame: Record<string, Record<string, number>>;
-} & Record<string, Record<string, Record<string, number>>>;
+// { memberId: { "YYYY-MM": { catégorie: montant } } }
+export type CategoryBudgetMap = Record<string, Record<string, Record<string, number>>>;
 
 export interface SavingsContribution {
   id: string;
@@ -224,8 +214,7 @@ export interface SavingsGoal {
   name: string;
   targetAmount: number;
   targetDate: string | null; // "YYYY-MM-DD", optionnelle
-  owner: Owner;
-  memberId?: string;
+  memberId: string;
   contributions: SavingsContribution[];
 }
 

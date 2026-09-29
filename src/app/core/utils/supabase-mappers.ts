@@ -18,8 +18,8 @@ import {
 
 const rowMemberId = (row: any): string => row.member_id;
 
-function memberColumn(value: { memberId?: string; owner?: string }): any {
-  return { member_id: value.memberId ?? value.owner };
+function memberColumn(value: { memberId: string }): any {
+  return { member_id: value.memberId };
 }
 
 export function rowToAccount(row: any): Account {
@@ -60,7 +60,6 @@ export function rowToExpense(row: any): Expense {
     amount: Number(row.amount),
     category: row.category,
     date: row.date,
-    owner: memberId,
     memberId,
     cc: row.cc,
     recurringSourceId: row.recurring_source_id ?? null,
@@ -87,7 +86,6 @@ export function rowToRecurringExpense(row: any): RecurringExpense {
     name: row.name,
     amount: Number(row.amount),
     category: row.category,
-    owner: memberId,
     memberId,
     // Rétrocompatibilité : les lignes créées avant la migration-009
     // n'ont pas encore cette colonne — 'monthly' préserve leur
@@ -125,7 +123,6 @@ export function rowToIncome(row: any): Income {
     amount: Number(row.amount),
     type: row.type,
     date: row.date,
-    owner: memberId,
     memberId,
     note: row.note ?? '',
     recurring: row.recurring,
@@ -174,7 +171,6 @@ export function rowToRecurringIncome(row: any): RecurringIncome {
     id: row.id,
     amount: Number(row.amount),
     type: row.type,
-    owner: memberId,
     memberId,
     note: row.note ?? '',
     interval: row.interval,
@@ -201,9 +197,9 @@ export function recurringIncomeToRow(
   };
 }
 
-// { owner, ym, amount }[] -> { moi: { ym: amount }, madame: { ym: amount } }
+// { member_id, ym, amount }[] -> { [memberId]: { ym: amount } }
 export function rowsToMonthlyMap(rows: any[]): MonthlyAmountMap {
-  const map: MonthlyAmountMap = { moi: {}, madame: {} };
+  const map: MonthlyAmountMap = {};
   rows.forEach((row) => {
     const memberId = rowMemberId(row);
     if (!memberId) return;
@@ -213,9 +209,9 @@ export function rowsToMonthlyMap(rows: any[]): MonthlyAmountMap {
   return map;
 }
 
-// { owner, ym, category, amount }[] -> { owner: { ym: { category: amount } } }
+// { member_id, ym, category, amount }[] -> { [memberId]: { ym: { category: amount } } }
 export function rowsToCategoryBudgetMap(rows: any[]): CategoryBudgetMap {
-  const map: CategoryBudgetMap = { moi: {}, madame: {} };
+  const map: CategoryBudgetMap = {};
   rows.forEach((row) => {
     const memberId = rowMemberId(row);
     if (!memberId) return;
@@ -240,7 +236,6 @@ export function rowToCreditCardPayment(row: any): CreditCardPayment {
   const memberId = rowMemberId(row);
   return {
     id: row.id,
-    owner: memberId,
     memberId,
     amount: Number(row.amount),
     date: row.date,
@@ -285,7 +280,6 @@ export function rowToProvision(row: any, adjustmentRows: any[]): Provision {
     startYM: row.start_ym ?? '',
     startDate: row.start_date ?? '',
     category: row.category,
-    owner: memberId,
     memberId,
     autoRecalibrate: row.auto_recalibrate,
     allocationPercent: Number(row.allocation_percent ?? 0),
@@ -349,7 +343,6 @@ export function rowToSavingsGoal(row: any, contributionRows: any[]): SavingsGoal
     name: row.name,
     targetAmount: Number(row.target_amount),
     targetDate: row.target_date ?? null,
-    owner: memberId,
     memberId,
     contributions: contributionRows
       .filter((c) => c.savings_goal_id === row.id)

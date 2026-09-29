@@ -71,7 +71,7 @@ export class ProvisionForm {
 
     // Propriétaire : profil actif (Global → Moi par défaut, comme avant).
     const active = this.store.activeOwner();
-    const owner: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
+    const memberId: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
 
     this.saving.set(true);
     try {
@@ -83,7 +83,7 @@ export class ProvisionForm {
         intervalUnit: this.intervalUnit,
         startYM: this.intervalUnit === 'months' ? startYM : this.startDate.slice(0, 7),
         startDate: this.intervalUnit === 'days' ? this.startDate : '',
-        owner,
+        memberId,
         autoRecalibrate: this.autoRecalibrate,
         allocationPercent: 0,
         rollingCount: 0,

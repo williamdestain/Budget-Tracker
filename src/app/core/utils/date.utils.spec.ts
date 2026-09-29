@@ -12,6 +12,7 @@ import {
   addMonths,
   daysBetween,
 } from './date.utils';
+import { DST_TIMEZONES, withTimezone } from '../testing/with-timezone';
 
 describe('date.utils', () => {
   describe('monthLabel', () => {
@@ -121,6 +122,40 @@ describe('date.utils', () => {
 
     it('traverse correctement un changement de mois', () => {
       expect(daysBetween('2026-07-25', '2026-08-05')).toBe(11);
+    });
+
+    it('compte une année non bissextile (365) et bissextile (366)', () => {
+      expect(daysBetween('2026-01-01', '2027-01-01')).toBe(365);
+      expect(daysBetween('2028-01-01', '2029-01-01')).toBe(366);
+    });
+
+    it('renvoie toujours un entier exact (jamais 180,96…)', () => {
+      expect(Number.isInteger(daysBetween('2026-01-01', '2026-07-01'))).toBe(true);
+    });
+
+    // Garde-fou du test lui-même : sans ça, si le changement de fuseau ne
+    // prenait pas effet, tous les tests ci-dessous passeraient pour rien.
+    it('withTimezone() change réellement le fuseau (Toronto a un décalage différent en janvier et en juillet)', () => {
+      const [janOffset, julOffset] = withTimezone('America/Toronto', () => [
+        new Date(2026, 0, 1).getTimezoneOffset(),
+        new Date(2026, 6, 1).getTimezoneOffset(),
+      ]);
+      expect(janOffset).not.toBe(julOffset);
+    });
+
+    // Chaque intervalle traverse un changement d'heure dans au moins un de
+    // ces fuseaux. Le résultat doit être identique partout.
+    describe.each([
+      { from: '2026-01-01', to: '2026-07-01', days: 181, why: 'janv. → juil. (traverse le DST Nord ET Sud)' },
+      { from: '2026-03-07', to: '2026-03-09', days: 2, why: 'la nuit du 8 mars : 23 h à Toronto' },
+      { from: '2026-10-31', to: '2026-11-02', days: 2, why: 'la nuit du 1er nov. : 25 h à Toronto' },
+      { from: '2026-03-28', to: '2026-03-30', days: 2, why: 'la nuit du 29 mars : 23 h à Paris' },
+      { from: '2026-10-03', to: '2026-10-05', days: 2, why: 'la nuit du 4 oct. : 23 h à Sydney' },
+      { from: '2026-06-01', to: '2027-01-01', days: 214, why: 'juin → janv. (DST Sud dans le sens inverse)' },
+    ])('$from → $to = $days jours ($why)', ({ from, to, days }) => {
+      it.each(DST_TIMEZONES)('donne le même résultat en %s', (tz) => {
+        expect(withTimezone(tz, () => daysBetween(from, to))).toBe(days);
+      });
     });
   });
 });

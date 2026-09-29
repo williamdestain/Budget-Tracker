@@ -19,7 +19,7 @@ function makeProvision(overrides: Partial<Provision> = {}): Provision {
     startYM: '2026-01',
     startDate: '',
     category: 'Assurance',
-    owner: 'moi',
+    memberId: 'moi',
     autoRecalibrate: true,
     allocationPercent: 0,
     rollingCount: 0,

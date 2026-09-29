@@ -65,7 +65,7 @@ export class Mouvements {
               }
               const recipient =
                 expense.versementToMemberId ??
-                this.store.memberOptions().find((member) => member.id !== expense.owner)?.id ??
+                this.store.memberOptions().find((member) => member.id !== expense.memberId)?.id ??
                 null;
               return recipient === activeOwner;
             })
@@ -75,8 +75,8 @@ export class Mouvements {
               category: 'Versement',
               date: expense.date,
               amount: expense.amount,
-              memberId: expense.owner,
-              details: `Versement reçu de ${this.store.memberName(expense.owner)}`,
+              memberId: expense.memberId,
+              details: `Versement reçu de ${this.store.memberName(expense.memberId)}`,
               color: this.store.colorFor('Versement'),
             }));
 
@@ -96,7 +96,7 @@ export class Mouvements {
           category: provision.category,
           date: adjustment.date,
           amount: adjustment.amount,
-          memberId: provision.owner,
+          memberId: provision.memberId,
           details: `Contribution → ${provision.name}`,
           color: this.store.colorFor(provision.category),
         })),
@@ -110,8 +110,8 @@ export class Mouvements {
         category: expense.category,
         date: expense.date,
         amount: expense.amount,
-        memberId: expense.owner,
-        details: `Dépense · ${this.store.memberName(expense.owner)}`,
+        memberId: expense.memberId,
+        details: `Dépense · ${this.store.memberName(expense.memberId)}`,
         color: this.store.colorFor(expense.category),
       })),
       ...(rollover !== 0
@@ -135,8 +135,8 @@ export class Mouvements {
         category: income.type,
         date: income.date,
         amount: income.amount,
-        memberId: income.owner,
-        details: `Revenu · ${this.store.memberName(income.owner)}`,
+        memberId: income.memberId,
+        details: `Revenu · ${this.store.memberName(income.memberId)}`,
         color: this.store.colorFor(income.type),
       })),
     ];

@@ -1,9 +1,9 @@
-<div class="card prov-card">
-  <h3>Provisions</h3>
+<section class="card prov-card" aria-labelledby="provision-list-title">
+  <h3 id="provision-list-title">Autres provisions</h3>
 
   @if (store.visibleProvisions().length === 0) {
     <div class="prov-empty">
-      <div class="big">🎯</div>
+      <app-icon class="empty-icon" name="target" [size]="30" />
       Aucune provision pour l'instant.<br />
       Créez-en une pour lisser une dépense irrégulière (électricité ~60 j, taxes,
       assurance…).
@@ -11,7 +11,7 @@
   } @else if (store.otherProvisions().length === 0) {
     <div class="prov-empty">
       Toutes tes provisions sont déjà affichées ci-dessus, dans
-      "📅 À payer bientôt".
+      « À payer bientôt ».
     </div>
   } @else {
     <div class="prov-list">
@@ -20,4 +20,4 @@
       }
     </div>
   }
-</div>
+</section>

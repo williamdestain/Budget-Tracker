@@ -41,9 +41,7 @@ export const routes: Routes = [
       {
         path: 'budget',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/budget/budget-page/budget-page').then((m) => m.BudgetPage),
         data: { navTitle: 'Budget & enveloppes' },
       },
       {

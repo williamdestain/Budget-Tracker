@@ -9,16 +9,10 @@ import { IncomeForm } from '../incomes/income-form/income-form';
 import { IncomeList } from '../incomes/income-list/income-list';
 import { ExpenseForm } from '../expenses/expense-form/expense-form';
 import { ExpenseList } from '../expenses/expense-list/expense-list';
-import { ProvisionForm } from '../provisions/provision-form/provision-form';
-import { ProvisionList } from '../provisions/provision-list/provision-list';
-import { UpcomingProvisions } from '../provisions/upcoming-provisions/upcoming-provisions';
-import { MonthlyReminders } from '../provisions/monthly-reminders/monthly-reminders';
-import { VersementSplitter } from '../provisions/versement-splitter/versement-splitter';
 import { SavingsGoalList } from '../savings/savings-goal-list/savings-goal-list';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
 import { BudgetProgress } from '../budget/budget-progress/budget-progress';
 import { SpendingChart } from '../budget/spending-chart/spending-chart';
-import { CategoryBudgets } from '../budget/category-budgets/category-budgets';
 import { MonthForecast } from '../budget/month-forecast/month-forecast';
 import { MonthComparison } from '../budget/month-comparison/month-comparison';
 import { YearlyView } from '../budget/yearly-view/yearly-view';
@@ -39,16 +33,10 @@ import { Icon } from '../../shared/ui/icon/icon';
     IncomeList,
     ExpenseForm,
     ExpenseList,
-    ProvisionForm,
-    ProvisionList,
-    UpcomingProvisions,
-    MonthlyReminders,
-    VersementSplitter,
     SavingsGoalList,
     CreditCard,
     BudgetProgress,
     SpendingChart,
-    CategoryBudgets,
     MonthForecast,
     MonthComparison,
     YearlyView,

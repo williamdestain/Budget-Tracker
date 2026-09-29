@@ -59,7 +59,7 @@ function sumCategory(
   return expenses
     .filter((e) => {
       if (e.category !== category) return false;
-      if (owner !== 'global' && e.owner !== owner) return false;
+      if (owner !== 'global' && e.memberId !== owner) return false;
       const ym = e.date.slice(0, 7);
       return (!fromYM || ym >= fromYM) && (!toYM || ym <= toYM);
     })
@@ -76,7 +76,7 @@ function sumCategoryFromDate(
   return expenses
     .filter((e) => {
       if (e.category !== category) return false;
-      if (owner !== 'global' && e.owner !== owner) return false;
+      if (owner !== 'global' && e.memberId !== owner) return false;
       if (e.date < fromDate) return false;
       if (toYM && e.date.slice(0, 7) > toYM) return false;
       return true;
@@ -94,7 +94,7 @@ export function recentCategoryExpenses(
     .filter(
       (e) =>
         e.category === category &&
-        e.owner === owner &&
+        e.memberId === owner &&
         e.amount > 0 &&
         e.category !== 'Revenu' &&
         e.category !== 'Versement',
@@ -110,7 +110,7 @@ export function recentCategoryExpenses(
 export function effectiveProvisionAmount(p: Provision, expenses: Expense[]): number {
   const count = p.rollingCount || 0;
   if (count < 1) return p.amount;
-  const recent = recentCategoryExpenses(expenses, p.category, p.owner, count);
+  const recent = recentCategoryExpenses(expenses, p.category, p.memberId, count);
   if (recent.length === 0) return p.amount;
   return recent.reduce((s, e) => s + e.amount, 0) / recent.length;
 }
@@ -172,9 +172,9 @@ export function provisionAdjustmentTotal(p: Provision, currentYM: string): numbe
 // début du cycle jusqu'à la fin du mois consulté.
 export function provisionSpent(p: Provision, currentYM: string, expenses: Expense[]): number {
   if (provisionUnit(p) === 'days') {
-    return sumCategoryFromDate(expenses, p.category, p.owner, provisionStart(p), currentYM);
+    return sumCategoryFromDate(expenses, p.category, p.memberId, provisionStart(p), currentYM);
   }
-  return sumCategory(expenses, p.category, p.owner, p.startYM, currentYM);
+  return sumCategory(expenses, p.category, p.memberId, p.startYM, currentYM);
 }
 
 // Cagnotte actuelle = ajouts manuels − paiements réels. Aucun prélèvement
@@ -192,7 +192,7 @@ export function provisionPot(p: Provision, currentYM: string, expenses: Expense[
     const hasPaymentInCurrentCycle = expenses.some(
       (e) =>
         e.category === p.category &&
-        e.owner === p.owner &&
+        e.memberId === p.memberId &&
         e.amount > 0 &&
         e.date >= start &&
         e.date.slice(0, 7) <= currentYM,
@@ -213,7 +213,7 @@ export function provisionPot(p: Provision, currentYM: string, expenses: Expense[
     const hasPaymentAtOrAfterStart = expenses.some(
       (e) =>
         e.category === p.category &&
-        e.owner === p.owner &&
+        e.memberId === p.memberId &&
         e.amount > 0 &&
         e.date >= start &&
         e.date.slice(0, 7) <= currentYM,
@@ -252,7 +252,7 @@ export function provisionPotBeforeRecalibration(
     .filter(
       (e) =>
         e.category === p.category &&
-        e.owner === p.owner &&
+        e.memberId === p.memberId &&
         e.amount > 0 &&
         e.date >= provisionStart(p) &&
         e.date <= paymentDate,
@@ -312,7 +312,7 @@ export function provisionUpcomingHit(
     const paid = expenses.some(
       (e) =>
         e.category === p.category &&
-        e.owner === p.owner &&
+        e.memberId === p.memberId &&
         e.amount > 0 &&
         e.date.startsWith(currentYM),
     );
@@ -329,7 +329,7 @@ export function provisionUpcomingHit(
   const paid = expenses.some(
     (e) =>
       e.category === p.category &&
-      e.owner === p.owner &&
+      e.memberId === p.memberId &&
       e.amount > 0 &&
       e.date >= hitDate &&
       e.date <= lastDayOfMonthYM(currentYM),
@@ -361,7 +361,7 @@ export function provisionMetaLine(p: Provision, expenses: Expense[]): string {
 export function provisionRollingLabel(p: Provision, expenses: Expense[]): string {
   const count = p.rollingCount || 0;
   if (count < 1) return '';
-  const recent = recentCategoryExpenses(expenses, p.category, p.owner, count);
+  const recent = recentCategoryExpenses(expenses, p.category, p.memberId, count);
   if (recent.length === 0) return '';
   return ` · moy. ${recent.length} facture${recent.length > 1 ? 's' : ''}`;
 }
@@ -424,9 +424,10 @@ export function provisionDaysUntilNext(
   const ref = provisionReferenceDate(currentYM);
   const next = provisionUpcomingHit(p, currentYM, expenses);
   const nextDate = provisionUnit(p) === 'days' ? next : next + '-01';
-  return Math.floor(
-    (parseISODate(nextDate).getTime() - parseISODate(ref).getTime()) / (1000 * 60 * 60 * 24),
-  );
+  // daysBetween() compte en jours calendaires (UTC) : insensible au passage
+  // à l'heure d'été, contrairement à l'ancien Math.floor sur une différence
+  // de Date locales qui donnait 180 au lieu de 181 au Québec.
+  return daysBetween(ref, nextDate);
 }
 
 export function provisionDueAlert(
@@ -466,8 +467,8 @@ export function provisionedCategories(
   provisions: Provision[],
   owner: OwnerOrGlobal,
 ): Set<string> {
-  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
-  return new Set(relevant.map((p) => `${p.owner}|${p.category}`));
+  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.memberId === owner);
+  return new Set(relevant.map((p) => `${p.memberId}|${p.category}`));
 }
 
 export interface CountedExpense {
@@ -475,7 +476,7 @@ export interface CountedExpense {
   amount: number;
   category: string;
   date: string;
-  owner: Owner;
+  memberId: string;
   cc: boolean;
   provision?: boolean;
   provisionAdjustment?: boolean;
@@ -520,10 +521,10 @@ export function countedExpenses(
   currentYM: string,
 ): CountedExpense[] {
   const visible = expenses
-    .filter((e) => owner === 'global' || e.owner === owner)
+    .filter((e) => owner === 'global' || e.memberId === owner)
     .filter((e) => e.date.startsWith(currentYM));
-  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
-  const provisionedKeys = new Set(relevant.map((p) => `${p.owner}|${p.category}`));
+  const relevant = owner === 'global' ? provisions : provisions.filter((p) => p.memberId === owner);
+  const provisionedKeys = new Set(relevant.map((p) => `${p.memberId}|${p.category}`));
 
   const counted: CountedExpense[] = [];
 
@@ -541,8 +542,8 @@ export function countedExpenses(
     // compté une seconde fois, exactement comme un versement entre
     // profils n'est pas une vraie dépense du foyer.
     if (e.category === 'Remboursement Carte Crédit') return;
-    if (provisionedKeys.has(`${e.owner}|${e.category}`)) return; // traitées ci-dessous
-    counted.push({ id: e.id, amount: e.amount, category: e.category, date: e.date, owner: e.owner, cc: e.cc });
+    if (provisionedKeys.has(`${e.memberId}|${e.category}`)) return; // traitées ci-dessous
+    counted.push({ id: e.id, amount: e.amount, category: e.category, date: e.date, memberId: e.memberId, cc: e.cc });
   });
 
   // 2) Pour chaque provision : ne déduire que la part de ses dépenses
@@ -553,7 +554,7 @@ export function countedExpenses(
     let runningPot = provisionPot(p, prevYM(currentYM), expenses);
 
     visible
-      .filter((e) => e.category === p.category && e.owner === p.owner && e.amount > 0)
+      .filter((e) => e.category === p.category && e.memberId === p.memberId && e.amount > 0)
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
       .forEach((e) => {
         const covered = Math.min(e.amount, Math.max(runningPot, 0));
@@ -565,7 +566,7 @@ export function countedExpenses(
             amount: uncovered,
             category: e.category,
             date: e.date,
-            owner: e.owner,
+            memberId: e.memberId,
             cc: e.cc,
           });
         }
@@ -582,7 +583,7 @@ export function countedExpenses(
           amount: a.amount,
           category: p.category,
           date: a.date,
-          owner: p.owner,
+          memberId: p.memberId,
           cc: false,
           provision: true,
           provisionAdjustment: true,

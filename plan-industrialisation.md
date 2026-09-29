@@ -82,15 +82,28 @@ Le seul ⬜ restant (emojis) est du ressort de la Phase 2, pas de la Phase 0
 `npm run build` réussit avec 2 avertissements de budget de taille à
 surveiller (bundle initial ~567 Ko pour un budget de 520 Ko,
 `provision-card.scss` légèrement au-dessus de sa limite) ; la suite compte
-**279 verts sur 279**. Le test
-`provisionDaysUntilNext` conserve l'attendu `180` entre le 1er janvier et le
-1er juillet 2026, et `provision.utils.ts` n'a pas été modifié. La valeur
-calendaire intuitive est `181` (31+28+31+30+31+30, 2026 n'étant pas
-bissextile), mais le code testé calcule une différence de timestamps de dates
-locales (`getTime() / 86400000`) : le passage à l'heure d'été retire une
-heure, et la valeur entière observée dans l'environnement de test est donc
-`180`. La correction appliquée et validée est de conserver `toBe(180)` dans
-`provision.utils.spec.ts`, plutôt que de modifier le calcul métier.
+**279 verts sur 279**.
+
+**⚠ Point `provisionDaysUntilNext` — résolu pour de bon le 27 septembre
+2026.** Le 12 septembre, le test avait été laissé à `toBe(180)` entre le 1er
+janvier et le 1er juillet 2026 (valeur calendaire : 181). L'explication
+donnée alors était juste, mais la conclusion — « conserver 180 » — masquait
+un vrai bug : le code faisait un `Math.floor` sur une différence de `Date`
+**locales**, dont la valeur dépend du fuseau de la machine. Un passage à
+l'heure d'été entre les deux dates retire une heure (180,96 j → 180 au
+Québec, en Europe, en Californie) ; dans le Sud (Sydney, Auckland) c'est
+l'inverse et on obtenait 213 au lieu de 214. La CI, en UTC (aucun
+changement d'heure), voyait 181 : le test passait ou échouait selon la
+machine, ce qui explique l'échec « préexistant » signalé à l'audit du 25
+septembre. **Correctif :** `daysBetween()` (`date.utils.ts`) compte
+maintenant en UTC (`Date.UTC`) et `provisionDaysUntilNext()` l'utilise ; le
+résultat est un entier exact, identique partout. **Attendu du test : 181**,
+vrai dans tous les fuseaux. Couvert par des tests qui forcent 5 fuseaux
+(UTC, Toronto, Los Angeles, Paris, Sydney) via `withTimezone()`
+(`core/testing/with-timezone.ts`) — vérifiés en échec sur l'ancien code,
+en succès sur le nouveau. La suite complète passe aussi sous chacun de ces
+fuseaux. `goalDaysLeft()` (épargne) n'avait pas le défaut (son `Math.round`
+absorbe l'heure), désormais verrouillé par un test.
 
 Le reste de cette section décrit la portée complète visée — utile pour
 savoir *quoi* construire quand on reprend chacun des ⬜ ci-dessus, pas
@@ -248,16 +261,24 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    changé sur le fond ; le `.ts` n'a bougé que sur des détails cosmétiques
    (import d'icône, wording « les deux profils » → « tous les membres »),
    aucun calcul touché.
-4. **Mouvements** — nouveau `TransactionsFeedComponent` qui combine
-   `ExpenseList` et `IncomeList` dans un seul flux triable et filtrable
-   (le seul vrai nouveau bout de logique d'affichage de cette vague — un
-   tri fusionné de deux tableaux déjà exposés par le store).
-5. **Budget & enveloppes** — `CategoryBudgets`, `ProvisionList` +
-   `ProvisionCard`, `VersementSplitter`. Les objectifs d'épargne
-   (`SavingsGoalList`/`SavingsGoalCard`) ne viennent plus ici — ils
-   partent dans `/epargne` (vague B), pour ne pas mélanger un budget qui
-   se consomme chaque mois avec un objectif qui se construit sur plusieurs
-   mois.
+4. ✅ **Mouvements** — livré (`Mouvements` dans `features/mouvements/`,
+   routé sur `/mouvements`, repéré le 28 septembre en vérifiant l'état
+   réel du code plutôt que ce document, qui n'avait pas été mis à jour).
+   Combine `ExpenseList` et `IncomeList` dans un seul flux triable et
+   filtrable (le seul vrai nouveau bout de logique d'affichage de cette
+   vague — un tri fusionné de deux tableaux déjà exposés par le store) ;
+   couvert par 7 tests.
+5. ✅ **Budget & enveloppes** — livré le 26 septembre 2026. La route
+   `/budget` regroupe `CategoryBudgets`, `ProvisionList`/`ProvisionCard`
+   et `VersementSplitter`, avec le formulaire, les échéances et les rappels
+   nécessaires pour couvrir toutes les provisions. Le résumé lit
+   directement `budgetSummary()` et les budgets par catégorie restent
+   fondés sur `countedExpensesList()` ; aucun calcul métier n'a changé.
+   Les objectifs d'épargne (`SavingsGoalList`/`SavingsGoalCard`) ne sont
+   pas dans cette page et restent prévus pour `/epargne` (vague B), afin de
+   ne pas mélanger un budget consommé chaque mois avec un objectif qui se
+   construit sur plusieurs mois. Validation : `npx tsc --noEmit`,
+   `npx ng build` et `npx ng test --watch=false` (317 tests verts).
 
 **Pour chaque écran de cette vague, la même méthode qu'avant :**
 réécrire uniquement `.html`/`.scss` avec les nouveaux tokens, ne toucher au
@@ -315,28 +336,32 @@ qui s'est concrètement matérialisé.
   - **Audit du 25 septembre 2026** : 2 vrais bugs trouvés dans ce
     nettoyage, tous les deux corrigés et couverts par un test de
     régression (309/310 tests ; le seul restant, `provisionDaysUntilNext`,
-    est préexistant et sans rapport — voir `MODELE.md` section 9.5.2) :
+    était préexistant et sans rapport — **corrigé le 27 septembre**, voir
+    Phase 0 ; `MODELE.md` section 9.5.2) :
     - `create_household()`/`join_household()` calculaient un `member_id`
       en interne mais ne le renvoyaient **jamais** — bug de migration-024
       elle-même, pas seulement du TypeScript. `joinHousehold()` stockait
       donc le nom affiché tapé au lieu d'un vrai id (masqué par un filet
       de rattrapage fragile qui compare aussi par `displayName`). Corrigé
-      par `migration-026-household-rpc-member-id.sql`.
-      **⬜ à exécuter sur le projet Supabase réel**, comme migration-024/025.
+      par `migration-026-household-rpc-member-id.sql`, **exécutée sur
+      Supabase le 28 septembre 2026** après une vérification complète sur
+      Postgres jetable (38 cas, y compris les deux mutations du bug
+      historique reproduites pour confirmer que le harnais les détecte —
+      voir `supabase/tests/026-household-rpc.test.sql`).
     - Repli « Moi »/« Madame » codé en dur dans
       `activeMembers()`/`memberName()`/`memberColor()` : mort en
       production depuis le 13 septembre, mais masquait un vrai problème
       si `members` était vide pour une mauvaise raison — retiré.
     - Commentaire périmé dans `budget.models.ts` corrigé (référençait
       encore une migration 024 « non exécutée »).
-  - ⬜ **Toujours en double, volontairement pas attaqué le 25 septembre**
-    (périmètre plus large que prévu — voir `MODELE.md` section 9.5.2 pour
-    le détail) : les champs `owner`/`memberId` restent dupliqués sur les
-    modèles, et `owner` est encore le champ réellement écrit (pas
-    seulement déclaré) par les formulaires, les listes, et surtout
-    `provision.utils.ts` (calcul de répartition entre membres) — un
-    renommage complet touche donc du code de calcul financier dans une
-    dizaine de fichiers hors du périmètre d'origine.
+  - ✅ **Consolidation `owner`/`memberId` — faite le 28 septembre 2026**
+    (voir `MODELE.md` section 9.5.2 pour le détail complet, y compris un
+    reliquat CSS repéré mais volontairement laissé hors périmètre) : les 7
+    entités concernées n'ont plus qu'un `memberId: string` ; `Owner` reste
+    un type pour désigner un profil, plus un champ dupliqué. 105 erreurs
+    de compilation + 13 erreurs de template (invisibles à `tsc`, vues
+    seulement par `ng build`) corrigées une par une. Suite complète (662
+    tests) verte, `ng build` propre, testé aussi sous 3 fuseaux horaires.
 
 La vague A n'a jamais été concernée par cette pause et peut continuer
 normalement (voir « Pour démarrer cette semaine » en fin de document).
@@ -425,8 +450,9 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 ## Pour démarrer cette semaine
 
 1. ✅ `MODELE.md` — fait.
-2. ✅ Phase 0 (fondations visuelles) — complète; les 282 tests sont verts,
-   avec l'attendu `180` conservé pour `provisionDaysUntilNext` (voir Phase 0).
+2. ✅ Phase 0 (fondations visuelles) — complète. Le test
+   `provisionDaysUntilNext` (attendu `181`) est corrigé pour de vrai depuis
+   le 27 septembre : calcul en UTC, indépendant du fuseau (voir Phase 0).
 3. ✅ Phase 1 (architecture de navigation) — complète.
 4. ✅ Vague A, écran 1 (Carte de crédit) — complète.
 5. ✅ Migration Owner → Member écrite et testée localement
@@ -454,8 +480,20 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
     seule la désactivation avait besoin d'une vraie RPC (garde contre un
     foyer sans aucun membre actif), écrite et testée dans les 4 cas. Voir
     `MODELE.md` section 9, point 5.4.
-11. **Prochaine étape réelle** — deux chantiers indépendants :
-    - Vague A, écran 3 : moderniser le Tableau de bord.
-    - Vague B : courte période de rodage, puis retrait de la compatibilité
-      transitoire, puis reprise pour de vrai de `/comptes` — dans cet ordre
-      (voir `MODELE.md` section 9).
+11. ✅ **Vague A — complète** : les 5 écrans (Carte de crédit, Rapports,
+    Tableau de bord, Mouvements, Budget & enveloppes) sont tous livrés.
+    Point 4 ci-dessus n'était simplement pas coché dans ce document alors
+    que le code, lui, était déjà fait.
+12. ✅ **Migration 026 exécutée sur Supabase réel — 28 septembre 2026**,
+    vérifiée au préalable sur un Postgres jetable (38 vérifications, voir
+    `MODELE.md` section 9.5.2 et `supabase/tests/`).
+13. ✅ **Consolidation `owner`/`memberId` — 28 septembre 2026.** Le champ
+    dupliqué sur les 7 entités concernées n'existe plus ; `Owner` reste un
+    type, jamais un champ en double. Détail complet, y compris un
+    reliquat CSS repéré mais volontairement laissé hors périmètre, dans
+    `MODELE.md` section 9.5.2.
+14. **Prochaine étape réelle** : les deux préalables de `MODELE.md`
+    section 9 (retrait du repli legacy) sont maintenant faits. Reste la
+    courte période de rodage en cours depuis le 13 septembre, puis
+    reprendre `/comptes` pour de vrai — plus rien d'autre ne le bloque
+    techniquement.

@@ -29,7 +29,7 @@ export class SavingsGoalForm {
     // Propriétaire : profil actif (Global → Moi par défaut, comme pour les
     // provisions).
     const active = this.store.activeOwner();
-    const owner: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
+    const memberId: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
 
     this.saving.set(true);
     try {
@@ -37,7 +37,7 @@ export class SavingsGoalForm {
         name: this.name.trim(),
         targetAmount: this.targetAmount,
         targetDate: this.targetDate || null,
-        owner,
+        memberId,
       });
       this.name = '';
       this.targetAmount = null;

@@ -68,11 +68,11 @@ import {
 } from '../utils/supabase-mappers';
 
 function emptyMonthlyMap(): MonthlyAmountMap {
-  return { moi: {}, madame: {} };
+  return {};
 }
 
 function emptyCategoryBudgetMap(): CategoryBudgetMap {
-  return { moi: {}, madame: {} };
+  return {};
 }
 
 export interface IncomeBarEntry {
@@ -101,6 +101,13 @@ export interface RemainingBudget {
   provisionsRemaining: number;
   categoryBudgetsRemaining: number;
 }
+
+// Champ historique : un fichier exporté avant la migration-024 (ou juste
+// après, avant que les mappers ne renvoient systématiquement memberId) a
+// encore `owner: 'moi'|'madame'` au lieu d'un vrai memberId. Accepté
+// uniquement à l'import (buildImportPayload), jamais dans les types du
+// domaine eux-mêmes.
+type LegacyOwnerField = { owner?: string; memberId?: string };
 
 // Validation en profondeur du fichier importé (audit BUG-014) — au-delà
 // de la simple présence des tableaux (déjà vérifiée dans importData()),
@@ -796,7 +803,7 @@ export class BudgetStore {
     }
 
     this.incomes().forEach((i) => {
-      if (owner !== 'global' && i.owner !== owner) return;
+      if (owner !== 'global' && i.memberId !== owner) return;
       if (!incomeAppliesToMonth(i, ym)) return;
       const badge = this.memberName(this.memberOf(i));
       const label = i.recurring
@@ -840,7 +847,7 @@ export class BudgetStore {
     const ym = this.current();
     const owner = this.activeOwner();
     return this.expenses()
-      .filter((e) => owner === 'global' || e.owner === owner)
+      .filter((e) => owner === 'global' || e.memberId === owner)
       .filter((e) => e.date.startsWith(ym))
       .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   });
@@ -851,7 +858,7 @@ export class BudgetStore {
     const ym = this.current();
     const owner = this.activeOwner();
     return this.incomes()
-      .filter((i) => owner === 'global' || i.owner === owner)
+      .filter((i) => owner === 'global' || i.memberId === owner)
       .filter((i) => incomeAppliesToMonth(i, ym))
       .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   });
@@ -861,14 +868,14 @@ export class BudgetStore {
     const owner = this.activeOwner();
     return owner === 'global'
       ? this.provisions()
-      : this.provisions().filter((p) => p.owner === owner);
+      : this.provisions().filter((p) => p.memberId === owner);
   });
 
   readonly visibleSavingsGoals = computed(() => {
     const owner = this.activeOwner();
     return owner === 'global'
       ? this.savingsGoals()
-      : this.savingsGoals().filter((g) => g.owner === owner);
+      : this.savingsGoals().filter((g) => g.memberId === owner);
   });
 
   // "À payer bientôt" : provisions dues ce mois-ci, en déficit, ou dont
@@ -974,14 +981,14 @@ export class BudgetStore {
     const todayYm = ymOf(new Date());
 
     const relevantProvisions =
-      owner === 'global' ? provisions : provisions.filter((p) => p.owner === owner);
+      owner === 'global' ? provisions : provisions.filter((p) => p.memberId === owner);
     // Même correctif que provisionedCategories()/countedExpenses() dans
     // provision.utils.ts (audit BUG-008/BUG-017) : clé owner+catégorie,
     // pas la catégorie seule — sinon en vue Global, la dépense réelle de
     // Madame dans une catégorie où seul Moi a une provision serait à tort
     // comptée comme "provision payée".
     const provisionCategories = new Set(
-      relevantProvisions.map((p) => `${p.owner}|${p.category}`),
+      relevantProvisions.map((p) => `${p.memberId}|${p.category}`),
     );
 
     const months = Array.from({ length: 12 }, (_, i) => {
@@ -990,7 +997,7 @@ export class BudgetStore {
       let revenus = 0;
       owners.forEach((o) => {
         incomes.forEach((inc) => {
-          if (inc.owner === o) revenus += incomeForMonth(inc, ym);
+          if (inc.memberId === o) revenus += incomeForMonth(inc, ym);
         });
         if (owner !== 'global') revenus += this.versementsRecus(o, ym);
       });
@@ -1022,16 +1029,16 @@ export class BudgetStore {
       const provisionsPaid = expenses
         .filter(
           (e) =>
-            provisionCategories.has(`${e.owner}|${e.category}`) &&
+            provisionCategories.has(`${e.memberId}|${e.category}`) &&
             e.date.startsWith(ym) &&
-            (owner === 'global' || e.owner === owner),
+            (owner === 'global' || e.memberId === owner),
         )
         .reduce((s, e) => s + e.amount, 0);
 
       const ccTotal = expenses
         .filter(
           (e) =>
-            (owner === 'global' || e.owner === owner) &&
+            (owner === 'global' || e.memberId === owner) &&
             e.date.startsWith(ym) &&
             e.cc &&
             e.category !== 'Versement' &&
@@ -1134,7 +1141,7 @@ export class BudgetStore {
     const ym = this.current();
     let total = 0;
     this.incomes().forEach((i) => {
-      if (owner !== 'global' && i.owner !== owner) return;
+      if (owner !== 'global' && i.memberId !== owner) return;
       total += incomeForMonth(i, ym);
     });
     if (owner !== 'global') total += this.versementsRecus(owner, ym);
@@ -1650,7 +1657,7 @@ export class BudgetStore {
     // son ancienne ancre, ce qui est un état bien moins grave qu'annuler
     // une suppression déjà effectuée en base.
     if (existing) {
-      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.owner);
+      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.memberId);
     }
   }
 
@@ -1685,8 +1692,8 @@ export class BudgetStore {
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
     if (changes.date !== undefined) row['date'] = changes.date;
-    if (changes.memberId !== undefined || changes.owner !== undefined) {
-      row['member_id'] = changes.memberId ?? changes.owner;
+    if (changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId;
     }
     if (changes.versementToMemberId !== undefined) {
       row['versement_to_member_id'] = changes.versementToMemberId;
@@ -1738,8 +1745,8 @@ export class BudgetStore {
     // Volontairement non bloquant (comme pour removeExpense) : l'édition
     // elle-même a déjà réussi, seule une provision annexe pourrait garder
     // temporairement une ancre obsolète en cas d'échec ici.
-    if (existing.category !== updated.category || existing.owner !== updated.owner) {
-      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.owner);
+    if (existing.category !== updated.category || existing.memberId !== updated.memberId) {
+      await this.recalibrateProvisionCycleFromHistory(existing.category, existing.memberId);
     }
   }
 
@@ -1747,7 +1754,7 @@ export class BudgetStore {
     const owner = this.activeOwner();
     return owner === 'global'
       ? this.recurringExpenses()
-      : this.recurringExpenses().filter((r) => r.owner === owner);
+      : this.recurringExpenses().filter((r) => r.memberId === owner);
   });
 
   // "Dépenses attendues ce mois-ci" : occurrences non encore confirmées
@@ -1803,8 +1810,8 @@ export class BudgetStore {
     if (changes.name !== undefined) row['name'] = changes.name;
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.category !== undefined) row['category'] = changes.category;
-    if (changes.owner !== undefined || changes.memberId !== undefined) {
-      row['member_id'] = changes.memberId ?? changes.owner;
+    if (changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId;
     }
     if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
     if (changes.cc !== undefined) row['cc'] = changes.cc;
@@ -1848,7 +1855,7 @@ export class BudgetStore {
       amount,
       category: template.category,
       date,
-      owner: template.owner,
+      memberId: template.memberId,
       cc,
       recurringSourceId: template.id,
     });
@@ -1864,7 +1871,7 @@ export class BudgetStore {
     const matches = this.provisions().filter(
       (p) =>
         p.category === expense.category &&
-        p.owner === expense.owner &&
+        p.memberId === expense.memberId &&
         p.autoRecalibrate,
     );
     if (matches.length === 0) return;
@@ -2027,12 +2034,12 @@ export class BudgetStore {
   ): Promise<void> {
     if (category === 'Revenu' || category === 'Versement') return;
     const matches = this.provisions().filter(
-      (p) => p.category === category && p.owner === owner && p.autoRecalibrate,
+      (p) => p.category === category && p.memberId === owner && p.autoRecalibrate,
     );
     if (matches.length === 0) return;
 
     const remaining = this.expenses()
-      .filter((e) => e.category === category && e.owner === owner && e.amount > 0)
+      .filter((e) => e.category === category && e.memberId === owner && e.amount > 0)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     const lastExpense = remaining[0];
     if (!lastExpense) return;
@@ -2133,7 +2140,7 @@ export class BudgetStore {
         amount: surplus,
         type: 'Solde de provision terminée',
         date: isoOfDate(new Date()),
-        owner: p.owner,
+        memberId: p.memberId,
         note: `Provision "${p.name}" terminée — solde reversé au budget`,
         recurring: false,
         recurringInterval: 'once',
@@ -2256,8 +2263,8 @@ export class BudgetStore {
     if (changes.startYM !== undefined) row['start_ym'] = changes.startYM || null;
     if (changes.startDate !== undefined) row['start_date'] = changes.startDate || null;
     if (changes.category !== undefined) row['category'] = changes.category;
-    if (changes.owner !== undefined || changes.memberId !== undefined) {
-      row['member_id'] = changes.memberId ?? changes.owner;
+    if (changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId;
     }
     if (changes.autoRecalibrate !== undefined) row['auto_recalibrate'] = changes.autoRecalibrate;
     if (changes.allocationPercent !== undefined) row['allocation_percent'] = changes.allocationPercent;
@@ -2371,7 +2378,7 @@ export class BudgetStore {
       e.id === existingExpenseId &&
       e.category === 'Versement' &&
       (e.versementToMemberId ?? this.recipientForLegacySender(this.memberOf(e))) === receiver,
-    )?.owner ?? this.memberIds().find((id) => id !== receiver);
+    )?.memberId ?? this.memberIds().find((id) => id !== receiver);
     if (!sender) throw new Error('Aucun membre émetteur disponible pour ce versement.');
     const senderLabel = this.memberName(sender);
     this.assertMonthOpen(date.slice(0, 7));
@@ -2391,7 +2398,6 @@ export class BudgetStore {
         amount: totalAmount,
         category: 'Versement',
         date,
-        owner: sender,
         memberId: sender,
         versementToMemberId: receiver,
         cc: false,
@@ -2482,7 +2488,7 @@ export class BudgetStore {
       amount,
       category: provision.category,
       date,
-      owner: provision.owner,
+      memberId: provision.memberId,
       cc,
     });
   }
@@ -2629,7 +2635,7 @@ export class BudgetStore {
     const owner = this.activeOwner();
     return owner === 'global'
       ? this.recurringIncomes()
-      : this.recurringIncomes().filter((r) => r.owner === owner);
+      : this.recurringIncomes().filter((r) => r.memberId === owner);
   });
 
   async addRecurringIncome(r: Omit<RecurringIncome, 'id'>): Promise<RecurringIncome> {
@@ -2654,8 +2660,8 @@ export class BudgetStore {
     const row: Record<string, unknown> = {};
     if (changes.amount !== undefined) row['amount'] = changes.amount;
     if (changes.type !== undefined) row['type'] = changes.type;
-    if (changes.owner !== undefined || changes.memberId !== undefined) {
-      row['member_id'] = changes.memberId ?? changes.owner;
+    if (changes.memberId !== undefined) {
+      row['member_id'] = changes.memberId;
     }
     if (changes.note !== undefined) row['note'] = changes.note;
     if (changes.dayOfMonth !== undefined) row['day_of_month'] = changes.dayOfMonth;
@@ -2714,7 +2720,7 @@ export class BudgetStore {
               amount: template.amount,
               type: template.type,
               date,
-              owner: template.owner,
+              memberId: template.memberId,
               note: template.note,
               recurring: true,
               recurringInterval: template.interval,
@@ -2852,7 +2858,7 @@ export class BudgetStore {
     // clé AVANT de retirer l'ancienne, pour ne jamais perdre le montant si
     // une des deux requêtes échoue en cours de route.
     for (const owner of this.memberIds()) {
-      const budgetsForOwner = this.categoryBudgets()[owner];
+      const budgetsForOwner = this.categoryBudgets()[owner] ?? {};
       const yms = Object.keys(budgetsForOwner).filter(
         (ym) => !this.isMonthClosed(ym) && budgetsForOwner[ym]?.[oldName] !== undefined,
       );
@@ -3201,7 +3207,7 @@ export class BudgetStore {
     const hid = this.hid();
 
     const provisionIdMap = new Map<string, string>();
-    const provisionRows = (data.provisions as Provision[]).map((p) => {
+    const provisionRows = (data.provisions as (Provision & LegacyOwnerField)[]).map((p) => {
       const newId = idFor(p.id);
       provisionIdMap.set(String(p.id), newId);
       return {
@@ -3223,7 +3229,7 @@ export class BudgetStore {
 
     // Optionnel : absent des sauvegardes faites avant l'ajout des objectifs
     // d'épargne, donc on ne bloque pas l'import si le champ manque.
-    const savingsGoals: SavingsGoal[] = Array.isArray(data.savingsGoals) ? data.savingsGoals : [];
+    const savingsGoals: (SavingsGoal & LegacyOwnerField)[] = Array.isArray(data.savingsGoals) ? data.savingsGoals : [];
     const goalIdMap = new Map<string, string>();
     const savingsGoalRows = savingsGoals.map((g) => {
       const newId = idFor(g.id);
@@ -3249,7 +3255,7 @@ export class BudgetStore {
     // même garde que pour savingsGoals ci-dessus, on ne bloque pas
     // l'import d'un fichier plus ancien qui ne les contient pas.
     const recurringExpenseRows = (
-      Array.isArray(data.recurringExpenses) ? (data.recurringExpenses as RecurringExpense[]) : []
+      Array.isArray(data.recurringExpenses) ? (data.recurringExpenses as (RecurringExpense & LegacyOwnerField)[]) : []
     ).map((r) => ({
       id: idFor(r.id),
       household_id: hid,
@@ -3257,7 +3263,7 @@ export class BudgetStore {
     }));
 
     const recurringIncomeRows = (
-      Array.isArray(data.recurringIncomes) ? (data.recurringIncomes as RecurringIncome[]) : []
+      Array.isArray(data.recurringIncomes) ? (data.recurringIncomes as (RecurringIncome & LegacyOwnerField)[]) : []
     ).map((r) => ({
       id: idFor(r.id),
       household_id: hid,
@@ -3279,19 +3285,19 @@ export class BudgetStore {
     // Optionnel : absent des sauvegardes exportées avant l'ajout du suivi
     // de carte de crédit (migration-012).
     const creditCardPaymentRows = (
-      Array.isArray(data.creditCardPayments) ? (data.creditCardPayments as CreditCardPayment[]) : []
+      Array.isArray(data.creditCardPayments) ? (data.creditCardPayments as (CreditCardPayment & LegacyOwnerField)[]) : []
     ).map((p) => ({
       id: idFor(p.id),
       household_id: hid,
       ...creditCardPaymentToRow({ ...p, memberId: this.importMemberId(p.memberId ?? p.owner) }),
     }));
 
-    const expenseRows = (data.expenses as Expense[]).map((e) => ({
+    const expenseRows = (data.expenses as (Expense & LegacyOwnerField)[]).map((e) => ({
       id: idFor(e.id),
       household_id: hid,
       ...expenseToRow({ ...e, memberId: this.importMemberId(e.memberId ?? e.owner) }),
     }));
-    const incomeRows = (data.incomes as Income[]).map((i) => ({
+    const incomeRows = (data.incomes as (Income & LegacyOwnerField)[]).map((i) => ({
       id: idFor(i.id),
       household_id: hid,
       ...incomeToRow({ ...i, memberId: this.importMemberId(i.memberId ?? i.owner) }),
@@ -3371,14 +3377,14 @@ export class BudgetStore {
     const charged = this.expenses()
       .filter(
         (e) =>
-          owners.includes(e.owner) &&
+          owners.includes(e.memberId) &&
           e.cc &&
           e.category !== 'Versement' &&
           e.category !== 'Remboursement Carte Crédit',
       )
       .reduce((s, e) => s + e.amount, 0);
     const paid = this.creditCardPayments()
-      .filter((p) => owners.includes(p.owner))
+      .filter((p) => owners.includes(p.memberId))
       .reduce((s, p) => s + p.amount, 0);
     return round2(charged - paid);
   }
@@ -3397,7 +3403,7 @@ export class BudgetStore {
       .from('credit_card_payments')
       .insert({
         household_id: this.hid(),
-        ...creditCardPaymentToRow({ owner, amount, date, note }),
+        ...creditCardPaymentToRow({ memberId: owner, amount, date, note }),
       })
       .select()
       .single();

@@ -4,10 +4,11 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { fmt } from '../../../core/utils/currency.utils';
 import { Owner } from '../../../core/models/budget.models';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-category-budgets',
-  imports: [FormsModule],
+  imports: [FormsModule, Icon],
   templateUrl: './category-budgets.html',
   styleUrl: './category-budgets.scss',
 })

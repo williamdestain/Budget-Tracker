@@ -6,10 +6,11 @@ import { fmt } from '../../../core/utils/currency.utils';
 import { fmtDate, isoOfDate } from '../../../core/utils/date.utils';
 import * as PU from '../../../core/utils/provision.utils';
 import { ToastService } from '../../../core/services/toast.service';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-provision-card',
-  imports: [FormsModule],
+  imports: [FormsModule, Icon],
   templateUrl: './provision-card.html',
   styleUrl: './provision-card.scss',
 })
@@ -93,7 +94,7 @@ export class ProvisionCard {
     if (pot < 0) {
       statusClass = 'deficit';
       barClass = 'deficit';
-      statusText = `⚠️ Déficit de ${fmt(Math.abs(pot))} (payé avant d'avoir assez économisé)`;
+      statusText = `Déficit de ${fmt(Math.abs(pot))} (payé avant d'avoir assez économisé)`;
     } else if (isHit && spent < targetForNext && pot >= targetForNext) {
       // Échue, aucun paiement encore enregistré CETTE échéance, mais la
       // cagnotte suffit déjà à la couvrir : ce n'est pas un manque
@@ -114,11 +115,11 @@ export class ProvisionCard {
     } else if (isHit && spent >= targetForNext) {
       statusClass = 'ok';
       barClass = 'full';
-      statusText = `✓ Échéance couverte ce mois`;
+      statusText = 'Échéance couverte ce mois';
     } else if (pot >= targetForNext) {
       statusClass = 'ok';
       barClass = 'full';
-      statusText = `Prêt ✓ (objectif atteint)`;
+      statusText = 'Prêt (objectif atteint)';
     } else {
       statusClass = 'warn';
       barClass = 'partial';
@@ -228,15 +229,15 @@ export class ProvisionCard {
         const returned = await this.store.closeProvision(provisionId);
         this.toast.show(
           returned > 0
-            ? `✅ "${provisionName}" terminée après ce paiement — ${this.fmt(returned)} ajoutés à ton budget.`
-            : `✅ "${provisionName}" terminée après ce paiement.`,
+            ? `"${provisionName}" terminée après ce paiement — ${this.fmt(returned)} ajoutés à ton budget.`
+            : `"${provisionName}" terminée après ce paiement.`,
         );
       } catch (err) {
         // Le paiement lui-même est acquis — seule la fermeture
         // automatique a échoué. On le dit clairement plutôt que de
         // laisser croire que le paiement a échoué.
         this.toast.show(
-          `⚠️ Paiement enregistré, mais la fermeture automatique a échoué : ${(err as Error).message ?? err}. ` +
+          `Paiement enregistré, mais la fermeture automatique a échoué : ${(err as Error).message ?? err}. ` +
             `Utilise le bouton 🏁 pour réessayer.`,
         );
       } finally {
@@ -293,8 +294,8 @@ export class ProvisionCard {
       const returned = await this.store.closeProvision(p.id);
       this.toast.show(
         returned > 0
-          ? `✅ "${p.name}" terminée — ${this.fmt(returned)} ajoutés à ton budget.`
-          : `✅ "${p.name}" terminée.`,
+          ?           `"${p.name}" terminée — ${this.fmt(returned)} ajoutés à ton budget.`
+          : `"${p.name}" terminée.`,
       );
     } finally {
       this.saving.set(false);

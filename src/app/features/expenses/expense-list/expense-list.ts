@@ -70,7 +70,7 @@ export class ExpenseList {
 
   transferRecipient(e: Expense): string {
     return this.store.memberName(
-      e.versementToMemberId ?? this.otherOwner(e.owner),
+      e.versementToMemberId ?? this.otherOwner(e.memberId),
     );
   }
 
@@ -151,7 +151,7 @@ export class ExpenseList {
     this.editAmount = e.amount;
     this.editCategory = e.category;
     this.editDate = e.date;
-    this.editOwner = e.owner;
+    this.editOwner = e.memberId;
     this.editCc = e.cc;
   }
 
@@ -167,7 +167,7 @@ export class ExpenseList {
         amount: this.editAmount,
         category: this.editCategory,
         date: this.editDate,
-        owner: this.editOwner,
+        memberId: this.editOwner,
         cc: this.editCc,
       };
       await this.store.updateExpense(id, changes);

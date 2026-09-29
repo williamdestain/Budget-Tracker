@@ -28,13 +28,17 @@
               (keyup.enter)="saveEditEveryN()"
             />
             {{ stats().unitLabel }}
-            <button class="prov-percent-btn" (click)="saveEditEveryN()" [disabled]="saving()">✓</button>
-            <button class="prov-percent-btn" (click)="cancelEditEveryN()">✕</button>
+            <button type="button" class="prov-percent-btn" aria-label="Enregistrer la périodicité" (click)="saveEditEveryN()" [disabled]="saving()">
+              <app-icon name="check" [size]="13" />
+            </button>
+            <button type="button" class="prov-percent-btn" aria-label="Annuler la périodicité" (click)="cancelEditEveryN()">
+              <app-icon name="close" [size]="13" />
+            </button>
           </span>
         } @else {
-          <span class="prov-percent" (click)="startEditEveryN()" title="Modifier le nombre de jours/mois du cycle">
-            ~{{ provision().everyN }} {{ stats().unitLabel }} ✏️
-          </span>
+          <button type="button" class="prov-percent" (click)="startEditEveryN()" title="Modifier le nombre de jours/mois du cycle">
+            ~{{ provision().everyN }} {{ stats().unitLabel }} <app-icon name="edit" [size]="12" />
+          </button>
         }
         {{ stats().rollingLabel }} ·
         catégorie <strong>{{ provision().category }}</strong>
@@ -49,28 +53,41 @@
               [(ngModel)]="editPercent"
               (keyup.enter)="saveEditPercent()"
             />%
-            <button class="prov-percent-btn" (click)="saveEditPercent()" [disabled]="saving()">✓</button>
-            <button class="prov-percent-btn" (click)="cancelEditPercent()">✕</button>
+            <button type="button" class="prov-percent-btn" aria-label="Enregistrer le pourcentage" (click)="saveEditPercent()" [disabled]="saving()">
+              <app-icon name="check" [size]="13" />
+            </button>
+            <button type="button" class="prov-percent-btn" aria-label="Annuler le pourcentage" (click)="cancelEditPercent()">
+              <app-icon name="close" [size]="13" />
+            </button>
           </span>
         } @else {
-          <span class="prov-percent" (click)="startEditPercent()" title="Modifier la part utilisée lors d'un versement">
-            {{ provision().allocationPercent > 0 ? provision().allocationPercent + '% d\'un versement ✏️' : 'Définir une part de versement ✏️' }}
-          </span>
+          <button type="button" class="prov-percent" (click)="startEditPercent()" title="Modifier la part utilisée lors d'un versement">
+            {{ provision().allocationPercent > 0 ? provision().allocationPercent + '% d\'un versement' : 'Définir une part de versement' }}
+            <app-icon name="edit" [size]="12" />
+          </button>
         }
       </div>
     </div>
     <div class="prov-actions">
-      <button title="Marquer comme payé" class="pay-prov" (click)="togglePay()">💳</button>
-      <button title="Ajouter un montant" class="add-prov-adjust" (click)="toggleAdjust()">+$</button>
+      <button type="button" title="Marquer comme payé" aria-label="Marquer comme payé" class="pay-prov" (click)="togglePay()">
+        <app-icon name="card" [size]="15" />
+      </button>
+      <button type="button" title="Ajouter un montant" aria-label="Ajouter un montant" class="add-prov-adjust" (click)="toggleAdjust()">
+        <app-icon name="plus" [size]="15" />
+      </button>
       <button
+        type="button"
         title="Terminer cette provision (une seule fois) : reverse le solde restant dans ton budget avant de la supprimer"
+        aria-label="Terminer cette provision"
         class="close-prov"
         [disabled]="saving()"
         (click)="close()"
       >
-        🏁
+        <app-icon name="flag" [size]="15" />
       </button>
-      <button title="Supprimer directement, sans reverser le solde" class="del-prov" (click)="remove()">✕</button>
+      <button type="button" title="Supprimer directement, sans reverser le solde" aria-label="Supprimer la provision" class="del-prov" (click)="remove()">
+        <app-icon name="trash" [size]="15" />
+      </button>
     </div>
   </div>
 
@@ -89,7 +106,7 @@
       <div class="field field-check">
         <label class="check-label">
           <input type="checkbox" name="payCc" [(ngModel)]="payCc" />
-          <span class="check-text"><span class="check-icon">💳</span> Carte de crédit</span>
+          <span class="check-text"><app-icon name="card" [size]="15" /> Carte de crédit</span>
         </label>
       </div>
       <div class="field field-check">
@@ -98,7 +115,7 @@
           title="Reverse automatiquement tout solde restant dans ton budget, puis supprime la provision — pour une dépense ponctuelle (ex. un voyage) dont tu n'auras plus besoin après ce paiement"
         >
           <input type="checkbox" name="payIsFinal" [(ngModel)]="payIsFinal" />
-          <span class="check-text">🏁 C'est le dernier paiement (terminer et reverser le solde)</span>
+          <span class="check-text"><app-icon name="flag" [size]="15" /> C'est le dernier paiement (terminer et reverser le solde)</span>
         </label>
       </div>
       <div class="field-actions">
@@ -137,7 +154,7 @@
     <span>Cagnotte : <strong>{{ fmt(stats().pot) }}</strong> / {{ fmt(stats().targetForNext) }}</span>
     <span class="prov-status" [class]="stats().statusClass">{{ stats().statusText }}</span>
   </div>
-  <div class="prov-foot" style="margin-top: 4px">
+  <div class="prov-foot prov-foot--spaced">
     <span>{{ stats().nextFieldLabel }} : <strong>{{ stats().nextLabel }}</strong></span>
     @if (startEditOpen()) {
       <span class="prov-percent-edit">
@@ -147,48 +164,59 @@
         } @else {
           <input type="month" [(ngModel)]="editStartYM" (keyup.enter)="saveEditStartDate()" />
         }
-        <button class="prov-percent-btn" (click)="saveEditStartDate()" [disabled]="saving()">✓</button>
-        <button class="prov-percent-btn" (click)="cancelEditStartDate()">✕</button>
+        <button type="button" class="prov-percent-btn" aria-label="Enregistrer la date" (click)="saveEditStartDate()" [disabled]="saving()">
+          <app-icon name="check" [size]="13" />
+        </button>
+        <button type="button" class="prov-percent-btn" aria-label="Annuler la modification de date" (click)="cancelEditStartDate()">
+          <app-icon name="close" [size]="13" />
+        </button>
       </span>
     } @else {
-      <span
+      <button
+        type="button"
         class="prov-percent"
         (click)="startEditStartDate()"
         title="Modifier la date d'ancrage du cycle (déplace aussi la prochaine échéance)"
       >
-        {{ stats().startFieldLabel }} : {{ stats().startLabel }} ✏️
-      </span>
-      <span
+        {{ stats().startFieldLabel }} : {{ stats().startLabel }} <app-icon name="edit" [size]="12" />
+      </button>
+      <button
+        type="button"
         class="prov-recalibrate-toggle"
         (click)="toggleAutoRecalibrate()"
         [title]="provision().autoRecalibrate
           ? 'Un paiement réel dans cette catégorie recale automatiquement le prochain cycle — cliquer pour désactiver'
           : 'Recalage manuel : la prochaine échéance ne bouge que si tu la modifies toi-même — cliquer pour réactiver le recalage automatique'"
       >
-        · {{ provision().autoRecalibrate ? 'recalage auto' : 'recalage manuel' }} ✏️
-      </span>
+        · {{ provision().autoRecalibrate ? 'recalage auto' : 'recalage manuel' }} <app-icon name="edit" [size]="12" />
+      </button>
     }
   </div>
-  <div class="prov-foot" style="margin-top: 4px">
+  <div class="prov-foot prov-foot--spaced">
     @if (reminderEditOpen()) {
       <span class="prov-percent-edit">
         Ma contribution mensuelle :
         <input type="number" min="0" step="0.01" [(ngModel)]="editReminder" (keyup.enter)="saveEditReminder()" placeholder="0" />
-        <button class="prov-percent-btn" (click)="saveEditReminder()" [disabled]="saving()">✓</button>
-        <button class="prov-percent-btn" (click)="cancelEditReminder()">✕</button>
+        <button type="button" class="prov-percent-btn" aria-label="Enregistrer la contribution mensuelle" (click)="saveEditReminder()" [disabled]="saving()">
+          <app-icon name="check" [size]="13" />
+        </button>
+        <button type="button" class="prov-percent-btn" aria-label="Annuler la modification de contribution" (click)="cancelEditReminder()">
+          <app-icon name="close" [size]="13" />
+        </button>
       </span>
     } @else {
-      <span
+      <button
+        type="button"
         class="prov-percent"
         (click)="startEditReminder()"
         title="Montant que tu t'engages à ajouter toi-même chaque mois — affiché dans 'Mes contributions du mois', séparé de tout versement reçu"
       >
         @if (provision().monthlyReminder) {
-          Ma contribution mensuelle : {{ fmt(provision().monthlyReminder!) }} ✏️
+          Ma contribution mensuelle : {{ fmt(provision().monthlyReminder!) }} <app-icon name="edit" [size]="12" />
         } @else {
           + Définir ma contribution mensuelle
         }
-      </span>
+      </button>
     }
   </div>
 
@@ -206,7 +234,9 @@
           <strong>{{ fmt(a.amount) }}</strong>
           <span>{{ a.note || 'Ajout au fonds' }}</span>
           <span>{{ fmtDate(a.date) }}</span>
-          <button class="del-prov-adjust" title="Supprimer cet ajout" (click)="removeAdjustment(a.id)">✕</button>
+          <button type="button" class="del-prov-adjust" title="Supprimer cet ajout" aria-label="Supprimer cet ajout" (click)="removeAdjustment(a.id)">
+            <app-icon name="close" [size]="13" />
+          </button>
         </div>
       }
     </div>

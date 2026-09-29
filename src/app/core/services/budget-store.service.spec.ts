@@ -120,9 +120,9 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(store.recurringExpenses()).toHaveLength(1);
       expect(store.recurringExpenses()[0].name).toBe('Loyer');
 
-      expect(store.budgets().moi['2026-07']).toBe(3000);
-      expect(store.categoryBudgets().moi['2026-07']['Courses']).toBe(400);
-      expect(store.rollovers().moi['2026-07']).toBe(50);
+      expect(store.budgets()['moi']['2026-07']).toBe(3000);
+      expect(store.categoryBudgets()['moi']['2026-07']['Courses']).toBe(400);
+      expect(store.rollovers()['moi']['2026-07']).toBe(50);
     });
 
     // Corrigé — voir AUDIT_PRODUCTION_V2.md §3.5. loadAll() détecte
@@ -200,7 +200,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         amount: 42,
         category: 'Courses',
         date: '2026-07-15',
-        owner: 'member-alex',
         memberId: 'member-alex',
         cc: false,
       });
@@ -208,7 +207,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(fakeClient.tables['expenses'][0]).toMatchObject({ member_id: 'member-alex' });
       expect(fakeClient.tables['expenses'][0]).not.toHaveProperty('owner');
       expect(created.memberId).toBe('member-alex');
-      expect(created.owner).toBe('member-alex');
+      expect(created.memberId).toBe('member-alex');
     });
 
     it('utilise member_id pour les autres écritures financières du schéma Member', async () => {
@@ -228,7 +227,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         amount: 2500,
         type: 'Salaire',
         date: '2026-07-01',
-        owner: 'member-alex',
         memberId: 'member-alex',
         note: '',
         recurring: false,
@@ -243,7 +241,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         startYM: '2026-01',
         startDate: '',
         category: 'Assurance',
-        owner: 'member-alex',
         memberId: 'member-alex',
         autoRecalibrate: true,
         allocationPercent: 0,
@@ -254,7 +251,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         name: 'Loyer',
         amount: 1000,
         category: 'Loyer',
-        owner: 'member-alex',
         memberId: 'member-alex',
         interval: 'monthly',
         dayOfMonth: 1,
@@ -266,7 +262,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.addRecurringIncome({
         amount: 2500,
         type: 'Salaire',
-        owner: 'member-alex',
         memberId: 'member-alex',
         note: '',
         interval: 'monthly',
@@ -279,7 +274,6 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         name: 'Vacances',
         targetAmount: 2000,
         targetDate: null,
-        owner: 'member-alex',
         memberId: 'member-alex',
       });
       await store.setCategoryBudget('member-alex', '2026-07', 'Loyer', 1000);
@@ -364,7 +358,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(versement).toBeTruthy();
       expect(versement?.versementToMemberId).toBe('member-jc');
       expect(fakeClient.tables['expenses'][0]).toMatchObject({
-        member_id: versement?.owner,
+        member_id: versement?.memberId,
         versement_to_member_id: 'member-jc',
       });
       expect(fakeClient.tables['expenses'][0]).not.toHaveProperty('owner');
@@ -445,10 +439,10 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     it('addExpense() refuse un montant négatif ou nul', async () => {
       await store.loadAll();
       await expect(
-        store.addExpense({ amount: -50, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false }),
+        store.addExpense({ amount: -50, category: 'Courses', date: '2026-07-10', memberId: 'moi', cc: false }),
       ).rejects.toThrow(/invalide/);
       await expect(
-        store.addExpense({ amount: 0, category: 'Courses', date: '2026-07-10', owner: 'moi', cc: false }),
+        store.addExpense({ amount: 0, category: 'Courses', date: '2026-07-10', memberId: 'moi', cc: false }),
       ).rejects.toThrow(/invalide/);
       expect(store.expenses()).toHaveLength(0);
     });
@@ -472,13 +466,13 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await expect(
         store.addProvision({
           name: 'Test', amount: -100, everyN: 3, intervalUnit: 'months', startYM: '2026-01',
-          startDate: '', category: 'Autre', owner: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
+          startDate: '', category: 'Autre', memberId: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
         }),
       ).rejects.toThrow(/invalide/);
       await expect(
         store.addProvision({
           name: 'Test', amount: 100, everyN: 0, intervalUnit: 'months', startYM: '2026-01',
-          startDate: '', category: 'Autre', owner: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
+          startDate: '', category: 'Autre', memberId: 'moi', autoRecalibrate: true, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
         }),
       ).rejects.toThrow(/invalide/);
     });
@@ -504,7 +498,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.loadAll();
       await expect(
         store.addIncome({
-          amount: -1, type: 'Salaire', date: '2026-07-01', owner: 'moi', note: '',
+          amount: -1, type: 'Salaire', date: '2026-07-01', memberId: 'moi', note: '',
           recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
         }),
       ).rejects.toThrow(/invalide/);
@@ -738,7 +732,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       const income = store.incomes().find((i) => i.type === 'Solde de provision terminée');
       expect(income).toBeDefined();
       expect(income?.amount).toBe(850);
-      expect(income?.owner).toBe('moi');
+      expect(income?.memberId).toBe('moi');
       expect(income?.note).toContain('Voyage');
     });
 
@@ -877,7 +871,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         amount: 42,
         category: 'Courses',
         date: '2026-07-15',
-        owner: 'moi',
+        memberId: 'moi',
         cc: false,
       });
 
@@ -894,7 +888,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         amount: 42,
         category: 'Courses',
         date: '2026-07-15',
-        owner: 'moi',
+        memberId: 'moi',
         cc: false,
       });
 
@@ -926,7 +920,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
           amount: 80,
           category: 'Électricité', // même catégorie/profil que p1, autoRecalibrate=true -> déclenche le recalage
           date: '2026-07-15',
-          owner: 'moi',
+          memberId: 'moi',
           cc: false,
         }),
       ).rejects.toThrow(/recalage/);
@@ -950,7 +944,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         amount: 50,
         category: 'Courses',
         date: '2026-07-10',
-        owner: 'moi',
+        memberId: 'moi',
         cc: false,
       });
 
@@ -985,10 +979,10 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       // Deux paiements réels successifs : le premier (mars) recale la
       // provision, puis le second (mai) la recale encore plus tard.
       const e1 = await store.addExpense({
-        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+        amount: 200, category: 'Électricité', date: '2026-03-10', memberId: 'moi', cc: false,
       });
       const e2 = await store.addExpense({
-        amount: 200, category: 'Électricité', date: '2026-05-12', owner: 'moi', cc: false,
+        amount: 200, category: 'Électricité', date: '2026-05-12', memberId: 'moi', cc: false,
       });
       expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-05');
 
@@ -1011,7 +1005,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       ]);
       await store.loadAll();
       const e1 = await store.addExpense({
-        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+        amount: 200, category: 'Électricité', date: '2026-03-10', memberId: 'moi', cc: false,
       });
       expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-03');
 
@@ -1034,10 +1028,10 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       ]);
       await store.loadAll();
       await store.addExpense({
-        amount: 200, category: 'Électricité', date: '2026-03-10', owner: 'moi', cc: false,
+        amount: 200, category: 'Électricité', date: '2026-03-10', memberId: 'moi', cc: false,
       });
       const e2 = await store.addExpense({
-        amount: 200, category: 'Électricité', date: '2026-05-12', owner: 'moi', cc: false,
+        amount: 200, category: 'Électricité', date: '2026-05-12', memberId: 'moi', cc: false,
       });
       expect(store.provisions().find((p) => p.id === 'p1')?.startYM).toBe('2026-05');
 
@@ -1068,7 +1062,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(store.expenses()).toEqual([]);
       expect(store.provisions()).toEqual([]);
       expect(store.savingsGoals()).toEqual([]);
-      expect(store.budgets()).toEqual({ moi: {}, madame: {} });
+      expect(store.budgets()).toEqual({});
     });
 
     // Corrigé — voir REVIEW_ARCHITECTURE_ET_PLAN_REFACTORING.md §3.1 /
@@ -2204,7 +2198,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
 
       await expect(
         store.addExpense({
-          amount: 100, category: 'Assurance', date: '2026-07-15', owner: 'moi', cc: false,
+          amount: 100, category: 'Assurance', date: '2026-07-15', memberId: 'moi', cc: false,
         }),
       ).rejects.toThrow();
 
@@ -2448,7 +2442,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await store.closeMonth('2026-07');
 
       await expect(
-        store.addExpense({ amount: 50, category: 'Courses', date: '2026-07-15', owner: 'moi', cc: false }),
+        store.addExpense({ amount: 50, category: 'Courses', date: '2026-07-15', memberId: 'moi', cc: false }),
       ).rejects.toThrow(/clôturé/);
     });
 
@@ -2480,7 +2474,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
 
       await expect(
         store.addIncome({
-          amount: 100, type: 'Autre', date: '2026-07-05', owner: 'moi', note: '',
+          amount: 100, type: 'Autre', date: '2026-07-05', memberId: 'moi', note: '',
           recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
           recurringSourceId: null,
         }),
@@ -2494,7 +2488,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       // structurel sans date propre.
       await expect(
         store.addIncome({
-          amount: 3000, type: 'Salaire', date: '2026-07-01', owner: 'moi', note: '',
+          amount: 3000, type: 'Salaire', date: '2026-07-01', memberId: 'moi', note: '',
           recurring: true, recurringInterval: 'monthly', recurringStartMonth: '2026-07',
           recurringSourceId: 'rec-1',
         }),
@@ -2509,7 +2503,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
         store.addRecurringIncome({
           amount: 3000,
           type: 'Salaire',
-          owner: 'moi',
+          memberId: 'moi',
           note: '',
           interval: 'monthly',
           dayOfMonth: 1,
@@ -2552,7 +2546,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       await expect(
         store.addProvision({
           name: 'Nouvelle provision', amount: 500, everyN: 12, intervalUnit: 'months',
-          startYM: '2026-07', startDate: '', category: 'Divers', owner: 'moi',
+          startYM: '2026-07', startDate: '', category: 'Divers', memberId: 'moi',
           autoRecalibrate: false, allocationPercent: 0, rollingCount: 0, monthlyReminder: null,
         }),
       ).resolves.not.toThrow();
@@ -2682,7 +2676,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
     it("écrire sans foyer résolu lève une erreur claire plutôt qu'un household_id null envoyé au serveur", async () => {
       await expect(
         store.addIncome({
-          amount: 100, type: 'Autre', date: '2026-07-05', owner: 'moi', note: '',
+          amount: 100, type: 'Autre', date: '2026-07-05', memberId: 'moi', note: '',
           recurring: false, recurringInterval: 'once', recurringStartMonth: '2026-07',
           recurringSourceId: null,
         }),
@@ -2781,7 +2775,7 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       // Connecté dès le départ : household + une dépense chargée.
       isolatedStore.householdId.set('household-x');
       await isolatedStore.addExpense({
-        amount: 20, category: 'Courses', date: '2026-07-01', owner: 'moi', cc: false,
+        amount: 20, category: 'Courses', date: '2026-07-01', memberId: 'moi', cc: false,
       });
       expect(isolatedStore.expenses().length).toBe(1);
 

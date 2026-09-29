@@ -86,7 +86,7 @@ export class CreditCard {
     const owner = this.store.activeOwner();
     return this.store
       .creditCardPayments()
-      .filter((p) => (owner === 'global' || p.owner === owner) && p.date.startsWith(ym))
+      .filter((p) => (owner === 'global' || p.memberId === owner) && p.date.startsWith(ym))
       .sort((a, b) => b.date.localeCompare(a.date));
   });
 

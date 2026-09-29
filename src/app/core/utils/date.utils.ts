@@ -65,7 +65,19 @@ export function addMonths(ym: string, n: number): string {
   return ymOf(d);
 }
 
+// Nombre de jours CALENDAIRES entre deux dates "YYYY-MM-DD" (négatif si
+// endISO précède startISO).
+//
+// Calculé en UTC exprès : la différence de deux `Date` en heure locale
+// (parseISODate) vaut 1 heure de moins quand un passage à l'heure d'été
+// tombe entre les deux dates — ex. 1er janvier → 1er juillet donne 180,96 j
+// à Montréal mais exactement 181 j en UTC. Un `Math.floor` sur ce résultat
+// donnait donc 180 ou 181 selon le fuseau de la machine (bug de
+// `provisionDaysUntilNext`). En UTC il n'y a aucun changement d'heure : le
+// résultat est un entier exact, identique partout.
 export function daysBetween(startISO: string, endISO: string): number {
-  const ms = parseISODate(endISO).getTime() - parseISODate(startISO).getTime();
-  return Math.round(ms / (1000 * 60 * 60 * 24));
+  const [sy, sm, sd] = startISO.split('-').map(Number);
+  const [ey, em, ed] = endISO.split('-').map(Number);
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  return (Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / MS_PER_DAY;
 }

@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { ProvisionCard } from '../provision-card/provision-card';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-provision-list',
-  imports: [ProvisionCard],
+  imports: [ProvisionCard, Icon],
   templateUrl: './provision-list.html',
   styleUrl: './provision-list.scss',
 })

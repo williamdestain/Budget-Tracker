@@ -3,7 +3,9 @@
 }
 .prov-card h3 {
   margin: 0 0 12px;
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
 }
 .prov-list {
   display: flex;
@@ -16,8 +18,8 @@
   color: var(--ink-soft);
   font-size: 14px;
 }
-.prov-empty .big {
-  font-size: 30px;
-  margin-bottom: 6px;
-  opacity: 0.5;
+.prov-empty .empty-icon {
+  display: block;
+  margin: 0 auto 8px;
+  color: var(--accent);
 }

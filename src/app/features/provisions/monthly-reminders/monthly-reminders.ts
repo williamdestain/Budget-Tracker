@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 // Carte "Mes contributions du mois" — rappel pour les provisions où
 // l'utilisateur s'engage à ajouter lui-même un montant fixe chaque mois,
@@ -10,7 +11,7 @@ import { fmt } from '../../../core/utils/currency.utils';
 // explicite, comme "Dépenses attendues ce mois-ci" pour les récurrentes.
 @Component({
   selector: 'app-monthly-reminders',
-  imports: [],
+  imports: [Icon],
   templateUrl: './monthly-reminders.html',
   styleUrl: './monthly-reminders.scss',
 })

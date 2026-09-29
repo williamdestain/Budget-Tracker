@@ -85,7 +85,7 @@ export class RecurringExpensesManage {
         name: this.name.trim(),
         amount: this.amount,
         category: this.category,
-        owner: this.owner,
+        memberId: this.owner,
         interval: this.interval,
         dayOfMonth: this.dayOfMonth,
         secondDayOfMonth: this.interval === 'semimonthly' ? this.secondDayOfMonth : null,

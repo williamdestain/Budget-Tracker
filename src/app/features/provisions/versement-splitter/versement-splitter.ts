@@ -4,6 +4,7 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
 import { isoOfDate, fmtDate } from '../../../core/utils/date.utils';
 import { provisionPot, effectiveProvisionAmount } from '../../../core/utils/provision.utils';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -14,7 +15,7 @@ type SourceMode = 'new' | 'existing';
 
 @Component({
   selector: 'app-versement-splitter',
-  imports: [FormsModule],
+  imports: [FormsModule, Icon],
   templateUrl: './versement-splitter.html',
   styleUrl: './versement-splitter.scss',
 })
@@ -40,7 +41,7 @@ export class VersementSplitter {
   get senderLabel(): string {
     const receiver = this.store.activeOwner();
     const existing = this.existingVersements.find((e) => e.id === this.existingExpenseId);
-    const sender = existing?.owner ??
+    const sender = existing?.memberId ??
       this.store.memberOptions().find((m) => m.id !== receiver)?.id;
     return this.store.memberName(sender);
   }
@@ -86,7 +87,7 @@ export class VersementSplitter {
     if (owner === 'global') return [];
     return this.store
       .visibleProvisions()
-      .filter((p) => p.owner === owner)
+      .filter((p) => p.memberId === owner)
       .map((p) => {
         const pot = provisionPot(p, ym, expenses);
         const target = effectiveProvisionAmount(p, expenses);

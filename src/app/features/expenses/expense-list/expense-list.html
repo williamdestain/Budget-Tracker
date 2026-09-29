@@ -69,7 +69,7 @@
         <div class="expense prov-reserve">
           <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
           @if (showBadge) {
-            <span class="owner-badge" [class]="e.owner" [style.background]="store.memberColor(e.owner)">{{ ownerShort(e.owner) }}</span>
+            <span class="owner-badge" [class]="e.memberId" [style.background]="store.memberColor(e.memberId)">{{ ownerShort(e.memberId) }}</span>
           }
           <span class="cat-name">
             {{ e.category }} — {{ reserveLabel(e) }}
@@ -87,7 +87,7 @@
         <div class="expense versement-row">
           <span class="cat-dot" [style.background]="colorFor('Versement')"></span>
           <span class="transfer-arrow">
-            {{ ownerShort(e.owner) }} → {{ ownerShort(otherOwner(e.owner)) }}
+            {{ ownerShort(e.memberId) }} → {{ ownerShort(otherOwner(e.memberId)) }}
           </span>
           <span class="cat-name">
             Versement
@@ -112,7 +112,7 @@
         <div class="expense versement-row">
           <span class="cat-dot" [style.background]="colorFor('Versement')"></span>
           @if (showBadge) {
-            <span class="owner-badge" [class]="e.owner" [style.background]="store.memberColor(e.owner)">{{ ownerShort(e.owner) }}</span>
+            <span class="owner-badge" [class]="e.memberId" [style.background]="store.memberColor(e.memberId)">{{ ownerShort(e.memberId) }}</span>
           }
           <span class="cat-name">
             Versement → {{ transferRecipient(e) }}
@@ -134,7 +134,7 @@
         <div class="expense">
           <span class="cat-dot" [style.background]="colorFor(e.category)"></span>
           @if (showBadge) {
-            <span class="owner-badge" [class]="e.owner" [style.background]="store.memberColor(e.owner)">{{ ownerShort(e.owner) }}</span>
+            <span class="owner-badge" [class]="e.memberId" [style.background]="store.memberColor(e.memberId)">{{ ownerShort(e.memberId) }}</span>
           }
           <span class="cat-name">
             {{ e.category }}

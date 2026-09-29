@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { goalPot, goalProgressPct, goalReached, goalDaysLeft } from './savings.utils';
 import { SavingsGoal } from '../models/budget.models';
+import { DST_TIMEZONES, withTimezone } from '../testing/with-timezone';
 
 function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
   return {
@@ -8,7 +9,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     name: 'Fonds d’urgence',
     targetAmount: 1000,
     targetDate: null,
-    owner: 'moi',
+    memberId: 'moi',
     contributions: [],
     ...overrides,
   };
@@ -112,6 +113,24 @@ describe('savings.utils', () => {
       vi.setSystemTime(new Date(2026, 6, 15));
       const goal = makeGoal({ targetDate: '2026-07-10' });
       expect(goalDaysLeft(goal)).toBe(-5);
+    });
+
+    // goalDaysLeft() compare deux dates locales comme provisionDaysUntilNext()
+    // le faisait, mais son Math.round absorbe l'heure perdue/gagnée au
+    // changement d'heure (180,96 → 181). Ce test le PROUVE au lieu de le
+    // supposer : il verrouille ce comportement si quelqu'un remplace un jour
+    // Math.round par Math.floor/ceil.
+    describe.each([
+      { today: [2026, 0, 1], target: '2026-07-01', days: 181 },
+      { today: [2026, 5, 1], target: '2027-01-01', days: 214 },
+    ])('du $target, $days jours', ({ today, target, days }) => {
+      it.each(DST_TIMEZONES)('donne le même résultat en %s', (tz) => {
+        withTimezone(tz, () => {
+          vi.useFakeTimers();
+          vi.setSystemTime(new Date(today[0], today[1], today[2]));
+          expect(goalDaysLeft(makeGoal({ targetDate: target }))).toBe(days);
+        });
+      });
     });
   });
 });

@@ -66,7 +66,7 @@ export class IncomeForm {
         await this.store.addRecurringIncome({
           amount: this.amount,
           type: this.type,
-          owner: this.owner,
+          memberId: this.owner,
           note: this.note,
           interval: this.recurringInterval,
           dayOfMonth,
@@ -83,7 +83,7 @@ export class IncomeForm {
           amount: this.amount,
           type: this.type,
           date: this.date,
-          owner: this.owner,
+          memberId: this.owner,
           note: this.note,
           recurring: false,
           recurringInterval: 'once',

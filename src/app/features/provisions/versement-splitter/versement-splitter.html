@@ -1,9 +1,13 @@
 <div class="card splitter-card">
   <div class="splitter-head">
-    <div class="card-title">🤝 Répartir un versement</div>
+    <div class="card-title splitter-title"><app-icon name="money" [size]="18" /> Répartir un versement</div>
     @if (!isGlobal) {
-      <button class="seg" (click)="toggle()">
-        {{ open() ? '− Fermer' : '+ Répartir' }}
+      <button class="seg" type="button" [attr.aria-expanded]="open()" (click)="toggle()">
+        @if (open()) {
+          <app-icon name="close" [size]="14" /> Fermer
+        } @else {
+          <app-icon name="plus" [size]="14" /> Répartir
+        }
       </button>
     }
   </div>
