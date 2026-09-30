@@ -6,12 +6,16 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 
 function makeFakeStore(opts: {
   activeOwner?: WritableSignal<'moi' | 'madame' | 'global'>;
+  memberOptions?: { id: string }[];
+  myMemberId?: string | null;
   categories?: WritableSignal<string[]>;
   addRecurringExpense?: ReturnType<typeof vi.fn>;
 } = {}) {
   return {
     activeOwner: opts.activeOwner ?? signal<'moi' | 'madame' | 'global'>('moi'),
     activeCategoryNames: opts.categories ?? signal<string[]>(['Épicerie', 'Transport']),
+    memberOptions: () => opts.memberOptions ?? [{ id: 'moi' }, { id: 'madame' }],
+    myMemberId: () => opts.myMemberId ?? null,
     colorFor: (c: string) => `color-${c}`,
     visibleRecurringExpenses: () => [],
     addRecurringExpense: opts.addRecurringExpense ?? vi.fn().mockResolvedValue({}),
@@ -39,6 +43,19 @@ describe('RecurringExpensesManage', () => {
   it("aligne le profil du formulaire sur l'onglet actif à la création", () => {
     const fixture = createFixture(makeFakeStore({ activeOwner: signal('madame') }));
     expect(fixture.componentInstance.owner).toBe('madame');
+  });
+
+  it("foyer à identifiants UUID, vue Global : membre connecté, jamais 'moi'", () => {
+    const ALEX = '3f9c1c1e-0000-4000-8000-000000000001';
+    const SAM = '3f9c1c1e-0000-4000-8000-000000000002';
+    const fixture = createFixture(
+      makeFakeStore({
+        activeOwner: signal('global'),
+        memberOptions: [{ id: ALEX }, { id: SAM }],
+        myMemberId: SAM,
+      }),
+    );
+    expect(fixture.componentInstance.owner).toBe(SAM);
   });
 
   it('pré-sélectionne la première catégorie une fois la liste chargée', () => {

@@ -19,7 +19,7 @@ export class ExpenseList {
   editAmount: number | null = null;
   editCategory = '';
   editDate = '';
-  editOwner: Owner = 'moi';
+  editOwner: Owner = '';
   editCc = false;
 
   constructor(public store: BudgetStore) {}

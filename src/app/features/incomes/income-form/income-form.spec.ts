@@ -9,6 +9,8 @@ import { sortedAlpha } from '../../../core/utils/categories';
 
 function makeFakeStore(opts: {
   activeOwner?: WritableSignal<'moi' | 'madame' | 'global'>;
+  memberOptions?: { id: string; name: string }[];
+  myMemberId?: string | null;
   addIncome?: ReturnType<typeof vi.fn>;
   addRecurringIncome?: ReturnType<typeof vi.fn>;
   current?: string;
@@ -16,7 +18,8 @@ function makeFakeStore(opts: {
   return {
     activeOwner: opts.activeOwner ?? signal<'moi' | 'madame' | 'global'>('moi'),
     current: () => opts.current ?? '2026-09',
-    memberOptions: () => [{ id: 'moi', name: 'Moi' }, { id: 'madame', name: 'Madame' }],
+    memberOptions: () => opts.memberOptions ?? [{ id: 'moi', name: 'Moi' }, { id: 'madame', name: 'Madame' }],
+    myMemberId: () => opts.myMemberId ?? null,
     addIncome: opts.addIncome ?? vi.fn().mockResolvedValue(undefined),
     addRecurringIncome: opts.addRecurringIncome ?? vi.fn().mockResolvedValue({}),
   } as unknown as BudgetStore;
@@ -50,6 +53,21 @@ describe('IncomeForm', () => {
 
     const { fixture: globalFixture } = createFixture(makeFakeStore({ activeOwner: signal('global') }));
     expect(globalFixture.componentInstance.owner).toBe('moi');
+  });
+
+  it("foyer à identifiants UUID, vue Global : membre connecté, jamais 'moi'", () => {
+    const ALEX = '3f9c1c1e-0000-4000-8000-000000000001';
+    const SAM = '3f9c1c1e-0000-4000-8000-000000000002';
+    const members = [{ id: ALEX, name: 'Alex' }, { id: SAM, name: 'Sam' }];
+    const { fixture } = createFixture(
+      makeFakeStore({ activeOwner: signal('global'), memberOptions: members, myMemberId: SAM }),
+    );
+    expect(fixture.componentInstance.owner).toBe(SAM);
+
+    const { fixture: sansConnu } = createFixture(
+      makeFakeStore({ activeOwner: signal('global'), memberOptions: members }),
+    );
+    expect(sansConnu.componentInstance.owner).toBe(ALEX);
   });
 
   it('onIntervalChange() propose un 2e jour de paie (+15j, plafonné à 28) pour le semimonthly', () => {

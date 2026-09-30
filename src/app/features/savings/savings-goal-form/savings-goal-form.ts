@@ -2,6 +2,7 @@ import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner } from '../../../core/models/budget.models';
+import { defaultMemberId } from '../../../core/utils/members.utils';
 
 @Component({
   selector: 'app-savings-goal-form',
@@ -26,10 +27,16 @@ export class SavingsGoalForm {
   async submit(): Promise<void> {
     if (!this.name.trim() || !this.targetAmount || this.targetAmount <= 0) return;
 
-    // Propriétaire : profil actif (Global → Moi par défaut, comme pour les
-    // provisions).
+    // Propriétaire : profil actif ; en vue Global, le membre connecté.
     const active = this.store.activeOwner();
-    const memberId: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
+    const memberId: Owner = defaultMemberId(
+      active,
+      this.store.myMemberId(),
+      this.store.memberOptions().map((m) => m.id),
+    );
+    // Sans aucun membre actif, aucun propriétaire valide n'existe : mieux
+    // vaut ne rien écrire qu'envoyer un identifiant inventé.
+    if (!memberId) return;
 
     this.saving.set(true);
     try {

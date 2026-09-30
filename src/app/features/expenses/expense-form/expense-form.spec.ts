@@ -8,6 +8,7 @@ import { Owner } from '../../../core/models/budget.models';
 
 function makeFakeStore(opts: {
   activeOwner?: WritableSignal<'moi' | 'madame' | 'global'>;
+  myMemberId?: string | null;
   categories?: WritableSignal<string[]>;
   memberOptions?: { id: Owner }[];
   addExpense?: ReturnType<typeof vi.fn>;
@@ -16,6 +17,7 @@ function makeFakeStore(opts: {
   const categories = opts.categories ?? signal<string[]>(['Épicerie', 'Transport']);
   return {
     activeOwner,
+    myMemberId: () => opts.myMemberId ?? null,
     activeCategoryNames: categories,
     memberOptions: () => opts.memberOptions ?? [{ id: 'moi' }, { id: 'madame' }],
     addExpense: opts.addExpense ?? vi.fn().mockResolvedValue({}),
@@ -50,10 +52,50 @@ describe('ExpenseForm', () => {
     expect(fixture.componentInstance.owner).toBe('madame');
   });
 
-  it('ne change pas le profil du formulaire quand l\'onglet actif est "global"', () => {
+  it('en vue "global", choisit un vrai membre du foyer (foyer historique : le premier)', () => {
     const store = makeFakeStore({ activeOwner: signal('global') });
     const { fixture } = createFixture(store);
     expect(fixture.componentInstance.owner).toBe('moi');
+  });
+
+  // Foyer créé depuis la migration 024 : les identifiants sont des UUID.
+  // Ancien comportement : le formulaire envoyait 'moi', un membre inexistant.
+  describe('foyer à identifiants UUID, vue "global"', () => {
+    const ALEX = '3f9c1c1e-0000-4000-8000-000000000001';
+    const SAM = '3f9c1c1e-0000-4000-8000-000000000002';
+
+    it("préselectionne le membre connecté, jamais 'moi'", () => {
+      const store = makeFakeStore({
+        activeOwner: signal('global'),
+        memberOptions: [{ id: ALEX }, { id: SAM }],
+        myMemberId: SAM,
+      });
+      const { fixture } = createFixture(store);
+      expect(fixture.componentInstance.owner).toBe(SAM);
+    });
+
+    it('sans membre connecté connu, retombe sur le premier membre', () => {
+      const store = makeFakeStore({
+        activeOwner: signal('global'),
+        memberOptions: [{ id: ALEX }, { id: SAM }],
+      });
+      const { fixture } = createFixture(store);
+      expect(fixture.componentInstance.owner).toBe(ALEX);
+    });
+
+    it('la dépense enregistrée porte un vrai memberId', async () => {
+      const addExpense = vi.fn().mockResolvedValue({});
+      const store = makeFakeStore({
+        activeOwner: signal('global'),
+        memberOptions: [{ id: ALEX }, { id: SAM }],
+        myMemberId: ALEX,
+        addExpense,
+      });
+      const { fixture } = createFixture(store);
+      fixture.componentInstance.amount = 25;
+      await fixture.componentInstance.submit();
+      expect(addExpense).toHaveBeenCalledWith(expect.objectContaining({ memberId: ALEX }));
+    });
   });
 
   it('pré-sélectionne la première catégorie une fois la liste chargée', () => {

@@ -9,6 +9,7 @@ import {
   INCOME_TYPE_LABELS,
   RECURRING_INTERVAL_LABELS,
 } from '../../../core/utils/income.utils';
+import { defaultMemberId } from '../../../core/utils/members.utils';
 
 @Component({
   selector: 'app-income-form',
@@ -29,7 +30,7 @@ export class IncomeForm {
   amount: number | null = null;
   type = this.typeOptions[0];
   date = isoOfDate(new Date());
-  owner: Owner = 'moi';
+  owner: Owner = '';
   note = '';
   recurring = false;
   recurringInterval: IncomeRecurringInterval = 'monthly';
@@ -46,7 +47,14 @@ export class IncomeForm {
     // seulement au premier chargement.
     effect(() => {
       const active = this.store.activeOwner();
-      if (active !== 'global') this.owner = active;
+      const ids = this.store.memberOptions().map((m) => m.id);
+      if (active !== 'global') {
+        this.owner = active;
+      } else if (!ids.includes(this.owner)) {
+        // Vue Global : pas de profil actif. Ne jamais garder une valeur qui
+        // n'est pas un vrai membre (voir members.utils.ts).
+        this.owner = defaultMemberId(active, this.store.myMemberId(), ids);
+      }
     });
   }
 

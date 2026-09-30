@@ -366,7 +366,20 @@ qui s'est concrètement matérialisé.
 La vague A n'a jamais été concernée par cette pause et peut continuer
 normalement (voir « Pour démarrer cette semaine » en fin de document).
 
-1. **Comptes** (`/comptes`) — vue d'ensemble de la valeur nette et de tous
+1. ✅ **Comptes** (`/comptes`) — **livré le 29 septembre 2026** (705 tests
+   verts, `ng build` propre). Valeur nette détaillée, comptes groupés par
+   type, ajout avec propriétaire (partagé ou membre), mise à jour du solde
+   avec historique, archivage confirmé. Calcul unique dans
+   `core/utils/accounts.utils.ts`, réutilisé par le bloc « Patrimoine » du
+   tableau de bord (désormais branché). Brouillon initial corrigé : solde
+   borné par un champ de formulaire, dette de carte additionnée au lieu
+   d'être soustraite, carte lue via des relevés au lieu de
+   `creditCardBalance()`, tokens CSS inexistants. **Non fait volontairement** :
+   la route `/carte-de-credit` n'est pas retirée (le composant dépend du
+   profil actif, pas d'un compte) ; l'import ne relit pas encore les comptes
+   (export seulement, voir `MODELE.md` §9 — nécessite une migration SQL sur
+   `import_household_data()` et `reset_everything()`).
+   *Description d'origine* — vue d'ensemble de la valeur nette et de tous
    les comptes groupés par type. Absorbe et retire l'ancienne route
    `/carte-de-credit` : la logique de `CreditCard` (déjà écrite en vague A)
    devient une simple fenêtre de détail ouverte depuis une ligne de compte,
@@ -376,7 +389,21 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    manuelle (valeur du portefeuille, allocation, entrée périodique de la
    performance) ; la synchronisation bancaire/courtage réelle est une
    question de palier C, voir feuille de route produit, section 5.
-3. **Épargne & objectifs** (`/epargne`) — étend le `SavingsGoal` existant
+3. ✅ **Épargne & objectifs** (`/epargne`) — **livré le 29 septembre 2026**
+   (745 tests verts, `ng build` propre). Total épargné, grille d'objectifs
+   avec anneau de progression, création (avec propriétaire), ajout et
+   suppression de montants, suppression d'un objectif — les deux
+   suppressions en deux temps (l'ancienne carte supprimait en un clic). Les
+   dates futures sont refusées (cible passée, contribution future), et le
+   refus du store pour un mois clôturé est affiché. **Écart au plan** : pas
+   de changement de schéma. « Ce mois-ci » et le rythme mensuel moyen
+   (3 derniers mois complets) sont *déduits* des contributions
+   (`savings.utils.ts`) ; les stocker créerait une 2e source de vérité. Un
+   champ « contribution mensuelle *prévue* » resterait possible plus tard
+   (migration + formulaire + import/export) si on veut des projections.
+   Le composant `SavingsGoalList` du tableau de bord est inchangé (doublon
+   partiel à trancher).
+   *Description d'origine* — étend le `SavingsGoal` existant
    avec deux champs qui n'existent pas encore : contribution mensuelle et
    évolution récente (« +200,00 $ ce mois-ci ») — un petit changement de
    schéma, pas une nouvelle fonctionnalité.

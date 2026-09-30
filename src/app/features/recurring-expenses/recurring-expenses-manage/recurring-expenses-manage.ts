@@ -4,6 +4,7 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 import { fmt } from '../../../core/utils/currency.utils';
 import { RECURRING_EXPENSE_INTERVAL_LABELS } from '../../../core/utils/recurring-expense.utils';
 import { Owner, RecurringExpenseInterval } from '../../../core/models/budget.models';
+import { defaultMemberId } from '../../../core/utils/members.utils';
 
 @Component({
   selector: 'app-recurring-expenses-manage',
@@ -24,14 +25,21 @@ export class RecurringExpensesManage {
   dayOfMonth = 1;
   secondDayOfMonth = 15;
   startDate = new Date().toISOString().slice(0, 10);
-  owner: Owner = 'moi';
+  owner: Owner = '';
   cc = false;
 
   constructor(public store: BudgetStore) {
     // Garde le profil du formulaire aligné sur l'onglet actif (Moi/Madame).
     effect(() => {
       const active = this.store.activeOwner();
-      if (active !== 'global') this.owner = active;
+      const ids = this.store.memberOptions().map((m) => m.id);
+      if (active !== 'global') {
+        this.owner = active;
+      } else if (!ids.includes(this.owner)) {
+        // Vue Global : pas de profil actif. Ne jamais garder une valeur qui
+        // n'est pas un vrai membre (voir members.utils.ts).
+        this.owner = defaultMemberId(active, this.store.myMemberId(), ids);
+      }
     });
     // Catégories chargées dynamiquement depuis le store.
     effect(() => {

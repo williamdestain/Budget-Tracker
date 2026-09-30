@@ -27,7 +27,7 @@
   @if (open()) {
     @if (candidates().length === 0) {
       <p class="splitter-hint">
-        Aucune provision n'a besoin d'argent en ce moment pour {{ store.activeOwner() === 'moi' ? 'Moi' : 'Madame' }}.
+        Aucune provision n'a besoin d'argent en ce moment pour {{ store.memberName(store.activeOwner()) }}.
       </p>
     } @else {
       @if (existingVersements.length > 0) {

@@ -31,16 +31,22 @@
           </strong>
           <span class="ledger-card-meta">
             Revenus moins dépenses · {{ fmt(store.budgetSummary().spent) }} dépensés
-            dépensés
           </span>
         </article>
 
         <article class="ledger-card">
           <div class="ledger-card-label">Patrimoine</div>
-          <strong class="ledger-amount ledger-amount--muted">—</strong>
-          <span class="ledger-card-meta">
-            Comptes et investissements disponibles en vague B
-          </span>
+          @if (hasAccounts()) {
+            <strong class="ledger-amount" [class.negative]="netWorth().net < 0">{{ fmt(netWorth().net) }}</strong>
+            <span class="ledger-card-meta">
+              Valeur nette · <a routerLink="/comptes">Voir les comptes</a>
+            </span>
+          } @else {
+            <strong class="ledger-amount ledger-amount--muted">—</strong>
+            <span class="ledger-card-meta">
+              Aucun compte · <a routerLink="/comptes">Ajouter un compte</a>
+            </span>
+          }
         </article>
       </div>
 

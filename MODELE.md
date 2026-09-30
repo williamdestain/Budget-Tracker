@@ -311,8 +311,16 @@ l'allocation évoluer dans le temps.
 
 ```
 Valeur nette = Σ soldes des comptes bank + Σ soldes des comptes investment
-             − Σ soldes des comptes credit (déjà négatifs par convention)
+             + Σ soldes des comptes other
+             − dette de carte de crédit (POSITIVE : creditCardBalance()
+               renvoie dépensé − payé, elle est donc soustraite)
 ```
+
+*Corrigé le 29 septembre 2026* : la version précédente disait « déjà
+négatifs par convention », ce qui contredisait `creditCardBalance()`. Les
+comptes `other` sont comptés comme des actifs. La dette n'est comptée
+qu'une fois par périmètre (un compte credit partagé couvre tout le foyer).
+Implémentation : `core/utils/accounts.utils.ts` (`netWorthBreakdown`).
 
 Seuls les comptes non archivés comptent. C'est la définition unique à
 utiliser partout (tableau de bord, page Comptes) — jamais recalculée

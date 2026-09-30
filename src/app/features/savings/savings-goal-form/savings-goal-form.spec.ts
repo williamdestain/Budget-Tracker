@@ -3,10 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { SavingsGoalForm } from './savings-goal-form';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 
-function makeFakeStore(activeOwner: 'moi' | 'madame' | 'global', memberOptions: { id: string }[] = []) {
+function makeFakeStore(
+  activeOwner: 'moi' | 'madame' | 'global',
+  memberOptions: { id: string }[] = [],
+  myMemberId: string | null = null,
+) {
   return {
     activeOwner: () => activeOwner,
     memberOptions: () => memberOptions,
+    myMemberId: () => myMemberId,
     addSavingsGoal: vi.fn().mockResolvedValue(undefined),
   } as unknown as BudgetStore;
 }
@@ -84,23 +89,38 @@ describe('SavingsGoalForm', () => {
     );
   });
 
-  it('en vue Global, utilise le premier membre du foyer comme owner (repli sur "moi" si aucun membre)', async () => {
-    const withMembers = makeFakeStore('global', [{ id: 'madame' }, { id: 'moi' }]);
-    const fixtureWithMembers = createFixture(withMembers);
-    fixtureWithMembers.componentInstance.name = 'Objectif commun';
-    fixtureWithMembers.componentInstance.targetAmount = 500;
-    await fixtureWithMembers.componentInstance.submit();
-    expect(withMembers.addSavingsGoal).toHaveBeenCalledWith(
-      expect.objectContaining({ memberId: 'madame' }),
-    );
+  it('en vue Global, utilise le membre connecté (à défaut, le premier membre) comme owner', async () => {
+    const connected = makeFakeStore('global', [{ id: 'madame' }, { id: 'moi' }], 'moi');
+    const f1 = createFixture(connected);
+    f1.componentInstance.name = 'Objectif commun';
+    f1.componentInstance.targetAmount = 500;
+    await f1.componentInstance.submit();
+    expect(connected.addSavingsGoal).toHaveBeenCalledWith(expect.objectContaining({ memberId: 'moi' }));
 
-    const withoutMembers = makeFakeStore('global', []);
-    const fixtureWithoutMembers = createFixture(withoutMembers);
-    fixtureWithoutMembers.componentInstance.name = 'Objectif commun';
-    fixtureWithoutMembers.componentInstance.targetAmount = 500;
-    await fixtureWithoutMembers.componentInstance.submit();
-    expect(withoutMembers.addSavingsGoal).toHaveBeenCalledWith(
-      expect.objectContaining({ memberId: 'moi' }),
-    );
+    const unknown = makeFakeStore('global', [{ id: 'madame' }, { id: 'moi' }]);
+    const f2 = createFixture(unknown);
+    f2.componentInstance.name = 'Objectif commun';
+    f2.componentInstance.targetAmount = 500;
+    await f2.componentInstance.submit();
+    expect(unknown.addSavingsGoal).toHaveBeenCalledWith(expect.objectContaining({ memberId: 'madame' }));
+  });
+
+  it("foyer à identifiants UUID, vue Global : jamais l'identifiant inventé 'moi'", async () => {
+    const SAM = '3f9c1c1e-0000-4000-8000-000000000002';
+    const store = makeFakeStore('global', [{ id: '3f9c1c1e-0000-4000-8000-000000000001' }, { id: SAM }], SAM);
+    const f = createFixture(store);
+    f.componentInstance.name = 'Voyage';
+    f.componentInstance.targetAmount = 900;
+    await f.componentInstance.submit();
+    expect(store.addSavingsGoal).toHaveBeenCalledWith(expect.objectContaining({ memberId: SAM }));
+  });
+
+  it("sans aucun membre actif, n'écrit rien plutôt que d'envoyer 'moi'", async () => {
+    const store = makeFakeStore('global', []);
+    const f = createFixture(store);
+    f.componentInstance.name = 'Objectif commun';
+    f.componentInstance.targetAmount = 500;
+    await f.componentInstance.submit();
+    expect(store.addSavingsGoal).not.toHaveBeenCalled();
   });
 });

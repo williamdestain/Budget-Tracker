@@ -1,0 +1,154 @@
+<div class="savings-page">
+  <app-card size="lg" accent="var(--accent)">
+    <div class="savings-hero">
+      <div>
+        <span class="savings-label">Total épargné</span>
+        <strong class="savings-total">{{ fmt(summary().saved) }}</strong>
+        @if (summary().count > 0) {
+          <span class="savings-sub">
+            sur {{ fmt(summary().target) }} visés · {{ summary().reached }} sur {{ summary().count }} atteint{{ summary().reached > 1 ? 's' : '' }}
+          </span>
+        }
+      </div>
+      <app-button (click)="openAdd()">
+        <app-icon name="plus" [size]="14" /> Nouvel objectif
+      </app-button>
+    </div>
+    @if (summary().count > 0) {
+      <p class="hint">
+        <span [class.positive]="summary().thisMonth > 0">{{ summary().thisMonth > 0 ? '+' : '' }}{{ fmt(summary().thisMonth) }}</span>
+        ajouté ce mois-ci, tous objectifs confondus.
+      </p>
+    }
+  </app-card>
+
+  @if (rows().length === 0) {
+    <app-card>
+      <p class="empty">
+        Aucun objectif d'épargne pour le moment. Créez-en un pour accumuler vers un projet
+        (fonds d'urgence, vacances, CELI, rénovation…) à votre rythme.
+      </p>
+    </app-card>
+  } @else {
+    <div class="goal-grid">
+      @for (row of rows(); track row.goal.id) {
+        <button type="button" class="goal-card" [class.reached]="row.status.kind === 'reached'" [class.overdue]="row.status.kind === 'overdue'" (click)="openDetail(row.goal.id)">
+          <app-progress-ring [percent]="row.pct" [size]="56" />
+          <span class="goal-info">
+            <span class="goal-name">{{ row.goal.name }}</span>
+            <span class="goal-amounts">{{ fmt(row.pot) }} <span class="goal-of">/ {{ fmt(row.goal.targetAmount) }}</span></span>
+            <span class="goal-meta">
+              @if (row.rhythm !== null) { ≈ {{ fmt(row.rhythm) }} / mois · }
+              <span [class.positive]="row.thisMonth > 0">{{ row.thisMonth > 0 ? '+' : '' }}{{ fmt(row.thisMonth) }} ce mois-ci</span>
+            </span>
+            <span class="goal-meta" [class.warn]="row.status.kind === 'overdue'">
+              {{ statusText(row) }} · {{ row.ownerLabel }}
+            </span>
+          </span>
+        </button>
+      }
+    </div>
+  }
+</div>
+
+@if (addOpen()) {
+  <app-modal title="Nouvel objectif" (closed)="closeAdd()">
+    <form class="goal-form" (ngSubmit)="submitAdd()">
+      <div class="field">
+        <label for="goal-name">Nom</label>
+        <input id="goal-name" type="text" name="name" [(ngModel)]="name" placeholder="Ex. Fonds d'urgence" required />
+      </div>
+      <div class="field">
+        <label for="goal-amount">Montant cible</label>
+        <div class="input-money">
+          <input id="goal-amount" type="number" inputmode="decimal" min="0" step="0.01" name="targetAmount" [(ngModel)]="targetAmount" required />
+        </div>
+      </div>
+      <div class="field">
+        <label for="goal-date">Date cible (optionnel)</label>
+        <input id="goal-date" type="date" name="targetDate" [min]="today" [(ngModel)]="targetDate" />
+      </div>
+      <div class="field">
+        <label for="goal-owner">Propriétaire</label>
+        <select id="goal-owner" name="ownerId" [(ngModel)]="ownerId">
+          @for (member of store.memberOptions(); track member.id) {
+            <option [value]="member.id">{{ member.name }}</option>
+          }
+        </select>
+      </div>
+      <app-button type="submit" [disabled]="saving()" [fullWidth]="true">Créer l'objectif</app-button>
+    </form>
+  </app-modal>
+}
+
+@if (selected(); as row) {
+  <app-modal [title]="row.goal.name" (closed)="closeDetail()">
+    <div class="detail">
+      <div class="detail-head">
+        <app-progress-ring [percent]="row.pct" [size]="64" />
+        <div>
+          <strong class="detail-amount">{{ fmt(row.pot) }}</strong>
+          <span class="goal-meta">
+            sur {{ fmt(row.goal.targetAmount) }}
+            @if (row.goal.targetDate) { · cible : {{ fmtDate(row.goal.targetDate) }} }
+          </span>
+          <span class="goal-meta" [class.warn]="row.status.kind === 'overdue'">{{ statusText(row) }}</span>
+        </div>
+      </div>
+
+      <dl class="stats">
+        <div><dt>Ce mois-ci</dt><dd [class.positive]="row.thisMonth > 0">{{ row.thisMonth > 0 ? '+' : '' }}{{ fmt(row.thisMonth) }}</dd></div>
+        <div>
+          <dt>Rythme moyen</dt>
+          <dd>{{ row.rhythm === null ? "Pas encore d'historique" : '≈ ' + fmt(row.rhythm) + ' / mois' }}</dd>
+        </div>
+      </dl>
+      <p class="hint">Le rythme est la moyenne des 3 derniers mois complets, calculée à partir de vos ajouts.</p>
+
+      <form class="goal-form" (ngSubmit)="submitContribution()">
+        <h3 class="section-title">Ajouter un montant</h3>
+        <div class="field">
+          <label for="c-amount">Montant</label>
+          <div class="input-money">
+            <input id="c-amount" type="number" inputmode="decimal" min="0" step="0.01" name="amount" [(ngModel)]="amount" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="c-date">Date</label>
+          <input id="c-date" type="date" name="date" [max]="today" [(ngModel)]="date" required />
+        </div>
+        <div class="field">
+          <label for="c-note">Note (optionnel)</label>
+          <input id="c-note" type="text" name="note" [(ngModel)]="note" placeholder="Ex. bonus, remboursement" />
+        </div>
+        <app-button type="submit" [disabled]="saving() || !amount" [fullWidth]="true">Ajouter</app-button>
+      </form>
+
+      @if (contributions().length > 0) {
+        <h3 class="section-title">Historique</h3>
+        <ul class="history">
+          @for (c of contributions(); track c.id) {
+            <li>
+              <span class="history-main">
+                <b>{{ fmt(c.amount) }}</b>
+                <span>{{ c.note || 'Ajout' }} · {{ fmtDate(c.date) }}</span>
+              </span>
+              <button type="button" class="link-btn" [attr.aria-label]="'Supprimer l’ajout du ' + fmtDate(c.date)" (click)="removeContribution(c.id)">
+                @if (confirmRemoveId() === c.id) { Confirmer } @else { <app-icon name="trash" [size]="14" /> }
+              </button>
+            </li>
+          }
+        </ul>
+      }
+
+      <div class="detail-actions">
+        @if (confirmDelete()) {
+          <p class="hint">Cet objectif et tous ses ajouts seront supprimés définitivement.</p>
+        }
+        <app-button variant="ghost" (click)="deleteGoal()">
+          {{ confirmDelete() ? "Confirmer la suppression" : "Supprimer l'objectif" }}
+        </app-button>
+      </div>
+    </div>
+  </app-modal>
+}

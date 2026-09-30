@@ -47,14 +47,8 @@ export const routes: Routes = [
       {
         path: 'epargne',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
-        data: {
-          navTitle: 'Épargne & objectifs',
-          placeholderNote:
-            'Dépend du modèle de comptes généralisé — voir MODELE.md, section 5.',
-        },
+          import('./features/savings/savings-page/savings-page').then((m) => m.SavingsPage),
+        data: { navTitle: 'Épargne & objectifs' },
       },
       {
         path: 'investissements',

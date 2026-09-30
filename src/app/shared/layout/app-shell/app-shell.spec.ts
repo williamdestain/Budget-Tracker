@@ -24,7 +24,11 @@ class FakePage {}
 function makeFakeStore(): BudgetStore {
   return {
     current: signal('2026-08'),
-    activeOwner: signal<'moi' | 'madame' | 'global'>('moi'),
+    activeOwner: signal<string>('3f9c1c1e-0000-4000-8000-000000000001'),
+    memberOptions: () => [
+      { id: '3f9c1c1e-0000-4000-8000-000000000001', name: 'Alex', color: '#4a6fa1' },
+      { id: '3f9c1c1e-0000-4000-8000-000000000002', name: 'Sam', color: '#a15385' },
+    ],
   } as unknown as BudgetStore;
 }
 

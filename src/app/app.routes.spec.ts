@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { routes } from './app.routes';
 import { BudgetPage } from './features/budget/budget-page/budget-page';
+import { SavingsPage } from './features/savings/savings-page/savings-page';
 
 describe('routes', () => {
   it('charge la page Budget via la route protégée et lazy', async () => {
@@ -13,11 +14,12 @@ describe('routes', () => {
     await expect(budgetRoute?.loadComponent?.()).resolves.toBe(BudgetPage);
   });
 
-  it('garde les objectifs d’épargne sur leur destination distincte', () => {
+  it('garde les objectifs d’épargne sur leur destination distincte', async () => {
     const shellRoute = routes.find((route) => route.path === '');
     const savingsRoute = shellRoute?.children?.find((route) => route.path === 'epargne');
 
     expect(savingsRoute?.data?.['navTitle']).toBe('Épargne & objectifs');
     expect(savingsRoute?.loadComponent).toBeDefined();
+    await expect(savingsRoute?.loadComponent?.()).resolves.toBe(SavingsPage);
   });
 });

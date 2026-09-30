@@ -2,57 +2,177 @@
   <app-card size="lg" accent="var(--accent)">
     <div class="accounts-hero">
       <div>
-        <span class="accounts-label">Valeur nette suivie</span>
-        <strong>{{ fmt(netWorth()) }}</strong>
+        <span class="accounts-label">Valeur nette</span>
+        <strong class="accounts-total" [class.negative]="summary().net < 0">{{ fmt(summary().net) }}</strong>
       </div>
-      <app-button (click)="formOpen() ? formOpen.set(false) : openForm()">
-        {{ formOpen() ? 'Annuler' : 'Ajouter un compte' }}
+      <app-button (click)="openAdd()">
+        <app-icon name="plus" [size]="14" /> Ajouter un compte
       </app-button>
     </div>
+    <dl class="nw-rows">
+      <div class="nw-row"><dt>Comptes bancaires</dt><dd>{{ fmt(summary().bank) }}</dd></div>
+      <div class="nw-row"><dt>Investissements</dt><dd>{{ fmt(summary().investment) }}</dd></div>
+      @if (summary().other !== 0) {
+        <div class="nw-row"><dt>Autres comptes</dt><dd>{{ fmt(summary().other) }}</dd></div>
+      }
+      <div class="nw-row"><dt>Cartes de crédit</dt><dd class="negative">{{ fmt(-summary().credit) }}</dd></div>
+    </dl>
+    <p class="hint">
+      Les soldes bancaires et d'investissement sont saisis à la main ; la dette de carte est calculée
+      à partir de vos dépenses et paiements.
+    </p>
   </app-card>
 
-  @if (formOpen()) {
+  @if (groups().length === 0) {
     <app-card>
-      <form class="account-form" (ngSubmit)="submit()">
-        <label>Nom <input name="name" [(ngModel)]="name" required /></label>
-        <label>Institution (optionnel) <input name="institution" [(ngModel)]="institution" /></label>
-        <label>Type
-          <select name="type" [(ngModel)]="type">
-            <option value="bank">Bancaire</option>
-            <option value="credit">Carte de crédit</option>
-            <option value="investment">Investissement</option>
-            <option value="other">Autre</option>
-          </select>
-        </label>
-        <label>Solde initial (optionnel)
-          <input type="number" name="balance" step="0.01" [(ngModel)]="balance" />
-        </label>
-        <label>Date du solde
-          <input type="date" name="balanceDate" [(ngModel)]="balanceDate" required />
-        </label>
-        <app-button type="submit" [disabled]="saving()">Enregistrer</app-button>
-      </form>
+      <p class="empty">Aucun compte pour le moment. Ajoutez votre compte chèque ou votre carte de crédit pour commencer.</p>
     </app-card>
   }
 
-  <section class="account-list" aria-label="Comptes actifs">
-    @if (activeAccounts().length === 0) {
-      <app-card><p class="empty">Aucun compte ajouté.</p></app-card>
-    } @else {
-      @for (account of activeAccounts(); track account.id) {
-        <app-card>
-          <div class="account-row">
-            <div>
-              <h2>{{ account.name }}</h2>
-              <p>{{ account.institution || 'Institution non précisée' }} · {{ account.type }}</p>
-            </div>
-            <div class="account-actions">
-              <strong>{{ latestBalance(account.id) === null ? '—' : fmt(latestBalance(account.id)!) }}</strong>
-              <button type="button" (click)="archive(account.id)">Archiver</button>
+  @for (group of groups(); track group.type) {
+    <section class="account-group" [attr.aria-label]="group.label">
+      <h2 class="group-title">{{ group.label }}</h2>
+      <app-card>
+        @for (row of group.rows; track row.account.id) {
+          <button type="button" class="account-row" (click)="openDetail(row.account.id)">
+            <span class="account-icon"><app-icon [name]="iconFor(row.account.type)" [size]="17" /></span>
+            <span class="account-body">
+              <span class="account-name">{{ row.account.name }}</span>
+              <span class="account-meta">
+                {{ row.account.institution || 'Institution non précisée' }} · {{ row.ownerLabel }}
+                @if (row.updatedOn) { · à jour le {{ fmtDate(row.updatedOn) }} }
+              </span>
+              @if (row.delta !== null && row.deltaSince) {
+                <span class="account-meta">
+                  Variation du solde : {{ row.delta > 0 ? '+' : '' }}{{ fmt(row.delta) }} depuis le {{ fmtDate(row.deltaSince) }}
+                </span>
+              }
+            </span>
+            @if (row.balance === null) {
+              <span class="account-balance muted">Solde à saisir</span>
+            } @else if (row.account.type === 'credit') {
+              <span class="account-balance negative">{{ fmt(-row.balance) }}</span>
+            } @else {
+              <span class="account-balance" [class.negative]="row.balance < 0">{{ fmt(row.balance) }}</span>
+            }
+          </button>
+        }
+      </app-card>
+    </section>
+  }
+</div>
+
+@if (addOpen()) {
+  <app-modal title="Ajouter un compte" (closed)="closeAdd()">
+    <form class="account-form" (ngSubmit)="submitAdd()">
+      <div class="field">
+        <label for="acc-name">Nom</label>
+        <input id="acc-name" type="text" name="name" [(ngModel)]="name" required />
+      </div>
+      <div class="field">
+        <label for="acc-inst">Institution (optionnel)</label>
+        <input id="acc-inst" type="text" name="institution" [(ngModel)]="institution" />
+      </div>
+      <div class="field">
+        <label for="acc-type">Type</label>
+        <select id="acc-type" name="type" [(ngModel)]="type">
+          <option value="bank">Compte bancaire</option>
+          <option value="credit">Carte de crédit</option>
+          <option value="investment">Investissement</option>
+          <option value="other">Autre</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="acc-owner">Propriétaire</label>
+        <select id="acc-owner" name="ownerId" [(ngModel)]="ownerId">
+          <option value="">Partagé (tout le foyer)</option>
+          @for (member of store.memberOptions(); track member.id) {
+            <option [value]="member.id">{{ member.name }}</option>
+          }
+        </select>
+      </div>
+      @if (type === 'credit') {
+        <p class="hint">Le solde d'une carte est calculé automatiquement — rien à saisir.</p>
+      } @else {
+        <div class="field">
+          <label for="acc-balance">Solde actuel (optionnel)</label>
+          <div class="input-money">
+            <input id="acc-balance" type="number" inputmode="decimal" step="0.01" name="balance" [(ngModel)]="balance" />
+          </div>
+        </div>
+        @if (balance !== null) {
+          <div class="field">
+            <label for="acc-date">Date du solde</label>
+            <input id="acc-date" type="date" name="balanceDate" [max]="today" [(ngModel)]="balanceDate" required />
+          </div>
+        }
+      }
+      <app-button type="submit" [disabled]="saving()" [fullWidth]="true">Enregistrer</app-button>
+    </form>
+  </app-modal>
+}
+
+@if (selected(); as row) {
+  <app-modal [title]="row.account.name" (closed)="closeDetail()">
+    <div class="detail">
+      <div class="detail-balance">
+        <span class="accounts-label">{{ row.account.type === 'credit' ? 'Solde dû' : 'Solde actuel' }}</span>
+        @if (row.balance === null) {
+          <strong class="muted">Aucun solde saisi</strong>
+        } @else if (row.account.type === 'credit') {
+          <strong class="negative">{{ fmt(-row.balance) }}</strong>
+        } @else {
+          <strong [class.negative]="row.balance < 0">{{ fmt(row.balance) }}</strong>
+        }
+      </div>
+
+      @if (row.account.type === 'credit') {
+        <p class="hint">
+          Ce solde vient de vos dépenses marquées « carte » moins vos paiements enregistrés.
+          <a routerLink="/carte-de-credit" (click)="closeDetail()">Voir le détail et enregistrer un paiement</a>
+        </p>
+      } @else {
+        <form class="account-form" (ngSubmit)="submitBalance()">
+          <h3 class="section-title">Mettre à jour le solde</h3>
+          <div class="field">
+            <label for="upd-balance">Nouveau solde</label>
+            <div class="input-money">
+              <input id="upd-balance" type="number" inputmode="decimal" step="0.01" name="newBalance" [(ngModel)]="newBalance" required />
             </div>
           </div>
-        </app-card>
+          <div class="field">
+            <label for="upd-date">Date</label>
+            <input id="upd-date" type="date" name="newBalanceDate" [max]="today" [(ngModel)]="newBalanceDate" required />
+          </div>
+          <div class="field">
+            <label for="upd-note">Note (optionnel)</label>
+            <input id="upd-note" type="text" name="newNote" [(ngModel)]="newNote" />
+          </div>
+          <p class="hint">Un solde saisi à une date déjà utilisée remplace l'ancien.</p>
+          <app-button type="submit" [disabled]="saving() || newBalance === null" [fullWidth]="true">Enregistrer le solde</app-button>
+        </form>
+
+        @if (history().length > 0) {
+          <h3 class="section-title">Historique</h3>
+          <ul class="history">
+            @for (s of history(); track s.id) {
+              <li>
+                <span>{{ fmtDate(s.date) }}@if (s.note) { · {{ s.note }} }</span>
+                <b>{{ fmt(s.balance) }}</b>
+              </li>
+            }
+          </ul>
+        }
       }
-    }
-  </section>
-</div>
+
+      <div class="detail-actions">
+        @if (confirmArchive()) {
+          <p class="hint">L'historique est conservé, mais ce compte ne sera plus compté dans la valeur nette.</p>
+        }
+        <app-button variant="ghost" (click)="archive()">
+          {{ confirmArchive() ? "Confirmer l'archivage" : 'Archiver ce compte' }}
+        </app-button>
+      </div>
+    </div>
+  </app-modal>
+}

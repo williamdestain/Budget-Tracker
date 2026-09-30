@@ -119,6 +119,16 @@ h2 {
   max-width: 260px;
   color: var(--ink-soft);
   font-size: 12px;
+
+  a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .ledger-footer {

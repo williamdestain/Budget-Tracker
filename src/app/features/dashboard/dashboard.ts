@@ -1,8 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, computed } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { BudgetStore } from '../../core/services/budget-store.service';
 import { ToastService } from '../../core/services/toast.service';
-import { monthLabel, nextYM, prevYM } from '../../core/utils/date.utils';
+import { isoOfDate, monthLabel, nextYM, prevYM } from '../../core/utils/date.utils';
+import { netWorthBreakdown, visibleAccounts } from '../../core/utils/accounts.utils';
 import { fmt } from '../../core/utils/currency.utils';
 import { IncomeBar } from '../incomes/income-bar/income-bar';
 import { IncomeForm } from '../incomes/income-form/income-form';
@@ -48,12 +50,31 @@ import { Icon } from '../../shared/ui/icon/icon';
     DataManagement,
     CategoriesManage,
     Icon,
+    RouterLink,
   ],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
 export class Dashboard implements OnInit {
   readonly fmt = fmt;
+
+  // Bloc « Patrimoine » : même définition que la page /comptes (une seule
+  // source, accounts.utils.ts) et même périmètre (profil actif + comptes
+  // partagés). Aucun compte actif → on affiche « — », pas 0 $.
+  private readonly visibleActiveAccounts = computed(() =>
+    visibleAccounts(this.store.accounts(), this.store.activeOwner()).filter((a) => !a.archived),
+  );
+
+  readonly hasAccounts = computed(() => this.visibleActiveAccounts().length > 0);
+
+  readonly netWorth = computed(() =>
+    netWorthBreakdown(
+      this.visibleActiveAccounts(),
+      this.store.accountBalanceSnapshots(),
+      isoOfDate(new Date()),
+      (memberId) => this.store.creditCardBalance(memberId === null ? 'global' : memberId),
+    ),
+  );
 
   constructor(
     private auth: AuthService,

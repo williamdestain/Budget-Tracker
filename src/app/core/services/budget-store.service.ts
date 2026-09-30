@@ -276,7 +276,8 @@ export class BudgetStore {
   // "Madame" de secours ici — un repli silencieux masquerait un vrai
   // problème de chargement plutôt que de le signaler. Les rares call sites
   // qui ont besoin d'une valeur par défaut (ex. provision-form,
-  // savings-goal-form) gèrent déjà leur propre `?? 'moi'` explicite.
+  // savings-goal-form) passent par defaultMemberId() (members.utils.ts) : en
+  // vue Global, le membre connecté ; sans aucun membre actif, ils n'écrivent rien.
   readonly activeMembers = computed(() => this.members().filter((m) => m.active));
 
   readonly memberOptions = computed(() =>
@@ -3488,6 +3489,12 @@ export class BudgetStore {
       categoryBudgets: this.categoryBudgets(),
       rollovers: this.rollovers(),
       creditCardPayments: this.creditCardPayments(),
+      // Comptes et relevés de solde saisis à la main : sans ça, ils n'existent
+      // nulle part ailleurs que dans la base. NB : importData() ne les relit
+      // pas encore (et reset_everything() ne les supprime pas non plus) — cet
+      // export sert de copie de secours lisible, pas de restauration.
+      accounts: this.accounts(),
+      accountBalanceSnapshots: this.accountBalanceSnapshots(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',

@@ -4,6 +4,7 @@ import { BudgetStore } from '../../../core/services/budget-store.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { Owner } from '../../../core/models/budget.models';
 import { isoOfDate } from '../../../core/utils/date.utils';
+import { defaultMemberId } from '../../../core/utils/members.utils';
 
 @Component({
   selector: 'app-expense-form',
@@ -30,7 +31,7 @@ export class ExpenseForm {
   amount: number | null = null;
   category = '';
   date = isoOfDate(new Date());
-  owner: Owner = 'moi';
+  owner: Owner = '';
   versementToMemberId: string | null = null;
   cc = false;
 
@@ -41,7 +42,14 @@ export class ExpenseForm {
     // y compris si on change d'onglet après l'ouverture de la page.
     effect(() => {
       const active = this.store.activeOwner();
-      if (active !== 'global') this.owner = active;
+      const ids = this.store.memberOptions().map((m) => m.id);
+      if (active !== 'global') {
+        this.owner = active;
+      } else if (!ids.includes(this.owner)) {
+        // Vue Global : pas de profil actif. Ne jamais garder une valeur qui
+        // n'est pas un vrai membre (voir members.utils.ts).
+        this.owner = defaultMemberId(active, this.store.myMemberId(), ids);
+      }
     });
     // Pré-sélectionne la première catégorie dès qu'elles sont chargées —
     // nécessaire car elles arrivent de façon asynchrone (store.loadAll()),

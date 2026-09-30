@@ -96,17 +96,13 @@ export class AppShell {
     return (r?.snapshot?.data?.['navTitle'] as string | undefined) ?? '';
   }
 
-  // Membres configurables chargés par BudgetStore, avec repli historique
-  // avant l'exécution de migration 024.
-  readonly members = computed<SwitchMember[]>(() => {
-    const options = (this.store as BudgetStore & {
-      memberOptions?: () => SwitchMember[];
-    }).memberOptions?.() ?? [
-      { id: 'moi', name: 'Moi', color: 'var(--owner-moi)' },
-      { id: 'madame', name: 'Madame', color: 'var(--pink)' },
-    ];
-    return [...options, { id: 'global', name: 'Global', color: 'var(--accent)' }];
-  });
+  // Membres réels du foyer, chargés par BudgetStore, plus la vue agrégée.
+  // Aucun repli « Moi / Madame » : la migration 024 est en production, et un
+  // repli inventé masquerait un vrai problème de chargement.
+  readonly members = computed<SwitchMember[]>(() => [
+    ...this.store.memberOptions(),
+    { id: 'global', name: 'Global', color: 'var(--accent)' },
+  ]);
 
   get monthLabel(): string {
     return monthLabel(this.store.current());

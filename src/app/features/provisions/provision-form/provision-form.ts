@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { Owner, ProvisionIntervalUnit } from '../../../core/models/budget.models';
 import { isoOfDate } from '../../../core/utils/date.utils';
+import { defaultMemberId } from '../../../core/utils/members.utils';
 
 const MOIS_NOMS = [
   'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -69,9 +70,16 @@ export class ProvisionForm {
       return;
     }
 
-    // Propriétaire : profil actif (Global → Moi par défaut, comme avant).
+    // Propriétaire : profil actif ; en vue Global, le membre connecté.
     const active = this.store.activeOwner();
-    const memberId: Owner = active === 'global' ? this.store.memberOptions()[0]?.id ?? 'moi' : active;
+    const memberId: Owner = defaultMemberId(
+      active,
+      this.store.myMemberId(),
+      this.store.memberOptions().map((m) => m.id),
+    );
+    // Sans aucun membre actif, aucun propriétaire valide n'existe : mieux
+    // vaut ne rien écrire qu'envoyer un identifiant inventé.
+    if (!memberId) return;
 
     this.saving.set(true);
     try {

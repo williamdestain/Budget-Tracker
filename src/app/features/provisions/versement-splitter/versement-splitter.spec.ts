@@ -110,4 +110,28 @@ describe('VersementSplitter', () => {
     const sum = allocations.reduce((s, a) => s + a.amount, 0);
     expect(sum).toBe(100); // pas 99.99 à cause des arrondis
   });
+
+  // Ancien texte : `activeOwner() === 'moi' ? 'Moi' : 'Madame'`. Avec un foyer
+  // à identifiants UUID, il affichait « Madame » pour n'importe quel membre.
+  it("nomme le vrai membre actif (UUID) quand aucune provision n'a besoin d'argent", () => {
+    const ALEX = '3f9c1c1e-0000-4000-8000-000000000001';
+    const store = {
+      activeOwner: () => ALEX,
+      current: () => '2026-07',
+      expenses: () => [],
+      visibleProvisions: () => [],
+      unsplitVersements: () => [],
+      memberOptions: () => [{ id: ALEX, name: 'Alex', color: '#000' }],
+      memberName: (id: string) => (id === ALEX ? 'Alex' : id),
+    } as unknown as BudgetStore;
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: BudgetStore, useValue: store }] });
+    const fixture = TestBed.createComponent(VersementSplitter);
+    fixture.detectChanges();
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('pour Alex');
+    expect(text).not.toContain('Madame');
+  });
 });

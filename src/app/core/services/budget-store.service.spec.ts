@@ -1162,6 +1162,47 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(payload.recurringExpenses).toHaveLength(1);
       expect(payload.recurringExpenses[0].name).toBe('Loyer');
     });
+
+    it('le JSON exporté inclut les comptes et leurs relevés de solde', async () => {
+      await store.loadAll();
+      const account = await store.addAccount({
+        memberId: null,
+        name: 'Chèques',
+        institution: null,
+        type: 'bank',
+        archived: false,
+      });
+      await store.addAccountBalanceSnapshot(account.id, 1234.5, '2026-09-01', null);
+
+      let capturedText: string | null = null;
+      const originalBlob = globalThis.Blob;
+      class CapturingBlob extends originalBlob {
+        constructor(parts: BlobPart[], options?: BlobPropertyBag) {
+          super(parts, options);
+          capturedText = String(parts[0]);
+        }
+      }
+      // @ts-expect-error remplacement temporaire pour capturer le contenu exporté
+      globalThis.Blob = CapturingBlob;
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = () => 'blob:fake';
+      URL.revokeObjectURL = () => {};
+
+      try {
+        store.exportData();
+      } finally {
+        globalThis.Blob = originalBlob;
+        URL.createObjectURL = originalCreateObjectURL;
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+
+      const payload = JSON.parse(capturedText!);
+      expect(payload.accounts).toHaveLength(1);
+      expect(payload.accounts[0].name).toBe('Chèques');
+      expect(payload.accountBalanceSnapshots).toHaveLength(1);
+      expect(payload.accountBalanceSnapshots[0].balance).toBe(1234.5);
+    });
   });
 
   describe('importData()', () => {
