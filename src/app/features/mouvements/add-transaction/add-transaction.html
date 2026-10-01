@@ -1,0 +1,10 @@
+<div class="chip-row kind-toggle" role="group" aria-label="Type de saisie">
+  <app-chip [active]="kind() === 'expense'" (click)="kind.set('expense')">Dépense</app-chip>
+  <app-chip [active]="kind() === 'income'" (click)="kind.set('income')">Revenu</app-chip>
+</div>
+
+@if (kind() === 'expense') {
+  <app-expense-form (saved)="done.emit()" />
+} @else {
+  <app-income-form (saved)="done.emit()" />
+}

@@ -3,7 +3,8 @@
 Ce plan explique comment faire passer la direction de design du prototype
 fusionné (`fina-prototype.html`) dans la vraie application Angular, **sans
 toucher à la logique métier existante** (store, calculs de provisions, RLS
-Supabase, etc.), qui fonctionne déjà et est couverte par 258+ tests.
+Supabase, etc.), qui fonctionne déjà et est couverte par plus de 750 tests (764 au 29
+septembre 2026).
 
 **Ce document remplace la version précédente**, écrite avant la fusion avec
 la proposition ChatGPT. Les différences principales : 5 destinations
@@ -58,16 +59,16 @@ projet et le type-check, le build et la suite de tests ont été vérifiés :
 | Élément | Statut |
 |---|---|
 | Tokens de couleur/typographie (`styles.scss`), mêmes noms de variables | ✅ Fait |
-| Polices Fraunces + IBM Plex Sans (`index.html`) | ✅ Fait |
+| Polices Fraunces + IBM Plex Sans (auto-hébergées via `@fontsource`, importées dans `styles.scss`) | ✅ Fait |
 | Correctif badge « Moi » (`--owner-moi`, pour ne pas devenir vert) | ✅ Fait |
 | `IconComponent` + registre (33 icônes SVG) | ✅ Fait |
 | `ButtonComponent`, `CardComponent`, `ChipComponent`, `ProgressBarComponent`, `ProgressRingComponent` | ✅ Fait |
 | `ModalComponent` (fenêtre bureau / feuille mobile, Échap, fond cliquable) | ✅ Fait |
 | `DonutChartComponent` | ✅ Fait |
 | `BarLineChartComponent` — remplace les deux composants distincts prévus initialement (voir note ci-dessous) | ✅ Fait |
-| `MemberSwitchComponent` (branché sur le store, avec repli legacy transitoire) | ✅ Fait |
-| Bac à sable `/design-system` | ✅ Fait, les 10 composants y sont démontrés |
-| Remplacer les emojis dans les ~20 templates existants | ⬜ **Reste à faire** — c'est le travail de la Phase 2, écran par écran ; l'infrastructure (`IconComponent`) est prête |
+| `MemberSwitchComponent` (branché sur le store ; le repli legacy a été retiré) | ✅ Fait |
+| Bac à sable `/design-system` | ✅ Fait, les 10 composants y sont démontrés ; ⬜ **à retirer ou protéger avant la production** — la route est publique et sans garde (constat du 29 septembre) |
+| Remplacer les emojis dans les ~20 templates existants | ⬜ **Reste à faire** — c'est le travail de la Phase 2, écran par écran ; l'infrastructure (`IconComponent`) est prête. **Mesuré le 29 septembre 2026 : 126 occurrences dans 33 fichiers** (hors `/design-system`), dont 29 dans la table de correspondance de `icon-names.ts`, légitimes ; le reste se trouve surtout dans les anciens blocs encore empilés sur le tableau de bord |
 
 **Écart par rapport au plan initial, assumé :** un seul `BarLineChartComponent`
 remplace les `LineChartComponent`/`BarChartComponent` prévus séparément —
@@ -261,6 +262,20 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    changé sur le fond ; le `.ts` n'a bougé que sur des détails cosmétiques
    (import d'icône, wording « les deux profils » → « tous les membres »),
    aucun calcul touché.
+   **Mise à jour du 29 septembre 2026** : le bloc « Patrimoine » n'est plus
+   un espace réservé. Il affiche la valeur nette calculée par
+   `netWorthBreakdown()` (la même fonction que `/comptes`, même périmètre :
+   profil actif + comptes partagés), « — » tant qu'aucun compte n'existe.
+   **Limite constatée à l'audit du même jour** : le tableau de bord contient
+   toujours, empilés, les anciens blocs de la plupart des écrans livrés
+   depuis — `ExpenseList`, `IncomeList` (leurs formulaires de saisie n'y sont
+   plus, voir « fenêtre Ajouter » plus bas),
+   `RecurringExpensesManage`, `SavingsGoalList`, `CreditCard`, `YearlyView`,
+   `MonthComparison`, le graphique de dépenses, plus `CategoriesManage` et
+   `DataManagement` (des réglages). C'est de la redite avec `/mouvements`,
+   `/rapports`, `/epargne` et `/carte-de-credit`, à nettoyer une fois que
+   Mouvements permettra de saisir (voir ci-dessous) et que Paramètres
+   existera.
 4. ✅ **Mouvements** — livré (`Mouvements` dans `features/mouvements/`,
    routé sur `/mouvements`, repéré le 28 septembre en vérifiant l'état
    réel du code plutôt que ce document, qui n'avait pas été mis à jour).
@@ -268,6 +283,39 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    filtrable (le seul vrai nouveau bout de logique d'affichage de cette
    vague — un tri fusionné de deux tableaux déjà exposés par le store) ;
    couvert par 7 tests.
+   **Limite constatée à l'audit du 29 septembre 2026** : la page est en
+   **lecture seule** — aucun formulaire, aucune modification ni suppression.
+   Or le bouton « Ajouter » de la barre mobile mène à `/mouvements`. Saisir
+   une dépense ou un revenu n'est donc possible que depuis le tableau de
+   bord, où vivent encore `ExpenseForm` et `IncomeForm`. Le livrable
+   « flux triable et filtrable » est exact ; il ne couvre pas la saisie.
+   **Résolu le 29 septembre 2026** par la fenêtre « Ajouter » (voir Phase 3) :
+   la saisie est possible depuis toutes les pages.
+   **Modification et suppression livrées le 30 septembre 2026** : cliquer (ou
+   Entrée / Espace sur) une ligne ouvre une fenêtre « Modifier » (composant
+   `EditMovement`, `features/mouvements/edit-movement/`). Seules les vraies
+   dépenses et les vrais revenus sont cliquables : les lignes **calculées**
+   (contribution à une provision, report, « versement reçu » côté
+   destinataire) ne le sont pas, elles reflètent une autre ligne ou un calcul.
+   Règles reprises de `ExpenseList` / `IncomeList` et rendues explicites au
+   lieu de laisser le store échouer après coup : mois clôturé → lecture seule
+   avec la raison ; versement déjà réparti → ni modification ni suppression,
+   seulement « annuler la répartition » ; catégorie « Remboursement Carte
+   Crédit » verrouillée ; toute suppression en deux temps. Deux défauts de
+   l'ancienne édition sont corrigés au passage : un versement dont on change
+   l'émetteur pouvait devenir un versement à soi-même (et une dépense qui
+   cessait d'en être un gardait son destinataire) ; la suppression d'une
+   ligne n'affichait aucune erreur.
+   **Écart de comportement voulu** — le revenu : une paie *générée* par un
+   modèle récurrent encore actif ne peut plus être supprimée depuis cette
+   fenêtre, on propose d'arrêter le modèle. Prouvé par un test du store :
+   `syncRecurringIncomes()` recrée à chaque chargement toute paie manquante
+   d'un modèle actif, donc la supprimer la fait réapparaître (le commentaire
+   de `removeIncome()` disait l'inverse ; corrigé). Pour une paie générée, seul
+   le montant est modifiable (changer sa date fausserait le décompte par
+   mois) ; pour un revenu ponctuel : montant, type, date et note.
+   `ExpenseList` / `IncomeList` du tableau de bord ont toujours l'ancien
+   comportement (dont la suppression qui ne tient pas) jusqu'à leur retrait.
 5. ✅ **Budget & enveloppes** — livré le 26 septembre 2026. La route
    `/budget` regroupe `CategoryBudgets`, `ProvisionList`/`ProvisionCard`
    et `VersementSplitter`, avec le formulaire, les échéances et les rappels
@@ -327,9 +375,11 @@ qui s'est concrètement matérialisé.
   paramètre RPC `p_sender`, jamais le nouveau `p_sender_member_id`) —
   sans ce correctif, ce chemin restait invérifiable par un test, peu
   importe combien on en aurait écrit. Suite à 285 tests, tous verts.
-- ⬜ **Reste avant de finaliser `/comptes`** : une courte période de
-  rodage en usage normal, puis le retrait du repli transitoire
-  `owner`/`useMemberSchema()` (voir `MODELE.md` section 9).
+- ✅ **Rodage terminé — 29 septembre 2026** : aucun bug trouvé en usage
+  normal ; `/comptes` a été repris et livré (point 1 ci-dessous). Historique
+  de cette étape, à l'origine « une courte période de rodage puis le retrait
+  du repli transitoire `owner`/`useMemberSchema()` » (voir `MODELE.md`
+  section 9) :
   - ✅ Le drapeau `useMemberSchema()` lui-même (branche à double chemin +
     retry RPC sur l'ancien paramètre) est retiré de
     `budget-store.service.ts`/`supabase-mappers.ts`.
@@ -389,6 +439,15 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    manuelle (valeur du portefeuille, allocation, entrée périodique de la
    performance) ; la synchronisation bancaire/courtage réelle est une
    question de palier C, voir feuille de route produit, section 5.
+   **État au 29 septembre 2026** : ⬜ toujours un placeholder. La table
+   `investment_allocations` existe (migration-023, RLS) mais il n'y a aucun
+   modèle, mapper ni méthode de store côté TypeScript. « Aucune donnée
+   existante à réutiliser » n'est **plus exact** : les comptes de type
+   `investment` et leurs relevés de solde existent et alimentent déjà la
+   valeur nette. Un second modèle de portefeuille compterait le même argent
+   deux fois. **Décision à prendre avant de coder** : bâtir cet écran comme
+   une vue détaillée des comptes `investment` (allocation, évolution)
+   plutôt que comme un modèle parallèle.
 3. ✅ **Épargne & objectifs** (`/epargne`) — **livré le 29 septembre 2026**
    (745 tests verts, `ng build` propre). Total épargné, grille d'objectifs
    avec anneau de progression, création (avec propriétaire), ajout et
@@ -411,6 +470,9 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    (probablement épars aujourd'hui) en catégories, **plus** un nouvel écran
    de gestion des membres du foyer (ajouter/retirer un membre, changer son
    rôle) qui, lui, dépend directement de la table `household_members`.
+   **État au 29 septembre 2026** : ⬜ toujours un placeholder. Les réglages
+   « épars » sont localisés : `CategoriesManage` et `DataManagement` dans
+   l'en-tête du tableau de bord, `RecurringExpensesManage` dans son corps.
 
 ---
 
@@ -430,6 +492,37 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
   montants, `padding-bottom: env(safe-area-inset-bottom)` sous la barre du
   bas.
 
+**État au 29 septembre 2026** : ✅ la barre du bas à 5 emplacements et la
+feuille « Plus » (un `Modal`) existent, livrées avec `AppShell` en Phase 1.
+
+✅ **Fenêtre « Ajouter » livrée le 29 septembre 2026** (décision : un `Modal`
+plutôt qu'un formulaire dans `/mouvements`, comme dans le prototype). Le
+bouton `+` de la barre du bas est désormais un vrai bouton (présent sur toutes
+les pages, sur mobile). Sur bureau, un bouton « Ajouter » est ajouté à la
+barre du haut, **seulement sur le tableau de bord et Mouvements** (drapeau
+`data.showAdd` dans `app.routes.ts`, comme dans le prototype où seul
+Mouvements l'a) ; masqué sous 768px, où le `+` le remplace. La même fenêtre
+s'ouvre dans tous les cas, sans changer de route. *Correction du même jour,
+après retour d'usage* : une première version l'affichait sur toutes les
+pages, et le bouton de thème flottant (`app.html`, fixé à 16px du bord,
+40px de large) le recouvrait ; la barre du haut réserve maintenant 40px à
+droite pour lui. Nouveau composant `AddTransaction`
+(`features/mouvements/add-transaction/`) : un sélecteur Dépense / Revenu
+au-dessus des formulaires existants, aucune logique de saisie dupliquée.
+`ExpenseForm` et `IncomeForm` sont devenus des contenus de fenêtre (ni carte
+ni titre propres, bouton `app-button`, confirmation par toast, sortie
+`saved` qui ferme la fenêtre) et **ont été retirés du tableau de bord** —
+sinon deux champs auraient partagé le même `id` dans la page. Le composant
+`Chip` expose désormais son état (`aria-pressed`). Le champ « Compte » du
+prototype n'a pas d'équivalent : aucune transaction n'est liée à un compte
+(`MODELE.md` §5.1).
+
+⬜ **Reste** : `ProvisionForm` (dans `/budget`) et les formulaires de
+`RecurringExpensesManage` restent en ligne ; la disposition des champs des deux
+formulaires est encore celle d'origine (rangées qui se replient) et n'a pas
+été vérifiée sur un vrai téléphone. `/comptes`, `/epargne`
+et le bac à sable utilisaient déjà `Modal`.
+
 ---
 
 ## Phase 4 — Polish et accessibilité (3–5 jours)
@@ -444,6 +537,12 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
 - Vérifier chaque nouvel écran (Comptes, Investissements, Épargne) dans les
   deux thèmes, pas seulement les écrans de la vague A.
 
+**État au 29 septembre 2026** : ⬜ pas commencée. `prefers-reduced-motion`
+n'apparaît que dans `modal.scss`, et `:focus-visible` dans très peu de
+feuilles de style. Les écrans `/comptes` et `/epargne` définissent leurs
+propres états de focus, mais rien n'a été vérifié sur les deux thèmes au
+navigateur.
+
 ---
 
 ## Phase 5 — Tests et déploiement (4–6 jours)
@@ -456,8 +555,66 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
   en chantier.
 - Tests de fumée légers (Playwright, réintroduit uniquement pour ça) sur
   les 8 routes et sur la persistance du membre/mois sélectionné en
-  changeant de page. Le reste (258+ tests Vitest) continue de protéger la
+  changeant de page. Le reste (plus de 750 tests Vitest) continue de protéger la
   logique métier sans changement.
+
+**État au 29 septembre 2026** : ⬜ pas commencée, et l'infrastructure décrite
+ci-dessus ne correspond pas au zip audité. `.github/workflows/` n'y contient
+que `deploy.yml` (déclenché sur `main` : `npm ci` puis `ng build`, **sans
+lancer les tests**) ; `tests.yml`, cité plus haut, en est absent — à vérifier
+dans le dépôt. Playwright n'est pas installé. La branche `refonte-design` ne
+peut pas être vérifiée depuis un zip.
+
+---
+
+## Audit du 29 septembre 2026 — état réel et backlog
+
+Méthode : ce plan et `MODELE.md` relus en entier, chaque affirmation
+vérifiée contre le code (`src/`, `supabase/`, `.github/`), puis `tsc
+--noEmit`, `ng build` et la suite de tests (764 verts après corrections,
+aussi sous `Australia/Sydney` et `Pacific/Kiritimati`).
+
+| Phase | État réel |
+|---|---|
+| 0 — Fondations | ✅ Tokens, polices, 10 composants partagés, icônes. ⬜ Emojis restants (126, voir Phase 0) ; ⬜ `/design-system` à retirer |
+| 1 — Navigation | ✅ 9 routes, `AppShell`, membres branchés sur le store |
+| 2A — Vague A | ✅ Carte de crédit, Rapports, Budget. ✅ Mouvements (saisie par la fenêtre « Ajouter », modification et suppression par la fenêtre « Modifier »). ⚠️ Tableau de bord (nouveau bandeau, mais l'ancienne pile reste) |
+| 2B — Vague B | ✅ Comptes, Épargne. ⬜ Investissements et Paramètres : placeholders |
+| 3 — Mobile | ✅ Barre du bas et fenêtre « Ajouter » (dépense/revenu). ⚠️ `ProvisionForm` et dépenses récurrentes restent en ligne ; rien vérifié sur un vrai téléphone |
+| 4 — Accessibilité | ⬜ Pas commencée |
+| 5 — Tests et déploiement | ⬜ Pas commencée ; CI sans tests dans le zip audité |
+
+**Défaut corrigé pendant l'audit** : plusieurs formulaires initialisaient le
+propriétaire à `'moi'`. Dans un foyer à identifiants UUID, en vue Global, la
+dépense partait avec un membre inexistant. Corrigé partout par
+`defaultMemberId()` ; le libellé « Madame » du répartiteur de versement aussi.
+Détail et preuve dans `MODELE.md` section 10.3.
+
+### Backlog ordonné
+
+1. ✅ **Saisie sur mobile — fait le 29 septembre 2026.** Décision : un `Modal`
+   ouvert par le bouton `+` (et par un bouton « Ajouter » sur bureau). Voir
+   Phase 3.
+2. ✅ **Mouvements : modifier et supprimer — fait le 30 septembre 2026.** Voir
+   Vague A, point 4. Préalable au nettoyage du tableau de bord (point 5).
+3. **Investissements** comme vue détaillée des comptes `investment` (voir
+   Vague B, point 2) — valider ce périmètre avant d'écrire du code.
+4. **Paramètres** : catégories, sauvegarde, dépenses récurrentes, **revenus
+   récurrents** (y compris l'arrêt, aujourd'hui dans `IncomeList`), membres.
+5. **Nettoyer le tableau de bord** une fois 2 et 4 faits : retirer les blocs
+   redondants avec Mouvements, Rapports, Épargne, Carte de crédit et
+   Paramètres.
+5. **Import des comptes** : migration SQL sur `import_household_data()` et
+   `reset_everything()`, testée sur un Postgres jetable (voir `MODELE.md`
+   10.4). Tant que ce n'est pas fait, l'export est une copie de secours
+   lisible, pas une restauration.
+6. **Hygiène** : retirer `/design-system` de la production ; supprimer les
+   doublons de la racine (`budget-store.service.spec.ts` et
+   `fake-supabase-client.ts` y existent en copies périmées, différentes de
+   celles de `src/`) et les documents en double ; brancher les tests dans le
+   pipeline avant déploiement ; décider du sort du rappel de mois non
+   clôturé (`MODELE.md` section 7, non planifié).
+7. **Phases 4 et 5**, une fois les écrans stabilisés.
 
 ---
 
@@ -519,8 +676,23 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
     type, jamais un champ en double. Détail complet, y compris un
     reliquat CSS repéré mais volontairement laissé hors périmètre, dans
     `MODELE.md` section 9.5.2.
-14. **Prochaine étape réelle** : les deux préalables de `MODELE.md`
-    section 9 (retrait du repli legacy) sont maintenant faits. Reste la
-    courte période de rodage en cours depuis le 13 septembre, puis
-    reprendre `/comptes` pour de vrai — plus rien d'autre ne le bloque
-    techniquement.
+14. ✅ **Rodage terminé, `/comptes` livré — 29 septembre 2026** (Vague B,
+    point 1). Le brouillon en pause a été réécrit plutôt que repris tel quel.
+15. ✅ **Bloc « Patrimoine » branché et export des comptes — 29 septembre
+    2026.** Valeur nette unique (`accounts.utils.ts`) ; les comptes et
+    relevés sont dans le JSON exporté (l'import ne les relit pas encore).
+16. ✅ **Épargne & objectifs livré — 29 septembre 2026** (Vague B, point 3),
+    sans changement de schéma.
+17. ✅ **Audit du code réel contre ce plan et `MODELE.md` — 29 septembre
+    2026**, et correction des identifiants de membre codés en dur (`'moi'`).
+    Voir la section « Audit du 29 septembre 2026 » ci-dessous et
+    `MODELE.md` section 10.
+18. ✅ **Fenêtre « Ajouter » — 29 septembre 2026** (Phase 3) : le bouton `+`
+    ouvre un `Modal` (Dépense / Revenu) depuis toute page ; les formulaires en
+    ligne du tableau de bord sont retirés.
+19. ✅ **Mouvements : modification et suppression — 30 septembre 2026**
+    (Vague A, point 4). Le cycle de saisie est complet depuis `/mouvements`.
+20. **Prochaine étape réelle** : Paramètres (il porte les réglages et
+    l'arrêt des revenus récurrents), puis le nettoyage du tableau de bord ;
+    Investissements reste indépendant et attend la validation de son
+    périmètre (Vague B, point 2).

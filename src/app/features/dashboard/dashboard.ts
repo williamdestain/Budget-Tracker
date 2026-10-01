@@ -7,9 +7,7 @@ import { isoOfDate, monthLabel, nextYM, prevYM } from '../../core/utils/date.uti
 import { netWorthBreakdown, visibleAccounts } from '../../core/utils/accounts.utils';
 import { fmt } from '../../core/utils/currency.utils';
 import { IncomeBar } from '../incomes/income-bar/income-bar';
-import { IncomeForm } from '../incomes/income-form/income-form';
 import { IncomeList } from '../incomes/income-list/income-list';
-import { ExpenseForm } from '../expenses/expense-form/expense-form';
 import { ExpenseList } from '../expenses/expense-list/expense-list';
 import { SavingsGoalList } from '../savings/savings-goal-list/savings-goal-list';
 import { CreditCard } from '../credit-card/credit-card/credit-card';
@@ -31,9 +29,7 @@ import { Icon } from '../../shared/ui/icon/icon';
   selector: 'app-dashboard',
   imports: [
     IncomeBar,
-    IncomeForm,
     IncomeList,
-    ExpenseForm,
     ExpenseList,
     SavingsGoalList,
     CreditCard,

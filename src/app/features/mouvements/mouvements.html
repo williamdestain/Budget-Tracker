@@ -52,7 +52,17 @@
     } @else {
       <div class="movement-list" aria-live="polite">
         @for (entry of entries(); track entry.id) {
-          <article class="movement-row" [class]="'movement-row--' + entry.type">
+          <article
+            class="movement-row"
+            [class]="'movement-row--' + entry.type"
+            [class.movement-row--editable]="isEditable(entry)"
+            [attr.role]="isEditable(entry) ? 'button' : null"
+            [attr.tabindex]="isEditable(entry) ? 0 : null"
+            [attr.aria-label]="isEditable(entry) ? rowLabel(entry) : null"
+            (click)="openEdit(entry)"
+            (keydown.enter)="isEditable(entry) && onRowKey($event, entry)"
+            (keydown.space)="isEditable(entry) && onRowKey($event, entry)"
+          >
             <span class="movement-dot" [style.background]="entry.color"></span>
 
             <div class="movement-copy">
@@ -76,3 +86,9 @@
     }
   </app-card>
 </div>
+
+@if (editing(); as target) {
+  <app-modal [title]="editTitle()" (closed)="closeEdit()">
+    <app-edit-movement [kind]="target.kind" [movementId]="target.id" (done)="closeEdit()" />
+  </app-modal>
+}

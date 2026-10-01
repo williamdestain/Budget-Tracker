@@ -30,13 +30,13 @@ export const routes: Routes = [
         path: 'tableau-de-bord',
         loadComponent: () =>
           import('./features/dashboard/dashboard').then((m) => m.Dashboard),
-        data: { navTitle: 'Tableau de bord' },
+        data: { navTitle: 'Tableau de bord', showAdd: true },
       },
       {
         path: 'mouvements',
         loadComponent: () =>
           import('./features/mouvements/mouvements').then((m) => m.Mouvements),
-        data: { navTitle: 'Mouvements' },
+        data: { navTitle: 'Mouvements', showAdd: true },
       },
       {
         path: 'budget',

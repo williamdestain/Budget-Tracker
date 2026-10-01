@@ -2909,4 +2909,48 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(surplus).toBeCloseTo(2.51, 2);
     });
   });
+
+  // Pourquoi la fenêtre « Modifier » de Mouvements ne propose PAS de supprimer
+  // une paie issue d'un modèle actif : cette suppression ne tient pas. Le
+  // commentaire historique de removeIncome() disait l'inverse.
+  describe('paies générées par un revenu récurrent', () => {
+    // Date LOCALE (comme le store) : le mois UTC peut différer autour d'un changement de mois.
+    const firstOfThisMonth = () => `${isoOfDate(new Date()).slice(0, 7)}-01`;
+    const template = () => ({
+      amount: 2500,
+      type: 'Salaire',
+      memberId: 'moi',
+      note: '',
+      interval: 'monthly' as const,
+      dayOfMonth: 1,
+      secondDayOfMonth: null,
+      startDate: firstOfThisMonth(),
+      active: true,
+    });
+    const generated = () => store.incomes().filter((i) => i.recurringSourceId);
+
+    it('supprimer une paie générée par un modèle ACTIF : elle est recréée au chargement suivant', async () => {
+      await store.loadAll();
+      await store.addRecurringIncome(template());
+      expect(generated()).toHaveLength(1);
+
+      await store.removeIncome(generated()[0].id);
+      expect(generated()).toHaveLength(0);
+
+      await store.syncRecurringIncomes();
+      expect(generated()).toHaveLength(1);
+    });
+
+    it("…mais pas si le modèle a été arrêté : la suppression tient alors", async () => {
+      await store.loadAll();
+      const created = await store.addRecurringIncome(template());
+      const pay = generated()[0];
+
+      await store.removeRecurringIncome(created.id);
+      await store.removeIncome(pay.id);
+      await store.syncRecurringIncomes();
+
+      expect(generated()).toHaveLength(0);
+    });
+  });
 });

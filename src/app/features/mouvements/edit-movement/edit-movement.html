@@ -1,0 +1,160 @@
+@if (!record()) {
+  <p class="notice">Ce mouvement n'existe plus.</p>
+} @else if (monthClosed()) {
+  <p class="notice">
+    Ce mois est clôturé : plus aucune modification ni suppression n'est possible.
+  </p>
+  <dl class="summary">
+    <div><dt>Montant</dt><dd>{{ fmt(record()!.amount) }}</dd></div>
+    <div><dt>Date</dt><dd>{{ fmtDate(record()!.date) }}</dd></div>
+    <div><dt>Membre</dt><dd>{{ store.memberName(record()!.memberId) }}</dd></div>
+  </dl>
+} @else if (kind() === 'expense') {
+  @if (splitVersement()) {
+    <p class="notice">
+      Ce versement de {{ fmt(expense()!.amount) }} est réparti entre des provisions : il ne peut
+      être ni modifié ni supprimé tant que la répartition existe.
+    </p>
+    @if (confirmCancelSplit()) {
+      <p class="hint">
+        Les ajouts liés sur les provisions seront supprimés. Le versement lui-même reste ; vous
+        pourrez ensuite le modifier ou le supprimer.
+      </p>
+    }
+    <app-button variant="ghost" [fullWidth]="true" (click)="cancelSplit()">
+      {{ confirmCancelSplit() ? 'Confirmer : annuler la répartition' : 'Annuler la répartition' }}
+    </app-button>
+  } @else {
+    <form class="edit-form" (ngSubmit)="save()">
+      <div class="field">
+        <label for="edit-amount">Montant</label>
+        <div class="input-money">
+          <input id="edit-amount" type="number" inputmode="decimal" min="0" step="0.01" name="amount" [(ngModel)]="amount" required />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="edit-category">Catégorie</label>
+        @if (categoryLocked) {
+          <input id="edit-category" type="text" value="Remboursement Carte Crédit" disabled />
+          <span class="hint">Un paiement de carte se gère depuis la carte de crédit.</span>
+        } @else {
+          <select id="edit-category" name="category" [(ngModel)]="category">
+            @for (c of categoryOptions(); track c) {
+              <option [value]="c">{{ c }}</option>
+            }
+          </select>
+        }
+      </div>
+
+      @if (category === 'Versement') {
+        <div class="field">
+          <label for="edit-recipient">Destinataire</label>
+          <select id="edit-recipient" name="recipientId" [(ngModel)]="recipientId">
+            @for (member of recipientOptions(); track member.id) {
+              <option [value]="member.id">{{ member.name }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      <div class="field">
+        <label for="edit-date">Date</label>
+        <input id="edit-date" type="date" name="date" [(ngModel)]="date" required />
+      </div>
+
+      <div class="field">
+        <label for="edit-owner">Profil</label>
+        <select id="edit-owner" name="owner" [(ngModel)]="owner" (ngModelChange)="onOwnerChange()">
+          @for (member of store.memberOptions(); track member.id) {
+            <option [value]="member.id">{{ member.name }}</option>
+          }
+        </select>
+      </div>
+
+      <label class="check-label">
+        <input type="checkbox" name="cc" [(ngModel)]="cc" />
+        <span>Carte de crédit</span>
+      </label>
+
+      <app-button type="submit" [disabled]="saving() || !canSave" [fullWidth]="true">
+        {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+      </app-button>
+    </form>
+
+    <div class="danger-zone">
+      @if (confirmDelete()) {
+        <p class="hint">Cette dépense sera supprimée définitivement.</p>
+      }
+      <app-button variant="ghost" [fullWidth]="true" (click)="remove()">
+        {{ confirmDelete() ? 'Confirmer la suppression' : 'Supprimer cette dépense' }}
+      </app-button>
+    </div>
+  }
+} @else {
+  <form class="edit-form" (ngSubmit)="save()">
+    @if (generated()) {
+      <p class="hint">
+        Paie générée par un revenu récurrent : seul le montant peut être corrigé, par exemple si la
+        paie réelle diffère du modèle.
+      </p>
+    }
+
+    <div class="field">
+      <label for="edit-amount">Montant</label>
+      <div class="input-money">
+        <input id="edit-amount" type="number" inputmode="decimal" min="0" step="0.01" name="amount" [(ngModel)]="amount" required />
+      </div>
+    </div>
+
+    @if (!generated()) {
+      <div class="field">
+        <label for="edit-type">Type</label>
+        <select id="edit-type" name="type" [(ngModel)]="type">
+          @for (t of incomeTypeOptions(); track t) {
+            <option [value]="t">{{ typeLabels[t] || t }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="edit-date">Date</label>
+        <input id="edit-date" type="date" name="date" [(ngModel)]="date" required />
+      </div>
+
+      <div class="field">
+        <label for="edit-note">Note (optionnel)</label>
+        <input id="edit-note" type="text" name="note" [(ngModel)]="note" />
+      </div>
+    } @else {
+      <dl class="summary">
+        <div><dt>Date</dt><dd>{{ fmtDate(income()!.date) }}</dd></div>
+        <div><dt>Membre</dt><dd>{{ store.memberName(income()!.memberId) }}</dd></div>
+      </dl>
+    }
+
+    <app-button type="submit" [disabled]="saving() || !canSave" [fullWidth]="true">
+      {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+    </app-button>
+  </form>
+
+  <div class="danger-zone">
+    @if (templateActive()) {
+      <p class="hint">
+        Cette paie vient d'un revenu récurrent encore actif : la supprimer ne servirait à rien, elle
+        serait recréée au prochain chargement. Arrêter le revenu récurrent garde les paies déjà
+        reçues dans l'historique ; seules les prochaines cessent.
+      </p>
+      <app-button variant="ghost" [fullWidth]="true" (click)="stopRecurring()">
+        {{ confirmStop() ? "Confirmer : arrêter ce revenu récurrent" : 'Arrêter ce revenu récurrent' }}
+      </app-button>
+    } @else {
+      @if (confirmDelete()) {
+        <p class="hint">Ce revenu sera supprimé définitivement.</p>
+      }
+      <app-button variant="ghost" [fullWidth]="true" (click)="remove()">
+        {{ confirmDelete() ? 'Confirmer la suppression' : 'Supprimer ce revenu' }}
+      </app-button>
+    }
+  </div>
+}

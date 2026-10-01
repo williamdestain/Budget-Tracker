@@ -121,6 +121,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  // Le bouton de thème (app.html) est flottant, fixé à 16px du bord droit et
+  // large de 40px : il déborde de 30px sur la zone utile de cette barre
+  // (marge de 26px). Sans cette réserve, tout ce qu'on place au bout de la
+  // première ligne passe dessous — le bouton « Ajouter » était coupé.
+  padding-right: 40px;
+}
+
+.add-desktop {
+  @media (max-width: 768px) {
+    display: none;
+  }
 }
 
 .topbar-title {

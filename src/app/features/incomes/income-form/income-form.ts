@@ -1,4 +1,4 @@
-import { Component, effect, signal } from '@angular/core';
+import { Component, effect, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -10,14 +10,19 @@ import {
   RECURRING_INTERVAL_LABELS,
 } from '../../../core/utils/income.utils';
 import { defaultMemberId } from '../../../core/utils/members.utils';
+import { Button } from '../../../shared/ui/button/button';
 
 @Component({
   selector: 'app-income-form',
-  imports: [FormsModule],
+  imports: [FormsModule, Button],
   templateUrl: './income-form.html',
   styleUrl: './income-form.scss',
 })
+// Contenu de la fenêtre « Ajouter » (voir AddTransaction) : ni titre ni carte
+// propres, la fenêtre fournit le cadre. `saved` demande sa fermeture.
 export class IncomeForm {
+  readonly saved = output<void>();
+
   // Trié sur la clé (Salaire, Remboursement, ...), pas sur le libellé
   // affiché (qui a un emoji en préfixe — trier dessus donnerait un ordre
   // sans rapport avec l'alphabet).
@@ -98,11 +103,13 @@ export class IncomeForm {
           recurringStartMonth: this.store.current(),
           recurringSourceId: null,
         });
+        this.toast.show('Revenu ajouté.');
       }
       this.amount = null;
       this.note = '';
       this.recurring = false;
       this.secondDayOfMonth = null;
+      this.saved.emit();
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {

@@ -4,12 +4,16 @@
 
 Ce document a deux couches, clairement séparées :
 
-- **Sections 3 et 4** : l'état réel du code métier historique, avec la
-  compatibilité `Owner` conservée pendant la transition.
+- **Sections 3 et 4** : l'état réel du code métier. Depuis le 28 septembre
+  2026, `memberId` est le seul champ de propriétaire sur les entités ;
+  `Owner` n'existe plus que comme *type* (alias de `string`), et comme champ
+  legacy accepté seulement à l'import d'une ancienne sauvegarde.
 - **Sections 5, 6 et 7** : le modèle cible et l'état de sa mise en œuvre.
-  La migration Owner → Member et le support TypeScript transitoire sont
-  maintenant écrits; la migration SQL n'est pas encore exécutée sur
-  Supabase.
+  La migration Owner → Member est exécutée en production depuis le 13
+  septembre 2026 et le support TypeScript transitoire est retiré. Comptes,
+  relevés de solde et valeur nette sont construits depuis le 29 septembre
+  2026 ; le détail, entité par entité, est dans la section 8, et l'audit du
+  29 septembre dans la section 10.
 
 Toute divergence future entre ce document et le code doit être traitée
 comme un bug de l'un des deux — jamais un flou qu'on tolère.
@@ -69,10 +73,21 @@ interface Member {
 }
 ```
 
-`memberId` est le champ cible des entités métier. L'ancien champ `owner`
-reste présent dans les interfaces et les mappings pour les exports et pour
-fonctionner avant l'exécution de la migration 024. `'global'` n'est pas un
-profil : c'est une vue agrégée calculée sur tous les membres actifs.
+`memberId` est le seul champ de propriétaire des entités métier (`Expense`,
+`RecurringExpense`, `Income`, `RecurringIncome`, `Provision`,
+`CreditCardPayment`, `SavingsGoal`). Le champ `owner` n'existe plus sur elles ;
+il n'est accepté qu'à l'import d'une sauvegarde exportée avant la migration
+024 (type `LegacyOwnerField`, voir 9.5.2). `'global'` n'est pas un profil :
+c'est une vue agrégée calculée sur tous les membres actifs.
+
+**Aucun identifiant de membre n'est jamais écrit en dur.** Les membres créés
+depuis la migration ont un UUID ; seuls les deux membres historiques d'un
+foyer migré ont pu garder `'moi'` / `'madame'`. Un formulaire qui a besoin
+d'un propriétaire par défaut passe par `defaultMemberId()`
+(`core/utils/members.utils.ts`) : en vue d'un membre, ce membre ; en vue
+Global, le membre connecté, sinon le premier membre actif ; sans aucun membre
+actif, rien n'est écrit. Corrigé le 29 septembre 2026 après qu'un test eut
+montré qu'un foyer à UUID recevait `memberId = 'moi'` en vue Global.
 
 ### 3.2 Category
 
@@ -100,7 +115,8 @@ utilisées comme valeurs de `Expense.category` :
 | amount | number | Toujours positif |
 | category | string | Nom d'une `Category` active, ou une des deux catégories spéciales ci-dessus |
 | date | "YYYY-MM-DD" | |
-| owner | Owner | |
+| memberId | string | Membre qui a fait la dépense |
+| versementToMemberId | string \| null | Destinataire ; renseigné seulement pour la catégorie `Versement` (voir section 4) |
 | cc | boolean | Vrai si chargée à la carte de crédit |
 | recurringSourceId | string \| null | Renseigné si générée depuis un `RecurringExpense` confirmé |
 
@@ -112,7 +128,7 @@ utilisées comme valeurs de `Expense.category` :
 | amount | number | |
 | type | string | Libellé libre (ex. "Salaire") |
 | date | "YYYY-MM-DD" | |
-| owner | Owner | |
+| memberId | string | Membre qui reçoit le revenu |
 | note | string | |
 | recurring, recurringInterval, recurringStartMonth | — | **Conservés pour l'affichage uniquement** (badge de fréquence) ; le calcul ne s'appuie plus dessus depuis l'introduction de `RecurringIncome` |
 | recurringSourceId | string \| null | Renseigné si générée depuis un `RecurringIncome` confirmé |
@@ -121,7 +137,7 @@ utilisées comme valeurs de `Expense.category` :
 
 | Champ | Type | Règle |
 |---|---|---|
-| id, name, amount, category, owner | — | |
+| id, name, amount, category, memberId | — | |
 | interval | `'monthly' \| 'weekly' \| 'biweekly' \| 'semimonthly'` | |
 | dayOfMonth | number (1-31) | Utilisé si `monthly`/`semimonthly` |
 | secondDayOfMonth | number \| null | Utilisé seulement si `semimonthly` |
@@ -139,7 +155,7 @@ l'utilisateur change la date avant de confirmer.
 
 ### 3.6 RecurringIncome (gabarit)
 
-M�mes champs que `RecurringExpense` (sans `cc`), plus `startDate` toujours
+Mêmes champs que `RecurringExpense` (sans `cc`), plus `startDate` toujours
 requis (sert aussi de borne de départ pour tous les intervalles, pas
 seulement `weekly`/`biweekly`).
 
@@ -153,7 +169,7 @@ paies déjà générées (seules les prochaines s'arrêtent).
 
 | Champ (Provision) | Type | Règle |
 |---|---|---|
-| id, name, category, owner | — | |
+| id, name, category, memberId | — | |
 | amount | number | Montant cible pour un cycle complet |
 | everyN | number | Nombre de mois ou de jours entre deux échéances |
 | intervalUnit | `'months' \| 'days'` | |
@@ -186,7 +202,7 @@ annuler toute la répartition en un clic).
 
 | Champ | Type |
 |---|---|
-| id, owner, amount, date, note | — |
+| id, memberId, amount, date, note | — |
 
 **Solde dû** (`creditCardBalance()`) = (dépenses réelles marquées `cc`,
 hors `Versement` et `Remboursement Carte Crédit`) − (paiements
@@ -197,7 +213,7 @@ mois. Modèle **totalement indépendant** de `Provision`/`ProvisionAdjustment`.
 
 | Champ (SavingsGoal) | Type |
 |---|---|
-| id, name, targetAmount, owner | — |
+| id, name, targetAmount, memberId | — |
 | targetDate | string \| null — indicative, jamais contraignante |
 | contributions | SavingsContribution[] (id, amount, date, note) |
 
@@ -226,7 +242,7 @@ une provision qui existe encore en août.
 
 | Métrique | Définition | Source |
 |---|---|---|
-| Versement reçu | Somme des dépenses de catégorie `Versement` de **l'autre profil**, pour le mois donné | `versementsRecus()` — voir section 6 pour la généralisation à N membres |
+| Versement reçu | Somme des dépenses de catégorie `Versement` dont `versementToMemberId` est le membre donné, pour le mois donné, **peu importe l'émetteur**. Pour une ligne ancienne sans destinataire, repli sur l'ancienne règle « l'autre membre » (`recipientForLegacySender`). 0 en vue Global. | `versementsRecus()` |
 | Revenus de base | Revenus du mois (règles de récurrence incluses) + versements reçus (0 en vue Globale : un versement s'annule au niveau du foyer) | `revenueBase()` |
 | Budget du mois | Revenus de base + report du mois clôturé précédent | `budgetSummary()` |
 | Solde net | Budget − dépenses comptées | `budgetSummary()` |
@@ -242,7 +258,8 @@ une provision qui existe encore en août.
 
 ## 5. Nouvelles entités — Comptes & Investissements
 
-Aucune de ces entités n'existe dans le code aujourd'hui. Conçues pour
+Ces entités ont d'abord été conçues sur le papier ; l'état réel de leur mise
+en œuvre est dans la section 8 (mis à jour le 29 septembre 2026). Conçues pour
 rester cohérentes avec les principes déjà en place (pas de double source
 de vérité, pas de calcul automatique caché) et avec la décision déjà prise
 de rester en saisie manuelle tant qu'il n'y a pas de synchronisation
@@ -527,6 +544,11 @@ La fenêtre de 3 mois est une proposition raisonnable, pas une règle
 gravée — à ajuster une fois en usage réel si elle sonne trop ou pas assez
 souvent.
 
+**Statut au 29 septembre 2026 : non construit, et absent de
+`plan-industrialisation.md`.** Aucun code ne calcule ce rappel (recherche
+faite dans tout `src/`). C'est une décision prise ici mais rattachée à aucune
+étape du plan : à inscrire dans une phase, ou à abandonner explicitement.
+
 ---
 
 ## 8. Récapitulatif : vérifié dans le code vs conçu ici
@@ -537,11 +559,16 @@ souvent.
 | Provision, ProvisionAdjustment, CreditCardPayment | ✅ Existe, vérifié dans le code |
 | SavingsGoal, SavingsContribution, Clôture de mois | ✅ Existe, vérifié dans le code |
 | Tous les calculs de la section 4 | ✅ Existe, vérifié dans le code |
-| Account, AccountBalanceSnapshot, InvestmentAllocation | ✅ Schéma Supabase construit (`migration-023-accounts.sql`) ; ⬜ écran `/comptes` à l'état de brouillon non commité, en pause (voir `plan-industrialisation.md`, vague B) |
-| Valeur nette, Performance de portefeuille | 🆕 Conçu ici, rien construit |
-| Member généralisé, Role, Invitation | ✅ Schéma Supabase construit, **exécuté et validé en production** (`migration-024-owner-to-member.sql`, section 6.4) ; ✅ support TypeScript |
-| Migration Owner → Member (section 6.2/6.3) | ✅ Écrite, testée localement, **exécutée et validée en production le 13 septembre 2026** (section 6.4) ; ⬜ retrait du repli legacy `owner`/`useMemberSchema()` après une courte période de rodage |
-| Rappel de mois non clôturé | 🆕 Conçu ici, rien construit |
+| Account, AccountBalanceSnapshot | ✅ Schéma Supabase (`migration-023-accounts.sql`) ; ✅ modèles, mappers et store ; ✅ écran `/comptes` (livré le 29 septembre 2026) |
+| InvestmentAllocation | ✅ Table Supabase (`migration-023`, RLS) ; ⬜ **aucun modèle, mapper ni méthode de store côté TypeScript** — à écrire avec `/investissements` |
+| Valeur nette | ✅ `netWorthBreakdown()` (`core/utils/accounts.utils.ts`), utilisée par `/comptes` et par le bloc « Patrimoine » du tableau de bord |
+| Performance de portefeuille (5.5) | ⬜ Conçu ici, rien construit — viendra avec `/investissements` |
+| Évolution récente et rythme d'un objectif d'épargne | ✅ **Calculés, jamais stockés** (`contributedInMonth`, `goalMonthlyRhythm`, `savings.utils.ts`) ; écran `/epargne` livré le 29 septembre 2026 |
+| Member généralisé, Role | ✅ Schéma Supabase **exécuté et validé en production** (`migration-024-owner-to-member.sql`, section 6.4) ; ✅ support TypeScript |
+| Invitation | ✅ Table créée, **volontairement inutilisée** : aucun mécanisme d'envoi d'email (voir 9.5.4) |
+| Migration Owner → Member (section 6.2/6.3) | ✅ **Exécutée et validée en production le 13 septembre 2026** (section 6.4) ; ✅ repli legacy `owner`/`useMemberSchema()` retiré le 28 septembre 2026 |
+| Rappel de mois non clôturé | ⬜ Conçu ici, rien construit, **et absent du plan** (voir section 7) |
+| Export de sauvegarde | ✅ Inclut les comptes et les relevés de solde depuis le 29 septembre 2026 ; ⬜ `importData()` ne les relit pas encore (voir section 10.4) |
 
 ---
 
@@ -709,8 +736,92 @@ souvent.
       construites davantage : la table permet déjà l'écriture directe, mais
       l'appli n'a aucun mécanisme d'envoi d'email — inutile de bâtir de la
       plomberie qui ne sert à rien tant que ce besoin ne se confirme pas.
-   5. Reprendre pour de vrai le brouillon `/comptes` (mis en pause, voir
-      `plan-industrialisation.md`) une fois les points ci-dessus faits.
+   5. ✅ **`/comptes` repris et livré le 29 septembre 2026** : le brouillon
+      en pause a été réécrit (il s'écartait de la section 5 sur six points,
+      voir section 10.2). Écran `/epargne` livré le même jour.
 6. Une fois tout ce qui précède fait, ce document devient la référence
    unique que `plan-industrialisation.md` (vague B) doit suivre pour le
    schéma Supabase et les nouveaux écrans.
+
+---
+
+## 10. Audit du 29 septembre 2026 — état réel contre ce document
+
+Méthode : lecture complète de `MODELE.md` et de `plan-industrialisation.md`,
+puis vérification de chaque affirmation contre le code (recherches dans
+`src/` et `supabase/`, pas de mémoire). Vérifié par exécution : `tsc
+--noEmit`, `ng build` de production, et la suite de tests (745 tests au moment
+de l'audit, 764 après les corrections ci-dessous), aussi sous les fuseaux
+`Australia/Sydney` et `Pacific/Kiritimati` (UTC+14).
+
+### 10.1 Conforme
+
+Les entités des sections 3 et 6, le calcul du versement reçu (généralisé à
+N membres), la valeur nette (5.4), le schéma Supabase des comptes, et la
+suppression du repli `owner` / `useMemberSchema()` correspondent au code.
+
+### 10.2 Écarts entre ce document et le code — corrigés le 29 septembre
+
+- §0 disait la migration « pas encore exécutée » (elle l'est depuis le 13
+  septembre) et la compatibilité `Owner` « conservée » (retirée le 28).
+- §3.1 et les tables 3.3 à 3.9 listaient encore un champ `owner` ; `Expense`
+  n'avait pas `versementToMemberId`.
+- §4 décrivait l'ancienne règle du versement reçu (« l'autre profil »).
+- §5 disait qu'aucune de ces entités n'existait dans le code.
+- §8 marquait `/comptes` « brouillon » et la valeur nette « rien construit ».
+- §9.5.5 demandait encore de « reprendre » `/comptes`.
+- §5.4 se contredisait sur le signe de la dette de carte (corrigé plus tôt
+  le même jour).
+- §3.6 contenait un caractère corrompu (« M?mes champs »).
+
+Le brouillon `/comptes` d'origine s'écartait de la section 5 sur six points :
+solde borné par un champ de formulaire au lieu d'aujourd'hui, dette de carte
+additionnée au lieu d'être soustraite, carte lue via des relevés au lieu de
+`creditCardBalance()`, `memberId` toujours `null`, tokens CSS inexistants,
+aucun moyen de saisir un nouveau solde après la création.
+
+### 10.3 Défaut de code trouvé et corrigé : identifiants de membre en dur
+
+Plusieurs formulaires initialisaient leur propriétaire à `'moi'`. Prouvé par
+un test : dans un foyer à identifiants UUID, en vue Global, le formulaire de
+dépense envoyait `memberId = 'moi'`, un membre inexistant. Les tests
+existants ne pouvaient pas le voir : leurs données utilisaient elles-mêmes
+`'moi'` et `'madame'`, et deux tests figeaient même ce comportement.
+
+Corrigé dans `ExpenseForm`, `IncomeForm`, `RecurringExpensesManage`,
+`ProvisionForm`, `SavingsGoalForm` et la page `/epargne` (règle unique :
+`defaultMemberId()`, voir 3.1), dans le libellé du répartiteur de versement
+(« Madame » affiché pour tout membre autre que `'moi'`) et dans le repli mort
+du sélecteur de membres. 19 tests ajoutés, avec des UUID ; en remettant
+l'ancien code, 4 d'entre eux échouent.
+
+### 10.4 Points ouverts côté code
+
+- **`importData()` ne relit pas les comptes**, et `reset_everything()` ne les
+  supprime pas. Ajouter les comptes à l'import demande une migration SQL sur
+  `import_household_data()` **et** `reset_everything()` ; sinon un import les
+  dupliquerait. À tester sur un Postgres jetable comme la 026.
+- `InvestmentAllocation` : aucun code TypeScript (voir section 8).
+- `activeOwner` démarre à `'moi'` dans le store (initialisation et
+  `clearAllState()`). Sans effet tant que `loadAll()` charge les membres ;
+  incorrect seulement si ce chargement échoue.
+- Reliquats CSS `.owner-badge.moi` / `.owner-badge.madame` (déjà signalés en
+  9.5.2), et méthodes `setOwner` / `prevMonth` / `nextMonth` de `Dashboard`
+  apparemment inutilisées par son template.
+- **Supprimer une paie générée ne tient pas.** `syncRecurringIncomes()` recompte
+  les paies de chaque mois à chaque chargement et recrée celles qui manquent :
+  tant que le modèle récurrent est actif, une paie supprimée réapparaît.
+  Prouvé par un test d'intégration du store (le commentaire de `removeIncome()`
+  affirmait l'inverse, corrigé le 30 septembre 2026). La fenêtre « Modifier » de
+  Mouvements propose donc d'arrêter le modèle plutôt que de supprimer la paie ;
+  l'ancienne `IncomeList` du tableau de bord garde le comportement trompeur
+  jusqu'à son retrait.
+- La carte de crédit est visible à trois endroits : sur le tableau de bord,
+  sur `/carte-de-credit`, et en ligne dans `/comptes`.
+
+### 10.5 Non vérifié par cet audit
+
+L'état réel du projet Supabase (les migrations 023 à 026 sont déclarées
+exécutées dans ce document, je n'ai pu lire que les fichiers), le rendu dans
+un navigateur ou sur mobile, l'apparence du thème sombre, et le contenu réel
+de `.github/workflows/` dans le dépôt (le zip ne contient que `deploy.yml`).

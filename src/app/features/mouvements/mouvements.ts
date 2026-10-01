@@ -5,6 +5,8 @@ import { fmtDate, monthLabel, prevYM } from '../../core/utils/date.utils';
 import { provisionAdjustmentsForMonth } from '../../core/utils/provision.utils';
 import { Card } from '../../shared/ui/card/card';
 import { Chip } from '../../shared/ui/chip/chip';
+import { Modal } from '../../shared/ui/modal/modal';
+import { EditMovement, type MovementKind } from './edit-movement/edit-movement';
 
 type MovementFilter = 'all' | 'expense' | 'income';
 
@@ -17,17 +19,26 @@ interface MovementEntry {
   memberId: string;
   details: string;
   color: string;
+  // Seules les vraies dépenses et les vrais revenus se modifient ici. Les
+  // autres lignes sont CALCULÉES (contribution à une provision, report du mois
+  // précédent, « versement reçu » côté destinataire) : pas d'enregistrement
+  // propre à éditer — elles reflètent une autre ligne, ou un calcul.
+  source: MovementKind | null;
+  sourceId: string | null;
 }
 
 @Component({
   selector: 'app-mouvements',
-  imports: [Card, Chip],
+  imports: [Card, Chip, Modal, EditMovement],
   templateUrl: './mouvements.html',
   styleUrl: './mouvements.scss',
 })
 export class Mouvements {
   readonly filter = signal<MovementFilter>('all');
   readonly search = signal('');
+
+  // Mouvement en cours de modification (fenêtre « Modifier »).
+  readonly editing = signal<{ kind: MovementKind; id: string } | null>(null);
 
   constructor(public store: BudgetStore) {}
 
@@ -78,6 +89,8 @@ export class Mouvements {
               memberId: expense.memberId,
               details: `Versement reçu de ${this.store.memberName(expense.memberId)}`,
               color: this.store.colorFor('Versement'),
+              source: null,
+              sourceId: null,
             }));
 
     // Contributions du mois aux provisions (ex. "200 $ mis de côté dans
@@ -99,6 +112,8 @@ export class Mouvements {
           memberId: provision.memberId,
           details: `Contribution → ${provision.name}`,
           color: this.store.colorFor(provision.category),
+          source: null,
+          sourceId: null,
         })),
     );
 
@@ -113,6 +128,8 @@ export class Mouvements {
         memberId: expense.memberId,
         details: `Dépense · ${this.store.memberName(expense.memberId)}`,
         color: this.store.colorFor(expense.category),
+        source: 'expense' as const,
+        sourceId: expense.id,
       })),
       ...(rollover !== 0
         ? [
@@ -125,6 +142,8 @@ export class Mouvements {
               memberId: activeOwner,
               details: `Report de ${monthLabel(prevYM(currentYm))}`,
               color: '#f59e0b',
+              source: null,
+              sourceId: null,
             },
           ]
         : []),
@@ -138,6 +157,8 @@ export class Mouvements {
         memberId: income.memberId,
         details: `Revenu · ${this.store.memberName(income.memberId)}`,
         color: this.store.colorFor(income.type),
+        source: 'income' as const,
+        sourceId: income.id,
       })),
     ];
 
@@ -172,5 +193,34 @@ export class Mouvements {
 
   setFilter(filter: MovementFilter): void {
     this.filter.set(filter);
+  }
+
+  isEditable(row: MovementEntry): boolean {
+    return row.source !== null && row.sourceId !== null;
+  }
+
+  // Ouvre la fenêtre « Modifier » — sans effet sur une ligne calculée.
+  openEdit(row: MovementEntry): void {
+    if (row.source === null || row.sourceId === null) return;
+    this.editing.set({ kind: row.source, id: row.sourceId });
+  }
+
+  closeEdit(): void {
+    this.editing.set(null);
+  }
+
+  // Entrée / Espace ouvrent la ligne comme un clic (lignes cliquables =
+  // role="button", donc clavier obligatoire). Espace ne doit pas faire défiler.
+  onRowKey(event: Event, row: MovementEntry): void {
+    event.preventDefault();
+    this.openEdit(row);
+  }
+
+  editTitle(): string {
+    return this.editing()?.kind === 'income' ? 'Modifier le revenu' : 'Modifier la dépense';
+  }
+
+  rowLabel(row: MovementEntry): string {
+    return `Modifier : ${row.category}, ${this.fmt(row.amount)}, ${this.fmtDate(row.date)}`;
   }
 }

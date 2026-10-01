@@ -406,4 +406,22 @@ describe('Accounts', () => {
       expect(toastShow).toHaveBeenCalledWith('Introuvable');
     });
   });
+
+  describe('envoi réel du formulaire (clic sur le bouton)', () => {
+    it("un clic sur « Enregistrer » dans la fenêtre d'ajout crée le compte", async () => {
+      const store = makeFakeStore();
+      const { fixture, cmp } = createFixture(store);
+      cmp.openAdd();
+      fixture.detectChanges();
+      await fixture.whenStable(); // ngModel s'enregistre de façon asynchrone
+      const el = fixture.nativeElement as HTMLElement;
+      const name = el.querySelector('#acc-name') as HTMLInputElement;
+      name.value = 'Chèques';
+      name.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      (el.querySelector('form button[type="submit"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      expect(store.addAccount).toHaveBeenCalledWith(expect.objectContaining({ name: 'Chèques' }));
+    });
+  });
 });

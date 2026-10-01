@@ -22,4 +22,12 @@ describe('routes', () => {
     expect(savingsRoute?.loadComponent).toBeDefined();
     await expect(savingsRoute?.loadComponent?.()).resolves.toBe(SavingsPage);
   });
+
+  it("ne propose le bouton « Ajouter » de la barre du haut que sur le tableau de bord et Mouvements", () => {
+    const shellRoute = routes.find((route) => route.path === '');
+    const withAdd = (shellRoute?.children ?? [])
+      .filter((route) => route.data?.['showAdd'] === true)
+      .map((route) => route.path);
+    expect(withAdd.sort()).toEqual(['mouvements', 'tableau-de-bord']);
+  });
 });

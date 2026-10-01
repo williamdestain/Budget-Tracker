@@ -1,6 +1,4 @@
-<form class="income-form card" (ngSubmit)="submit()">
-  <h3>Ajouter un revenu</h3>
-
+<form class="income-form" (ngSubmit)="submit()">
   <div class="row">
     <div class="field">
       <label for="income-amount">Montant</label>
@@ -87,7 +85,7 @@
       }
 
       <p class="hint">
-        💡 « Date » ci-dessus sert d'ancrage : premier jour de paie {{
+        « Date » ci-dessus sert d'ancrage : premier jour de paie {{
           recurringInterval === 'semimonthly' ? '(1er des deux)' : ''
         }} et point de départ pour générer les paies suivantes automatiquement.
         Chaque paie sera une vraie ligne modifiable — supprimer ce revenu
@@ -96,7 +94,7 @@
     }
   </div>
 
-  <button type="submit" class="btn-primary" [disabled]="saving()">
+  <app-button type="submit" [disabled]="saving()" [fullWidth]="true">
     {{ saving() ? 'Ajout…' : 'Ajouter' }}
-  </button>
+  </app-button>
 </form>

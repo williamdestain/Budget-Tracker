@@ -195,4 +195,47 @@ describe('IncomeForm', () => {
     expect(toastShow).toHaveBeenCalledWith('Mois clôturé');
     expect(fixture.componentInstance.saving()).toBe(false);
   });
+
+  describe('fenêtre « Ajouter » : fermeture et confirmation', () => {
+    it('revenu ponctuel : émet saved et confirme', async () => {
+      const { fixture, toastShow } = createFixture(makeFakeStore());
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 1200;
+      await fixture.componentInstance.submit();
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(toastShow).toHaveBeenCalledWith('Revenu ajouté.');
+    });
+
+    it('revenu récurrent : émet saved, avec son propre message (pas de double confirmation)', async () => {
+      const { fixture, toastShow } = createFixture(makeFakeStore());
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 1200;
+      fixture.componentInstance.recurring = true;
+      await fixture.componentInstance.submit();
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(toastShow).toHaveBeenCalledTimes(1);
+      expect(toastShow).not.toHaveBeenCalledWith('Revenu ajouté.');
+    });
+
+    it("n'émet pas saved si l'enregistrement échoue, et garde la saisie", async () => {
+      const store = makeFakeStore({ addIncome: vi.fn().mockRejectedValue(new Error('Mois clôturé')) });
+      const { fixture, toastShow } = createFixture(store);
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 1200;
+      await fixture.componentInstance.submit();
+      expect(saved).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith('Mois clôturé');
+      expect(fixture.componentInstance.amount).toBe(1200);
+    });
+
+    it('ne se présente plus comme une carte avec son propre titre', () => {
+      const { fixture } = createFixture(makeFakeStore());
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('form.card')).toBeNull();
+      expect(el.querySelector('h3')).toBeNull();
+    });
+  });
 });

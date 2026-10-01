@@ -201,4 +201,44 @@ describe('ExpenseForm', () => {
 
     expect(toastShow).toHaveBeenCalledWith('Une erreur est survenue.');
   });
+
+  describe('fenêtre « Ajouter » : fermeture et confirmation', () => {
+    it('émet saved et confirme après une dépense enregistrée', async () => {
+      const { fixture, toastShow } = createFixture(makeFakeStore());
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 30;
+      await fixture.componentInstance.submit();
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(toastShow).toHaveBeenCalledWith('Dépense ajoutée.');
+    });
+
+    it("n'émet pas saved si l'enregistrement échoue : la fenêtre reste ouverte, la saisie est gardée", async () => {
+      const store = makeFakeStore({ addExpense: vi.fn().mockRejectedValue(new Error('Mois clôturé')) });
+      const { fixture, toastShow } = createFixture(store);
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 30;
+      await fixture.componentInstance.submit();
+      expect(saved).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith('Mois clôturé');
+      expect(fixture.componentInstance.amount).toBe(30);
+    });
+
+    it("n'émet pas saved pour un montant invalide", async () => {
+      const { fixture } = createFixture(makeFakeStore());
+      const saved = vi.fn();
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.amount = 0;
+      await fixture.componentInstance.submit();
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('ne se présente plus comme une carte avec son propre titre (le cadre vient de la fenêtre)', () => {
+      const { fixture } = createFixture(makeFakeStore());
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('form.card')).toBeNull();
+      expect(el.querySelector('h3')).toBeNull();
+    });
+  });
 });

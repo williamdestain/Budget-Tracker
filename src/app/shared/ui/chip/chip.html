@@ -2,6 +2,7 @@
   type="button"
   class="app-chip"
   [class.app-chip--active]="active()"
+  [attr.aria-pressed]="active()"
   [disabled]="disabled()"
 >
   <ng-content></ng-content>

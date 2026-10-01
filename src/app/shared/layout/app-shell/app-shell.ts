@@ -12,6 +12,8 @@ import { filter, map } from 'rxjs';
 import { AuthService } from '../../../core/services/auth.service';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { monthLabel, nextYM, prevYM } from '../../../core/utils/date.utils';
+import { AddTransaction } from '../../../features/mouvements/add-transaction/add-transaction';
+import { Button } from '../../ui/button/button';
 import { Icon } from '../../ui/icon/icon';
 import type { IconName } from '../../ui/icon/icon-names';
 import { MemberSwitch, type SwitchMember } from '../../ui/member-switch/member-switch';
@@ -56,7 +58,7 @@ const MORE_NAV: NavItem[] = [
 // dès que /tableau-de-bord est migré (voir plan-industrialisation.md).
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, MemberSwitch, Modal],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AddTransaction, Button, Icon, MemberSwitch, Modal],
   templateUrl: './app-shell.html',
   styleUrl: './app-shell.scss',
 })
@@ -69,6 +71,11 @@ export class AppShell {
   readonly mainNav = MAIN_NAV;
   readonly moreNav = MORE_NAV;
   readonly showMore = signal(false);
+
+  // Fenêtre « Ajouter » (dépense ou revenu), ouverte depuis n'importe quelle
+  // page : bouton « + » de la barre du bas (mobile) et bouton « Ajouter » de
+  // la barre du haut (bureau).
+  readonly addOpen = signal(false);
 
   // Titre affiché dans l'en-tête, tiré de `data.navTitle` de la route
   // active la plus profonde (voir app.routes.ts). Recalculé à chaque
@@ -90,10 +97,27 @@ export class AppShell {
     { initialValue: '' },
   );
 
-  private leafTitle(): string {
+  // Bouton « Ajouter » de la barre du haut (bureau) : seulement sur les routes
+  // qui le demandent (`data.showAdd`, voir app.routes.ts) — Mouvements et le
+  // tableau de bord, comme dans le prototype où seul Mouvements l'a. Partout
+  // ailleurs il n'apporte rien et encombre l'en-tête. Mobile : le « + » de la
+  // barre du bas reste disponible sur toutes les pages.
+  readonly showAdd = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map(() => this.leafData('showAdd') === true),
+    ),
+    { initialValue: false },
+  );
+
+  private leafData(key: string): unknown {
     let r: ActivatedRoute | null = this.activatedRoute;
     while (r?.firstChild) r = r.firstChild;
-    return (r?.snapshot?.data?.['navTitle'] as string | undefined) ?? '';
+    return r?.snapshot?.data?.[key];
+  }
+
+  private leafTitle(): string {
+    return (this.leafData('navTitle') as string | undefined) ?? '';
   }
 
   // Membres réels du foyer, chargés par BudgetStore, plus la vue agrégée.
@@ -114,6 +138,10 @@ export class AppShell {
 
   nextMonth(): void {
     this.store.current.set(nextYM(this.store.current()));
+  }
+
+  openAdd(): void {
+    this.addOpen.set(true);
   }
 
   selectMember(id: string): void {

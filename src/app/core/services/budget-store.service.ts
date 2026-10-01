@@ -2607,10 +2607,14 @@ export class BudgetStore {
     this.incomes.update((list) => list.map((i) => (i.id === id ? updated : i)));
   }
 
-  // Supprime UNE occurrence de revenu (ponctuelle ou générée). Si elle
-  // vient d'un modèle récurrent, seule cette paie disparaît — le modèle
-  // continue de générer les suivantes (pour l'arrêter, voir
-  // removeRecurringIncome ci-dessous).
+  // Supprime UNE occurrence de revenu. ATTENTION pour une paie générée par un
+  // modèle récurrent ENCORE ACTIF : la suppression ne tient pas.
+  // syncRecurringIncomes() recompte les paies de chaque mois à chaque
+  // chargement et recrée celles qui manquent — la paie supprimée réapparaît
+  // (prouvé par le test « supprimer une paie générée par un modèle ACTIF »).
+  // Pour s'en défaire pour de bon, arrêter d'abord le modèle
+  // (removeRecurringIncome ci-dessous) ; la fenêtre « Modifier » de Mouvements
+  // propose exactement ce chemin au lieu d'une suppression sans effet.
   async removeIncome(id: string): Promise<void> {
     const existing = this.incomes().find((i) => i.id === id);
     if (existing) this.assertMonthOpen(existing.date.slice(0, 7));

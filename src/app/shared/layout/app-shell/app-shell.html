@@ -34,6 +34,11 @@
     <header class="topbar">
       <div class="topbar-row1">
         <h2 class="topbar-title">{{ pageTitle() }}</h2>
+        @if (showAdd()) {
+          <app-button class="add-desktop" (click)="openAdd()">
+            <app-icon name="plus" [size]="14" /> Ajouter
+          </app-button>
+        }
       </div>
       <div class="topbar-row2">
         <div class="month-nav">
@@ -67,13 +72,10 @@
       <app-icon name="transactions" [size]="19" />
       <span>Mouvements</span>
     </a>
-    <!-- Navigue vers Mouvements pour l'instant plutôt que d'ouvrir une
-         modale d'ajout directement : le vrai formulaire est un composant
-         de la Phase 2 (Mouvements), pas de la coquille de navigation. -->
-    <a class="tab-item tab-item--fab" routerLink="/mouvements">
+    <button type="button" class="tab-item tab-item--fab" (click)="openAdd()">
       <span class="tab-fab-circle"><app-icon name="plus" [size]="20" /></span>
       <span>Ajouter</span>
-    </a>
+    </button>
     <a class="tab-item" routerLink="/budget" routerLinkActive="tab-item--active">
       <app-icon name="envelope" [size]="19" />
       <span>Budget</span>
@@ -83,6 +85,12 @@
       <span>Plus</span>
     </button>
   </nav>
+
+  @if (addOpen()) {
+    <app-modal title="Ajouter" (closed)="addOpen.set(false)">
+      <app-add-transaction (done)="addOpen.set(false)" />
+    </app-modal>
+  }
 
   @if (showMore()) {
     <app-modal title="Plus" (closed)="showMore.set(false)">

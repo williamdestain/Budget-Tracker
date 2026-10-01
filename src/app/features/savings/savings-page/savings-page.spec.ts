@@ -346,4 +346,28 @@ describe('SavingsPage', () => {
       expect(cmp.selectedId()).toBe('g1');
     });
   });
+
+  describe('envoi réel du formulaire (clic sur le bouton)', () => {
+    it("un clic sur « Créer l'objectif » enregistre l'objectif", async () => {
+      const store = makeFakeStore();
+      const { fixture, cmp } = createFixture(store);
+      cmp.openAdd();
+      fixture.detectChanges();
+      await fixture.whenStable(); // ngModel s'enregistre de façon asynchrone
+      const el = fixture.nativeElement as HTMLElement;
+      const fill = (selector: string, value: string) => {
+        const input = el.querySelector(selector) as HTMLInputElement;
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      };
+      fill('#goal-name', 'Voyage');
+      fill('#goal-amount', '1500');
+      fixture.detectChanges();
+      (el.querySelector('form button[type="submit"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      expect(store.addSavingsGoal).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Voyage', targetAmount: 1500, memberId: 'm1' }),
+      );
+    });
+  });
 });

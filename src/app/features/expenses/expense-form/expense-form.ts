@@ -1,18 +1,24 @@
-import { Component, computed, effect, signal } from '@angular/core';
+import { Component, computed, effect, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BudgetStore } from '../../../core/services/budget-store.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { Owner } from '../../../core/models/budget.models';
 import { isoOfDate } from '../../../core/utils/date.utils';
 import { defaultMemberId } from '../../../core/utils/members.utils';
+import { Button } from '../../../shared/ui/button/button';
+import { Icon } from '../../../shared/ui/icon/icon';
 
 @Component({
   selector: 'app-expense-form',
-  imports: [FormsModule],
+  imports: [FormsModule, Button, Icon],
   templateUrl: './expense-form.html',
   styleUrl: './expense-form.scss',
 })
+// Contenu de la fenêtre « Ajouter » (voir AddTransaction) : ni titre ni carte
+// propres, la fenêtre fournit le cadre. `saved` demande sa fermeture.
 export class ExpenseForm {
+  readonly saved = output<void>();
+
   // "Remboursement Carte Crédit" est retiré définitivement du choix
   // manuel — remplacé par le nouveau modèle de solde dû (voir
   // credit-card.ts / creditCardBalance() dans le store) : un paiement de
@@ -78,6 +84,8 @@ export class ExpenseForm {
       this.amount = null;
       this.cc = false;
       this.versementToMemberId = null;
+      this.toast.show('Dépense ajoutée.');
+      this.saved.emit();
     } catch (err) {
       this.toast.show(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {

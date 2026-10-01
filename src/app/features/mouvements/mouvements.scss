@@ -108,6 +108,19 @@
   padding: 0.9rem 1rem;
 }
 
+.movement-row--editable {
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 .movement-dot {
   width: 12px;
   height: 12px;
