@@ -1,0 +1,29 @@
+@if (store.visibleRecurringIncomes().length === 0) {
+  <p class="empty">
+    Aucun revenu récurrent. Pour en créer un : « Ajouter », puis Revenu, et cochez le revenu récurrent.
+  </p>
+} @else {
+  <ul class="recurring">
+    @for (income of store.visibleRecurringIncomes(); track income.id) {
+      <li class="recurring-row">
+        <span class="recurring-body">
+          <span class="recurring-name">
+            {{ typeLabel(income.type) }} · {{ fmt(income.amount) }}
+          </span>
+          <span class="recurring-meta">
+            {{ intervalLabel(income.interval) }} · {{ store.memberName(income.memberId) }}
+            @if (!income.active) { · Inactif }
+          </span>
+          @if (confirmId() === income.id) {
+            <span class="recurring-hint">
+              Les paies déjà reçues restent dans l'historique ; seules les prochaines cessent.
+            </span>
+          }
+        </span>
+        <app-button variant="ghost" (click)="stop(income)">
+          {{ confirmId() === income.id ? 'Confirmer' : 'Arrêter' }}
+        </app-button>
+      </li>
+    }
+  </ul>
+}

@@ -2953,4 +2953,140 @@ describe('BudgetStore (intégration avec faux Supabase)', () => {
       expect(generated()).toHaveLength(0);
     });
   });
+
+  // Gestion des membres (écran Paramètres) — migration-025 : renommer/recolorer
+  // par écriture directe, désactiver par RPC (jamais de foyer sans membre actif).
+  describe('gestion des membres', () => {
+    const memberRow = (id: string) => fakeClient.tables['members'].find((m) => m['id'] === id)!;
+
+    beforeEach(async () => {
+      await store.loadAll();
+    });
+
+    describe('updateMember()', () => {
+      it('renomme et recolore : base ET signal à jour, couleur normalisée en minuscules', async () => {
+        await store.updateMember('madame', { displayName: '  Sam  ', color: '#A15385' });
+        expect(memberRow('madame')).toMatchObject({ display_name: 'Sam', color: '#a15385' });
+        expect(store.memberName('madame')).toBe('Sam');
+        expect(store.memberColor('madame')).toBe('#a15385');
+      });
+
+      it('ne change que le champ demandé', async () => {
+        await store.updateMember('madame', { color: '#112233' });
+        expect(memberRow('madame')).toMatchObject({ display_name: 'Madame', color: '#112233' });
+      });
+
+      it('refuse un prénom vide', async () => {
+        await expect(store.updateMember('madame', { displayName: '   ' })).rejects.toThrow('vide');
+        expect(memberRow('madame')['display_name']).toBe('Madame');
+      });
+
+      it('refuse un prénom déjà pris, sans tenir compte de la casse, et ne touche à rien', async () => {
+        await expect(store.updateMember('madame', { displayName: 'moi' })).rejects.toThrow('déjà utilisé');
+        expect(memberRow('madame')['display_name']).toBe('Madame');
+        expect(store.memberName('madame')).toBe('Madame');
+      });
+
+      it('accepte de garder son propre prénom (pas un doublon de soi-même)', async () => {
+        await expect(store.updateMember('moi', { displayName: 'Moi', color: '#000000' })).resolves.toBeUndefined();
+      });
+
+      it('refuse une couleur invalide', async () => {
+        for (const color of ['rouge', '#fff', '#12345g', 'var(--accent)', '']) {
+          await expect(store.updateMember('moi', { color })).rejects.toThrow('Couleur invalide');
+        }
+        expect(memberRow('moi')['color']).toBe('#4a6fa1');
+      });
+
+      it('refuse un membre inconnu (autre foyer, id périmé)', async () => {
+        await expect(store.updateMember('fantome', { displayName: 'X' })).rejects.toThrow('introuvable');
+      });
+
+      it('ne fait aucun appel quand il n\'y a rien à changer', async () => {
+        fakeClient.simulateErrorOn('members'); // tout appel échouerait
+        await expect(store.updateMember('moi', {})).resolves.toBeUndefined();
+      });
+
+      it("si la base échoue, remonte l'erreur et laisse l'état local intact", async () => {
+        fakeClient.simulateErrorOn('members');
+        await expect(store.updateMember('moi', { displayName: 'Autre' })).rejects.toBeTruthy();
+        expect(store.memberName('moi')).toBe('Moi');
+      });
+    });
+
+    describe('setMemberActive()', () => {
+      it('désactive un membre : base, signal et sélecteurs à jour', async () => {
+        await store.setMemberActive('madame', false);
+        expect(memberRow('madame')['active']).toBe(false);
+        expect(store.activeMembers().map((m) => m.id)).toEqual(['moi']);
+        expect(store.memberOptions().map((m) => m.id)).toEqual(['moi']);
+        // Son historique reste lisible : le nom se résout toujours.
+        expect(store.memberName('madame')).toBe('Madame');
+      });
+
+      it('réactive un membre', async () => {
+        await store.setMemberActive('madame', false);
+        await store.setMemberActive('madame', true);
+        expect(memberRow('madame')['active']).toBe(true);
+        expect(store.activeMembers()).toHaveLength(2);
+      });
+
+      it('refuse de désactiver le dernier membre actif (règle de la base) sans rien changer', async () => {
+        fakeClient.tables['members'].find((m) => m['id'] === 'madame')!['active'] = false;
+        await store.loadAll();
+        store.myMemberId.set('madame'); // contourne la garde « soi-même » pour atteindre la règle de la base
+        await expect(store.setMemberActive('moi', false)).rejects.toMatchObject({
+          message: expect.stringContaining('dernier membre actif'),
+        });
+        expect(memberRow('moi')['active']).toBe(true);
+        expect(store.activeMembers().map((m) => m.id)).toEqual(['moi']);
+      });
+
+      it('refuse de désactiver son propre profil, sans appeler la base', async () => {
+        fakeClient.simulateErrorOn('members');
+        await expect(store.setMemberActive('moi', false)).rejects.toThrow('propre profil');
+        expect(memberRow('moi')['active']).toBe(true);
+      });
+
+      it('si on regardait ce membre, retourne sur le profil connecté', async () => {
+        store.activeOwner.set('madame');
+        await store.setMemberActive('madame', false);
+        expect(store.activeOwner()).toBe('moi');
+      });
+
+      it("ne change pas la vue active si c'était un autre membre", async () => {
+        store.activeOwner.set('moi');
+        await store.setMemberActive('madame', false);
+        expect(store.activeOwner()).toBe('moi');
+      });
+
+      it("refuse un membre d'un autre foyer (absent de la liste locale) sans appeler la base", async () => {
+        await expect(store.setMemberActive('fantome', false)).rejects.toThrow('introuvable');
+      });
+
+      it("le faux client applique la garde d'appartenance au foyer (comme la RPC)", async () => {
+        fakeClient.tables['members'].push({
+          id: 'etranger', household_id: 'autre-foyer', display_name: 'Etranger', color: '#000000', role: 'member', active: true,
+        });
+        await store.loadAll();
+        const { error } = await fakeClient.rpc('set_household_member_active', { p_member_id: 'etranger', p_active: false });
+        expect(error?.message).toContain('introuvable');
+      });
+    });
+
+    describe('loadJoinCode()', () => {
+      it("lit le code d'invitation du foyer courant, pas celui d'un autre", async () => {
+        fakeClient.seed('households', [
+          { id: 'household-1', name: 'Nous', join_code: 'K7M2QX' },
+          { id: 'autre-foyer', name: 'Eux', join_code: 'ZZZZZZ' },
+        ]);
+        await expect(store.loadJoinCode()).resolves.toBe('K7M2QX');
+      });
+
+      it('lève une erreur si le foyer est introuvable', async () => {
+        fakeClient.seed('households', []);
+        await expect(store.loadJoinCode()).rejects.toBeTruthy();
+      });
+    });
+  });
 });

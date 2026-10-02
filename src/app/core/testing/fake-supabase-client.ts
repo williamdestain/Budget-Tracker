@@ -359,6 +359,7 @@ export class FakeSupabaseClient {
     if (fn === 'join_household') return this.fakeJoinHousehold(params);
     if (fn === 'split_versement_into_provisions') return this.fakeSplitVersementIntoProvisions(params);
     if (fn === 'import_household_data') return this.fakeImportHouseholdData(params);
+    if (fn === 'set_household_member_active') return this.fakeSetHouseholdMemberActive(params);
     if (fn !== 'reset_everything') {
       return { data: null, error: { message: `RPC non supportée par le faux client: ${fn}` } };
     }
@@ -536,6 +537,27 @@ export class FakeSupabaseClient {
       display_name: ownerLabel,
     });
     return { data: [{ household_id: householdId, join_code: joinCode, member_id: memberId }], error: null };
+  }
+
+  // Reproduit set_household_member_active() (migration-025) : le membre doit
+  // appartenir au foyer résolu côté serveur, et on ne désactive jamais le
+  // dernier membre actif.
+  private fakeSetHouseholdMemberActive(params?: Record<string, unknown>) {
+    const memberId = params?.['p_member_id'] as string;
+    const active = params?.['p_active'] as boolean;
+    const members = this.tables['members'] ?? [];
+    const target = members.find((m) => m['id'] === memberId && m['household_id'] === this.currentHouseholdId);
+    if (!target) return { data: null, error: { message: 'Membre introuvable dans ce foyer.' } };
+    if (!active) {
+      const others = members.filter(
+        (m) => m['household_id'] === this.currentHouseholdId && m['active'] && m['id'] !== memberId,
+      );
+      if (others.length === 0) {
+        return { data: null, error: { message: 'Impossible de désactiver le dernier membre actif du foyer.' } };
+      }
+    }
+    target['active'] = active;
+    return { data: null, error: null };
   }
 
   private fakeJoinHousehold(params?: Record<string, unknown>) {

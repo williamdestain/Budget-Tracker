@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { routes } from './app.routes';
 import { BudgetPage } from './features/budget/budget-page/budget-page';
 import { SavingsPage } from './features/savings/savings-page/savings-page';
+import { SettingsPage } from './features/settings/settings-page/settings-page';
 
 describe('routes', () => {
   it('charge la page Budget via la route protégée et lazy', async () => {
@@ -29,5 +30,16 @@ describe('routes', () => {
       .filter((route) => route.data?.['showAdd'] === true)
       .map((route) => route.path);
     expect(withAdd.sort()).toEqual(['mouvements', 'tableau-de-bord']);
+  });
+
+  it("la route Paramètres charge la vraie page (plus un placeholder) ; seul Investissements en reste un", async () => {
+    const shellRoute = routes.find((route) => route.path === '');
+    const children = shellRoute?.children ?? [];
+    const settings = children.find((route) => route.path === 'parametres');
+    expect(settings?.data?.['navTitle']).toBe('Paramètres');
+    expect(settings?.data?.['placeholderNote']).toBeUndefined();
+    await expect(settings?.loadComponent?.()).resolves.toBe(SettingsPage);
+    const placeholders = children.filter((route) => route.data?.['placeholderNote'] !== undefined);
+    expect(placeholders.map((route) => route.path)).toEqual(['investissements']);
   });
 });

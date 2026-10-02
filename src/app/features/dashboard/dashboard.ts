@@ -20,9 +20,6 @@ import { SmartAlerts } from './smart-alerts/smart-alerts';
 import { MoneyPulse } from './money-pulse/money-pulse';
 import { LoadErrorBanner } from './load-error-banner/load-error-banner';
 import { ExpectedThisMonth } from '../recurring-expenses/expected-this-month/expected-this-month';
-import { RecurringExpensesManage } from '../recurring-expenses/recurring-expenses-manage/recurring-expenses-manage';
-import { DataManagement } from '../data-management/data-management/data-management';
-import { CategoriesManage } from '../categories/categories-manage/categories-manage';
 import { Icon } from '../../shared/ui/icon/icon';
 
 @Component({
@@ -42,9 +39,6 @@ import { Icon } from '../../shared/ui/icon/icon';
     MoneyPulse,
     LoadErrorBanner,
     ExpectedThisMonth,
-    RecurringExpensesManage,
-    DataManagement,
-    CategoriesManage,
     Icon,
     RouterLink,
   ],

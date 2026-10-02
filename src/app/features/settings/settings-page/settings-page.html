@@ -1,0 +1,51 @@
+<div class="settings-page">
+  <section aria-labelledby="set-appearance">
+    <h2 id="set-appearance" class="section-title">Apparence</h2>
+    <app-card>
+      <div class="chip-row" role="group" aria-label="Thème de l'application">
+        <app-chip [active]="theme.theme() === 'light'" (click)="theme.set('light')">Clair</app-chip>
+        <app-chip [active]="theme.theme() === 'dark'" (click)="theme.set('dark')">Sombre</app-chip>
+      </div>
+      <p class="hint">Ce choix est mémorisé sur cet appareil seulement.</p>
+    </app-card>
+  </section>
+
+  <section aria-labelledby="set-members">
+    <h2 id="set-members" class="section-title">Foyer &amp; membres</h2>
+    <app-card>
+      <app-members-manage />
+    </app-card>
+  </section>
+
+  <section aria-labelledby="set-categories">
+    <h2 id="set-categories" class="section-title">Catégories</h2>
+    <app-card>
+      <p class="hint">
+        Ajouter, renommer ou archiver les catégories de dépenses. L'historique n'est jamais modifié
+        dans un mois clôturé.
+      </p>
+      <div class="actions"><app-categories-manage /></div>
+    </app-card>
+  </section>
+
+  <section aria-labelledby="set-automations">
+    <h2 id="set-automations" class="section-title">Automatisations</h2>
+    <app-card>
+      <h3 class="subsection-title">Revenus récurrents</h3>
+      <app-recurring-incomes-manage />
+    </app-card>
+    <app-recurring-expenses-manage />
+  </section>
+
+  <section aria-labelledby="set-data">
+    <h2 id="set-data" class="section-title">Données</h2>
+    <app-card>
+      <p class="hint">
+        « Sauvegarder » télécharge un fichier .json. « Restaurer » le relit et remplace toutes les
+        données du foyer. Les comptes et leurs relevés de solde figurent dans le fichier, mais ne
+        sont pas encore restaurés.
+      </p>
+      <div class="actions"><app-data-management /></div>
+    </app-card>
+  </section>
+</div>

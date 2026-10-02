@@ -62,7 +62,6 @@ h2 {
   font-size: 13px;
 }
 
-.ledger-actions,
 .close-month-actions {
   display: flex;
   flex-wrap: wrap;
@@ -241,14 +240,6 @@ h2 {
   .ledger-footer {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .ledger-actions {
-    width: 100%;
-  }
-
-  .ledger-actions > * {
-    flex: 1;
   }
 
   .ledger-grid {

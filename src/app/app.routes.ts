@@ -85,9 +85,7 @@ export const routes: Routes = [
       {
         path: 'parametres',
         loadComponent: () =>
-          import('./shared/layout/route-placeholder/route-placeholder').then(
-            (m) => m.RoutePlaceholder,
-          ),
+          import('./features/settings/settings-page/settings-page').then((m) => m.SettingsPage),
         data: { navTitle: 'Paramètres' },
       },
     ],

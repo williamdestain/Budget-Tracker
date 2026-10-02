@@ -1,0 +1,81 @@
+<ul class="members">
+  @for (member of members(); track member.id) {
+    <li>
+      <button
+        type="button"
+        class="member-row"
+        [class.member-row--off]="!member.active"
+        [attr.aria-label]="'Modifier ' + member.displayName"
+        (click)="openEdit(member)"
+      >
+        <span class="member-dot" [style.background]="member.color"></span>
+        <span class="member-body">
+          <span class="member-name">
+            {{ member.displayName }}
+            @if (isMe(member)) { <span class="tag">Vous</span> }
+            @if (!member.active) { <span class="tag tag--off">Désactivé</span> }
+          </span>
+          <span class="member-meta">{{ roleLabel(member.role) }}</span>
+        </span>
+        <app-icon name="edit" [size]="15" />
+      </button>
+    </li>
+  }
+</ul>
+
+<div class="invite">
+  <h3 class="invite-title">Inviter quelqu'un</h3>
+  <p class="hint">
+    La personne crée son compte, puis saisit ce code pour rejoindre votre foyer. Quiconque a ce code
+    peut voir toutes vos données : ne le partagez qu'avec quelqu'un de confiance.
+  </p>
+  @if (joinCode(); as code) {
+    <div class="invite-code" aria-label="Code d'invitation">{{ code }}</div>
+    <div class="invite-actions">
+      <app-button variant="ghost" (click)="copyCode()">Copier</app-button>
+      <app-button variant="ghost" (click)="hideCode()">Masquer</app-button>
+    </div>
+  } @else {
+    <app-button variant="ghost" [disabled]="loadingCode()" (click)="revealCode()">
+      {{ loadingCode() ? 'Chargement…' : "Afficher le code d'invitation" }}
+    </app-button>
+  }
+</div>
+
+@if (editing(); as member) {
+  <app-modal [title]="'Modifier ' + member.displayName" (closed)="closeEdit()">
+    <form class="member-form" (ngSubmit)="save()">
+      <div class="field">
+        <label for="member-name">Prénom</label>
+        <input id="member-name" type="text" name="name" [(ngModel)]="name" required />
+      </div>
+      <div class="field">
+        <label for="member-color">Couleur</label>
+        <input id="member-color" class="color-input" type="color" name="color" [(ngModel)]="color" />
+      </div>
+      <app-button type="submit" [disabled]="saving() || !canSave" [fullWidth]="true">
+        {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+      </app-button>
+    </form>
+
+    <div class="danger-zone">
+      @if (isMe(member)) {
+        <p class="hint">C'est votre profil : il ne peut pas être désactivé.</p>
+      } @else if (member.active) {
+        @if (confirmDeactivate()) {
+          <p class="hint">
+            {{ member.displayName }} disparaîtra des sélecteurs et des formulaires. Son historique est
+            conservé et vous pourrez le réactiver.
+          </p>
+        }
+        <app-button variant="ghost" [fullWidth]="true" [disabled]="saving()" (click)="toggleActive()">
+          {{ confirmDeactivate() ? 'Confirmer la désactivation' : 'Désactiver ce membre' }}
+        </app-button>
+      } @else {
+        <app-button variant="ghost" [fullWidth]="true" [disabled]="saving()" (click)="toggleActive()">
+          Réactiver ce membre
+        </app-button>
+      }
+    </div>
+  </app-modal>
+}

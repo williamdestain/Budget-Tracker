@@ -1,0 +1,42 @@
+.empty {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.recurring {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recurring-row {
+  align-items: center;
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+}
+
+.recurring-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recurring-name {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.recurring-meta,
+.recurring-hint {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+}

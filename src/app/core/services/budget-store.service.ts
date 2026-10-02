@@ -3453,6 +3453,93 @@ export class BudgetStore {
     ));
   }
 
+  // --- Gestion des membres du foyer (écran Paramètres) --------------------
+  //
+  // Renommer / recolorer passe par une écriture directe : les policies
+  // `household_scoped_members` (migration-024) sont des FOR ALL, aucune RPC
+  // n'est nécessaire (voir migration-025). Seule la désactivation a une vraie
+  // règle métier côté base (jamais de foyer sans membre actif) et passe par
+  // set_household_member_active(). Pas de suppression dure : un membre a des
+  // données liées.
+
+  async updateMember(id: string, changes: { displayName?: string; color?: string }): Promise<void> {
+    const current = this.members().find((m) => m.id === id);
+    if (!current) throw new Error('Membre introuvable dans ce foyer.');
+
+    const row: Record<string, unknown> = {};
+    if (changes.displayName !== undefined) {
+      const name = changes.displayName.trim();
+      if (!name) throw new Error('Le prénom ne peut pas être vide.');
+      // La base impose l'unicité (household_id, display_name), sensible à la
+      // casse ; on refuse aussi « alex » à côté de « Alex » : deux membres que
+      // l'on ne distinguerait plus dans les sélecteurs.
+      const taken = this.members().some(
+        (m) => m.id !== id && m.displayName.trim().toLowerCase() === name.toLowerCase(),
+      );
+      if (taken) throw new Error(`Le prénom « ${name} » est déjà utilisé dans ce foyer.`);
+      row['display_name'] = name;
+    }
+    if (changes.color !== undefined) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(changes.color)) {
+        throw new Error('Couleur invalide : attendu un code comme #4a6fa1.');
+      }
+      row['color'] = changes.color.toLowerCase();
+    }
+    if (Object.keys(row).length === 0) return;
+
+    const { error } = await this.supabase.client.from('members').update(row).eq('id', id);
+    if (error) throw error;
+    this.members.update((list) =>
+      list.map((m) =>
+        m.id === id
+          ? {
+              ...m,
+              displayName: (row['display_name'] as string | undefined) ?? m.displayName,
+              color: (row['color'] as string | undefined) ?? m.color,
+            }
+          : m,
+      ),
+    );
+  }
+
+  async setMemberActive(id: string, active: boolean): Promise<void> {
+    const current = this.members().find((m) => m.id === id);
+    if (!current) throw new Error('Membre introuvable dans ce foyer.');
+    // Se désactiver soi-même couperait la session de l'utilisateur de son
+    // propre profil (sélecteur, valeurs par défaut des formulaires). La base
+    // ne l'interdit pas — la garde est ici, et dans l'interface.
+    if (!active && id === this.myMemberId()) {
+      throw new Error('Vous ne pouvez pas désactiver votre propre profil.');
+    }
+    const { error } = await this.supabase.client.rpc('set_household_member_active', {
+      p_member_id: id,
+      p_active: active,
+    });
+    if (error) throw error;
+    this.members.update((list) => list.map((m) => (m.id === id ? { ...m, active } : m)));
+    // Si on regardait justement ce membre, la vue se viderait : retour sur
+    // le profil connecté.
+    if (!active && this.activeOwner() === id) {
+      this.activeOwner.set(this.myMemberId() ?? 'global');
+    }
+  }
+
+  // Code que quelqu'un d'autre saisit pour REJOINDRE ce foyer. Lu à la
+  // demande (jamais gardé en mémoire) : il donne accès à toutes les données
+  // du foyer. La policy `select_own_household` n'expose que le foyer du
+  // compte connecté.
+  async loadJoinCode(): Promise<string> {
+    const { data, error } = await this.supabase.client
+      .from('households')
+      .select('join_code')
+      .eq('id', this.hid())
+      .single();
+    if (error) throw error;
+    const code = (data as { join_code?: string } | null)?.join_code;
+    if (!code) throw new Error("Code d'invitation introuvable.");
+    return code;
+  }
+
   async addAccountBalanceSnapshot(
     accountId: string,
     balance: number,

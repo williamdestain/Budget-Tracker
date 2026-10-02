@@ -270,12 +270,12 @@ aujourd'hui. Ordre recommandé, du plus isolé au plus structurant :
    toujours, empilés, les anciens blocs de la plupart des écrans livrés
    depuis — `ExpenseList`, `IncomeList` (leurs formulaires de saisie n'y sont
    plus, voir « fenêtre Ajouter » plus bas),
-   `RecurringExpensesManage`, `SavingsGoalList`, `CreditCard`, `YearlyView`,
-   `MonthComparison`, le graphique de dépenses, plus `CategoriesManage` et
-   `DataManagement` (des réglages). C'est de la redite avec `/mouvements`,
-   `/rapports`, `/epargne` et `/carte-de-credit`, à nettoyer une fois que
-   Mouvements permettra de saisir (voir ci-dessous) et que Paramètres
-   existera.
+   `SavingsGoalList`, `CreditCard`, `YearlyView`, `MonthComparison`, le
+   graphique de dépenses (les réglages `CategoriesManage`, `DataManagement` et
+   `RecurringExpensesManage` ont déménagé dans Paramètres le 1er octobre
+   2026). C'est de la redite avec `/mouvements`, `/rapports`, `/epargne` et
+   `/carte-de-credit`, à nettoyer maintenant que Mouvements permet de saisir,
+   modifier et supprimer, et que Paramètres existe.
 4. ✅ **Mouvements** — livré (`Mouvements` dans `features/mouvements/`,
    routé sur `/mouvements`, repéré le 28 septembre en vérifiant l'état
    réel du code plutôt que ce document, qui n'avait pas été mis à jour).
@@ -474,6 +474,50 @@ normalement (voir « Pour démarrer cette semaine » en fin de document).
    « épars » sont localisés : `CategoriesManage` et `DataManagement` dans
    l'en-tête du tableau de bord, `RecurringExpensesManage` dans son corps.
 
+   ✅ **Livré le 1er octobre 2026** (`features/settings/`, route
+   `/parametres`). Sections : **Apparence** (Clair / Sombre, mémorisé sur
+   l'appareil) ; **Foyer & membres** (nouveau) ; **Catégories**,
+   **Automatisations** (dépenses récurrentes + **revenus récurrents**,
+   nouveau) et **Données**. `CategoriesManage`, `DataManagement` et
+   `RecurringExpensesManage` ont été **déplacés tels quels** (logique et
+   specs inchangées, conformément à la règle « geler la logique ») et retirés
+   du tableau de bord ; ils gardent donc leur ancienne présentation (boutons +
+   fenêtre propre, emojis) jusqu'à un passage de restylage.
+
+   *Foyer & membres* (`MembersManage`) : liste (actifs d'abord, « Vous »,
+   rôle), renommer, changer la couleur, désactiver / réactiver, et afficher le
+   **code d'invitation** — jusqu'ici montré une seule fois, à la création du
+   foyer, puis introuvable : on ne pouvait plus inviter son partenaire. Le code
+   n'est lu qu'à la demande (il donne accès à toutes les données) et l'écran
+   le dit. Côté store : `updateMember()`, `setMemberActive()` (RPC
+   `set_household_member_active`, `migration-025`), `loadJoinCode()` ; le
+   prénom doit rester unique dans le foyer (insensible à la casse), la couleur
+   un `#rrggbb`, et on ne peut pas désactiver son propre profil (la base ne
+   l'interdit pas, la garde est dans le store et l'interface). Désactiver le
+   membre qu'on est en train de regarder ramène la vue sur son profil.
+   **Volontairement absents** : supprimer un membre (il a des données
+   liées), **changer un rôle** (`role` n'a aucun effet observable, MODELE §6.1,
+   et rien ne garantit qu'il reste un propriétaire — un bouton qui peut
+   dégrader l'unique propriétaire n'apporte que du risque), inviter par
+   courriel (aucun envoi n'existe, MODELE 9.5.4). Le plan d'origine
+   mentionnait « ajouter/retirer un membre, changer son rôle » : ajouter se
+   fait par le code d'invitation, retirer par la désactivation.
+
+   *Revenus récurrents* (`RecurringIncomesManage`) : liste et arrêt en deux
+   temps (remplace le `window.confirm` de l'ancienne `IncomeList`) ; même
+   périmètre que cette liste (profil actif). Les créer se fait par « Ajouter »
+   → Revenu → récurrent.
+
+   ⚠️ **À vérifier avant de s'en servir en production : `migration-025`.**
+   Les documents la disent « écrite et testée » (16 septembre 2026) mais
+   aucun ne dit qu'elle a été **exécutée** sur Supabase (contrairement à 023
+   et 024 le 13 septembre, et 026 le 28). Sans elle, la fonction
+   `set_household_member_active` n'existe pas et désactiver un membre
+   échouera ; renommer et recolorer, eux, marchent déjà (policies `FOR ALL`
+   de la 024). Le code d'invitation n'a pas besoin d'une nouvelle migration
+   (policy `select_own_household`). Après exécution : `notify pgrst, 'reload
+   schema';` (voir `MODELE.md` 6.4.2).
+
 ---
 
 ## Phase 3 — Adaptation mobile (5–6 jours)
@@ -579,7 +623,7 @@ aussi sous `Australia/Sydney` et `Pacific/Kiritimati`).
 | 0 — Fondations | ✅ Tokens, polices, 10 composants partagés, icônes. ⬜ Emojis restants (126, voir Phase 0) ; ⬜ `/design-system` à retirer |
 | 1 — Navigation | ✅ 9 routes, `AppShell`, membres branchés sur le store |
 | 2A — Vague A | ✅ Carte de crédit, Rapports, Budget. ✅ Mouvements (saisie par la fenêtre « Ajouter », modification et suppression par la fenêtre « Modifier »). ⚠️ Tableau de bord (nouveau bandeau, mais l'ancienne pile reste) |
-| 2B — Vague B | ✅ Comptes, Épargne. ⬜ Investissements et Paramètres : placeholders |
+| 2B — Vague B | ✅ Comptes, Épargne, Paramètres. ⬜ Investissements : placeholder (le dernier) |
 | 3 — Mobile | ✅ Barre du bas et fenêtre « Ajouter » (dépense/revenu). ⚠️ `ProvisionForm` et dépenses récurrentes restent en ligne ; rien vérifié sur un vrai téléphone |
 | 4 — Accessibilité | ⬜ Pas commencée |
 | 5 — Tests et déploiement | ⬜ Pas commencée ; CI sans tests dans le zip audité |
@@ -599,22 +643,23 @@ Détail et preuve dans `MODELE.md` section 10.3.
    Vague A, point 4. Préalable au nettoyage du tableau de bord (point 5).
 3. **Investissements** comme vue détaillée des comptes `investment` (voir
    Vague B, point 2) — valider ce périmètre avant d'écrire du code.
-4. **Paramètres** : catégories, sauvegarde, dépenses récurrentes, **revenus
-   récurrents** (y compris l'arrêt, aujourd'hui dans `IncomeList`), membres.
-5. **Nettoyer le tableau de bord** une fois 2 et 4 faits : retirer les blocs
-   redondants avec Mouvements, Rapports, Épargne, Carte de crédit et
-   Paramètres.
-5. **Import des comptes** : migration SQL sur `import_household_data()` et
+4. ✅ **Paramètres — fait le 1er octobre 2026** : catégories, sauvegarde,
+   dépenses et revenus récurrents, foyer et membres. Voir Vague B, point 4
+   (dont `migration-025` à vérifier).
+5. **Nettoyer le tableau de bord** — prérequis remplis (2 et 4 faits) :
+   retirer les blocs redondants avec Mouvements, Rapports, Épargne, Carte de
+   crédit. C'est surtout de la suppression, et la prochaine étape logique.
+6. **Import des comptes** : migration SQL sur `import_household_data()` et
    `reset_everything()`, testée sur un Postgres jetable (voir `MODELE.md`
    10.4). Tant que ce n'est pas fait, l'export est une copie de secours
    lisible, pas une restauration.
-6. **Hygiène** : retirer `/design-system` de la production ; supprimer les
+7. **Hygiène** : retirer `/design-system` de la production ; supprimer les
    doublons de la racine (`budget-store.service.spec.ts` et
    `fake-supabase-client.ts` y existent en copies périmées, différentes de
    celles de `src/`) et les documents en double ; brancher les tests dans le
    pipeline avant déploiement ; décider du sort du rappel de mois non
    clôturé (`MODELE.md` section 7, non planifié).
-7. **Phases 4 et 5**, une fois les écrans stabilisés.
+8. **Phases 4 et 5**, une fois les écrans stabilisés.
 
 ---
 
@@ -692,7 +737,9 @@ Détail et preuve dans `MODELE.md` section 10.3.
     ligne du tableau de bord sont retirés.
 19. ✅ **Mouvements : modification et suppression — 30 septembre 2026**
     (Vague A, point 4). Le cycle de saisie est complet depuis `/mouvements`.
-20. **Prochaine étape réelle** : Paramètres (il porte les réglages et
-    l'arrêt des revenus récurrents), puis le nettoyage du tableau de bord ;
-    Investissements reste indépendant et attend la validation de son
-    périmètre (Vague B, point 2).
+20. ✅ **Paramètres — 1er octobre 2026** (Vague B, point 4) : réglages
+    regroupés, foyer et membres (renommer, couleur, désactivation, code
+    d'invitation), revenus récurrents. `migration-025` à confirmer exécutée.
+21. **Prochaine étape réelle** : le nettoyage du tableau de bord (tous ses
+    prérequis sont remplis) ; Investissements reste indépendant et attend la
+    validation de son périmètre (Vague B, point 2).

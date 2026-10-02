@@ -564,7 +564,7 @@ faite dans tout `src/`). C'est une décision prise ici mais rattachée à aucune
 | Valeur nette | ✅ `netWorthBreakdown()` (`core/utils/accounts.utils.ts`), utilisée par `/comptes` et par le bloc « Patrimoine » du tableau de bord |
 | Performance de portefeuille (5.5) | ⬜ Conçu ici, rien construit — viendra avec `/investissements` |
 | Évolution récente et rythme d'un objectif d'épargne | ✅ **Calculés, jamais stockés** (`contributedInMonth`, `goalMonthlyRhythm`, `savings.utils.ts`) ; écran `/epargne` livré le 29 septembre 2026 |
-| Member généralisé, Role | ✅ Schéma Supabase **exécuté et validé en production** (`migration-024-owner-to-member.sql`, section 6.4) ; ✅ support TypeScript |
+| Member généralisé, Role | ✅ Schéma Supabase **exécuté et validé en production** (`migration-024-owner-to-member.sql`, section 6.4) ; ✅ support TypeScript ; ✅ écran de gestion (Paramètres, 1er octobre 2026) — ⚠️ la désactivation dépend de `migration-025`, dont l'exécution n'est pas attestée (voir 10.6) |
 | Invitation | ✅ Table créée, **volontairement inutilisée** : aucun mécanisme d'envoi d'email (voir 9.5.4) |
 | Migration Owner → Member (section 6.2/6.3) | ✅ **Exécutée et validée en production le 13 septembre 2026** (section 6.4) ; ✅ repli legacy `owner`/`useMemberSchema()` retiré le 28 septembre 2026 |
 | Rappel de mois non clôturé | ⬜ Conçu ici, rien construit, **et absent du plan** (voir section 7) |
@@ -821,7 +821,29 @@ l'ancien code, 4 d'entre eux échouent.
 
 ### 10.5 Non vérifié par cet audit
 
-L'état réel du projet Supabase (les migrations 023 à 026 sont déclarées
-exécutées dans ce document, je n'ai pu lire que les fichiers), le rendu dans
+L'état réel du projet Supabase : ce document déclare exécutées les migrations
+023 et 024 (13 septembre) et 026 (28 septembre), mais pour la **025**, seule la
+mention « écrite et testée » existe — rien n'atteste son exécution (voir 10.6).
+Je n'ai pu lire que les fichiers. Le rendu dans
 un navigateur ou sur mobile, l'apparence du thème sombre, et le contenu réel
 de `.github/workflows/` dans le dépôt (le zip ne contient que `deploy.yml`).
+
+### 10.6 Mise à jour du 1er octobre 2026 — gestion des membres
+
+L'écran Paramètres (« Foyer & membres ») est livré : renommer, changer la
+couleur, désactiver / réactiver un membre, et afficher le code d'invitation du
+foyer (jusqu'ici visible une seule fois, à la création). Voir
+`plan-industrialisation.md`, Vague B, point 4.
+
+**À vérifier : `migration-025` est-elle exécutée ?** Elle crée
+`set_household_member_active()`, que la désactivation appelle. Sans elle, cette
+seule action échoue (message d'erreur affiché) ; renommer et recolorer
+fonctionnent par écriture directe grâce aux policies `FOR ALL` de la 024. Une
+correction de mon audit du 29 septembre, qui avait regroupé 023 à 026 comme
+exécutées sans qu'aucun document ne le dise pour la 025.
+
+Règles appliquées côté store : prénom unique dans le foyer (insensible à la
+casse), couleur au format `#rrggbb`, impossible de désactiver son propre
+profil (garde du store, la base ne l'interdit pas), jamais de suppression dure.
+`role` n'est volontairement pas modifiable (voir 6.1 : aucun effet observable,
+et aucune garantie qu'il reste un propriétaire).
